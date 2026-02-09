@@ -14,7 +14,227 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      cmo_reports: {
+        Row: {
+          accuracy_score: number | null
+          cmo_name: string
+          created_at: string
+          error_count: number | null
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          notes: string | null
+          page_count: number | null
+          processed_at: string | null
+          report_period: string | null
+          status: string
+          total_revenue: number | null
+          transaction_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          accuracy_score?: number | null
+          cmo_name: string
+          created_at?: string
+          error_count?: number | null
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          notes?: string | null
+          page_count?: number | null
+          processed_at?: string | null
+          report_period?: string | null
+          status?: string
+          total_revenue?: number | null
+          transaction_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          accuracy_score?: number | null
+          cmo_name?: string
+          created_at?: string
+          error_count?: number | null
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          notes?: string | null
+          page_count?: number | null
+          processed_at?: string | null
+          report_period?: string | null
+          status?: string
+          total_revenue?: number | null
+          transaction_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      royalty_transactions: {
+        Row: {
+          artist_name: string | null
+          bbox_height: number | null
+          bbox_width: number | null
+          bbox_x: number | null
+          bbox_y: number | null
+          commission: number | null
+          created_at: string
+          currency: string | null
+          gross_revenue: number | null
+          id: string
+          isrc: string | null
+          iswc: string | null
+          net_revenue: number | null
+          ocr_confidence: number | null
+          period_end: string | null
+          period_start: string | null
+          platform: string | null
+          quantity: number | null
+          raw_data: Json | null
+          report_id: string
+          source_page: number | null
+          source_row: number | null
+          territory: string | null
+          track_title: string | null
+          usage_type: string | null
+          user_id: string
+          validation_status: string | null
+        }
+        Insert: {
+          artist_name?: string | null
+          bbox_height?: number | null
+          bbox_width?: number | null
+          bbox_x?: number | null
+          bbox_y?: number | null
+          commission?: number | null
+          created_at?: string
+          currency?: string | null
+          gross_revenue?: number | null
+          id?: string
+          isrc?: string | null
+          iswc?: string | null
+          net_revenue?: number | null
+          ocr_confidence?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          platform?: string | null
+          quantity?: number | null
+          raw_data?: Json | null
+          report_id: string
+          source_page?: number | null
+          source_row?: number | null
+          territory?: string | null
+          track_title?: string | null
+          usage_type?: string | null
+          user_id: string
+          validation_status?: string | null
+        }
+        Update: {
+          artist_name?: string | null
+          bbox_height?: number | null
+          bbox_width?: number | null
+          bbox_x?: number | null
+          bbox_y?: number | null
+          commission?: number | null
+          created_at?: string
+          currency?: string | null
+          gross_revenue?: number | null
+          id?: string
+          isrc?: string | null
+          iswc?: string | null
+          net_revenue?: number | null
+          ocr_confidence?: number | null
+          period_end?: string | null
+          period_start?: string | null
+          platform?: string | null
+          quantity?: number | null
+          raw_data?: Json | null
+          report_id?: string
+          source_page?: number | null
+          source_row?: number | null
+          territory?: string | null
+          track_title?: string | null
+          usage_type?: string | null
+          user_id?: string
+          validation_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "royalty_transactions_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "cmo_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      validation_errors: {
+        Row: {
+          actual_value: string | null
+          created_at: string
+          error_type: string
+          expected_value: string | null
+          field_name: string | null
+          id: string
+          message: string
+          report_id: string
+          resolved: boolean | null
+          severity: string
+          source_page: number | null
+          transaction_id: string | null
+          user_id: string
+        }
+        Insert: {
+          actual_value?: string | null
+          created_at?: string
+          error_type: string
+          expected_value?: string | null
+          field_name?: string | null
+          id?: string
+          message: string
+          report_id: string
+          resolved?: boolean | null
+          severity?: string
+          source_page?: number | null
+          transaction_id?: string | null
+          user_id: string
+        }
+        Update: {
+          actual_value?: string | null
+          created_at?: string
+          error_type?: string
+          expected_value?: string | null
+          field_name?: string | null
+          id?: string
+          message?: string
+          report_id?: string
+          resolved?: boolean | null
+          severity?: string
+          source_page?: number | null
+          transaction_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "validation_errors_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "cmo_reports"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "validation_errors_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "royalty_transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
