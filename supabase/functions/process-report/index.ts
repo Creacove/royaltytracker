@@ -527,10 +527,14 @@ serve(async (req) => {
       throw new Error(`Failed to download PDF: ${dlErr?.message}`);
     }
 
-    const pdfBytes = await pdfData.arrayBuffer();
-    const pdfBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(pdfBytes))
-    );
+    const pdfBytes = new Uint8Array(await pdfData.arrayBuffer());
+    // Chunk the conversion to avoid call stack overflow on large files
+    let binary = "";
+    const CHUNK = 8192;
+    for (let i = 0; i < pdfBytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...pdfBytes.subarray(i, i + CHUNK));
+    }
+    const pdfBase64 = btoa(binary);
 
     console.log(`[process-report] PDF downloaded (${pdfBytes.byteLength} bytes)`);
 
