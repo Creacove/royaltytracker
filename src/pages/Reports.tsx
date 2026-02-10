@@ -38,7 +38,7 @@ export default function Reports() {
       const { error: uploadError } = await supabase.storage.from("cmo-reports").upload(filePath, file);
       if (uploadError) throw uploadError;
 
-      const { error: insertError } = await supabase.from("cmo_reports").insert({
+      const { data: inserted, error: insertError } = await supabase.from("cmo_reports").insert({
         user_id: user.id,
         cmo_name: cmoName || "Unknown CMO",
         report_period: reportPeriod || null,
@@ -47,11 +47,24 @@ export default function Reports() {
         file_size: file.size,
         notes: notes || null,
         status: "pending",
-      });
+      }).select("id").single();
       if (insertError) throw insertError;
+
+      // Trigger processing edge function (fire and forget — status updates via polling)
+      const reportId = inserted.id;
+      supabase.functions.invoke("process-report", {
+        body: { report_id: reportId },
+      }).then(({ error: procError }) => {
+        if (procError) {
+          console.error("Processing trigger failed:", procError);
+        }
+        // Refresh reports list to show updated status
+        queryClient.invalidateQueries({ queryKey: ["reports"] });
+        queryClient.invalidateQueries({ queryKey: ["reports-summary"] });
+      });
     },
     onSuccess: () => {
-      toast({ title: "Report uploaded", description: "Your CMO report is queued for processing." });
+      toast({ title: "Report uploaded", description: "Processing started — this may take a minute." });
       setFile(null);
       setCmoName("");
       setReportPeriod("");
