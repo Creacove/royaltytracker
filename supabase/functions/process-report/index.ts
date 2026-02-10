@@ -10,7 +10,22 @@ const corsHeaders = {
 // ─── Google Document AI ──────────────────────────────────────────────
 
 async function getAccessToken(serviceAccountJson: string): Promise<string> {
-  const sa = JSON.parse(serviceAccountJson);
+  // Handle common secret storage issues: extra quotes, escaped newlines
+  let cleaned = serviceAccountJson.trim();
+  // Remove wrapping quotes if the entire string is quoted
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1);
+  }
+  // Unescape escaped newlines (common when pasting JSON into secret forms)
+  cleaned = cleaned.replace(/\\n/g, "\n");
+  
+  let sa: any;
+  try {
+    sa = JSON.parse(cleaned);
+  } catch (e) {
+    console.error("[process-report] Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY. First 100 chars:", cleaned.substring(0, 100));
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON. Please re-enter the full service account JSON.");
+  }
   const now = Math.floor(Date.now() / 1000);
   const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = btoa(
