@@ -29,6 +29,14 @@ export default function Reports() {
       if (error) throw error;
       return data;
     },
+    // Auto-refresh every 5s while any report is processing/pending
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (data?.some((r: any) => r.status === "pending" || r.status === "processing")) {
+        return 5000;
+      }
+      return false;
+    },
   });
 
   const uploadMutation = useMutation({
