@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Supabase CLI artifacts
+supabase/.temp/
+
+# Local-only secrets (examples are committed)
+supabase/secrets.env
+supabase/functions/.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

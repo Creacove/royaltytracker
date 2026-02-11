@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Upload, ArrowRightLeft, ShieldCheck, BarChart3, LogOut, Music2, Moon, Sun } from "lucide-react";
+import { LayoutDashboard, Upload, ArrowRightLeft, ShieldCheck, BarChart3, LogOut, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 
@@ -27,8 +27,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className="flex w-64 flex-col border-r border-sidebar-border bg-sidebar shrink-0">
         <div className="flex items-center gap-2.5 px-6 py-5 border-b border-sidebar-border">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
-            <Music2 className="h-5 w-5 text-primary-foreground" />
+          <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white/90">
+            <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain p-0.5" />
           </div>
           <span className="text-lg font-bold text-foreground tracking-tight">OrderSounds</span>
         </div>

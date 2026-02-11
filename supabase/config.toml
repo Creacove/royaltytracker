@@ -1,4 +1,26 @@
-project_id = "ymayfkejudcwkdixiedq"
+project_id = "vdzuypxdueelmkrwvyet"
+
+[auth]
+# Dev-friendly auth: disable email confirmations so signup can immediately sign in.
+# For production, re-enable confirmations and configure SMTP.
+# Used for auth redirects (password recovery, magic links, etc.).
+# Keep this aligned with the frontend dev server origin.
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["http://localhost:8080"]
+
+[auth.email]
+# If enabled, users need to confirm their email address before signing in.
+# For now we disable confirmations to unblock local development.
+enable_confirmations = false
+
+# Restore sane defaults for email OTP.
+max_frequency = "1m0s"
+otp_length = 8
+
+[auth.mfa.totp]
+# Keep TOTP MFA available (was unintentionally disabled by a config push).
+enroll_enabled = true
+verify_enabled = true
 
 [functions.process-report]
 verify_jwt = false

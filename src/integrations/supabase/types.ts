@@ -74,6 +74,116 @@ export type Database = {
         }
         Relationships: []
       }
+      document_ai_report_items: {
+        Row: {
+          amount_in_original_currency: string | null
+          amount_in_reporting_currency: string | null
+          channel: string | null
+          config_type: string | null
+          country: string | null
+          created_at: string
+          exchange_rate: string | null
+          id: string
+          isrc: string | null
+          item_index: number
+          label: string | null
+          master_commission: string | null
+          ocr_confidence: number | null
+          original_currency: string | null
+          quantity: string | null
+          raw_entity: Json | null
+          release_artist: string | null
+          release_title: string | null
+          release_upc: string | null
+          report_date: string | null
+          report_id: string
+          report_item: string | null
+          reporting_currency: string | null
+          royalty_revenue: string | null
+          sales_end: string | null
+          sales_start: string | null
+          source_page: number | null
+          track_artist: string | null
+          track_title: string | null
+          unit: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_in_original_currency?: string | null
+          amount_in_reporting_currency?: string | null
+          channel?: string | null
+          config_type?: string | null
+          country?: string | null
+          created_at?: string
+          exchange_rate?: string | null
+          id?: string
+          isrc?: string | null
+          item_index: number
+          label?: string | null
+          master_commission?: string | null
+          ocr_confidence?: number | null
+          original_currency?: string | null
+          quantity?: string | null
+          raw_entity?: Json | null
+          release_artist?: string | null
+          release_title?: string | null
+          release_upc?: string | null
+          report_date?: string | null
+          report_id: string
+          report_item?: string | null
+          reporting_currency?: string | null
+          royalty_revenue?: string | null
+          sales_end?: string | null
+          sales_start?: string | null
+          source_page?: number | null
+          track_artist?: string | null
+          track_title?: string | null
+          unit?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_in_original_currency?: string | null
+          amount_in_reporting_currency?: string | null
+          channel?: string | null
+          config_type?: string | null
+          country?: string | null
+          created_at?: string
+          exchange_rate?: string | null
+          id?: string
+          isrc?: string | null
+          item_index?: number
+          label?: string | null
+          master_commission?: string | null
+          ocr_confidence?: number | null
+          original_currency?: string | null
+          quantity?: string | null
+          raw_entity?: Json | null
+          release_artist?: string | null
+          release_title?: string | null
+          release_upc?: string | null
+          report_date?: string | null
+          report_id?: string
+          report_item?: string | null
+          reporting_currency?: string | null
+          royalty_revenue?: string | null
+          sales_end?: string | null
+          sales_start?: string | null
+          source_page?: number | null
+          track_artist?: string | null
+          track_title?: string | null
+          unit?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_ai_report_items_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "cmo_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       royalty_transactions: {
         Row: {
           artist_name: string | null

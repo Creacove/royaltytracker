@@ -1,194 +1,943 @@
+
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/StatusBadge";
-import { FileText, ArrowRightLeft, ShieldCheck, DollarSign } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { format } from "date-fns";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  DollarSign,
+  FileText,
+  Globe2,
+  Layers3,
+  RadioTower,
+  ShieldAlert,
+} from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { StatusBadge } from "@/components/StatusBadge";
+import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
+
+type Report = Pick<
+  Tables<"cmo_reports">,
+  | "id"
+  | "cmo_name"
+  | "file_name"
+  | "created_at"
+  | "processed_at"
+  | "report_period"
+  | "status"
+  | "transaction_count"
+  | "total_revenue"
+  | "accuracy_score"
+  | "error_count"
+>;
+
+type Tx = Pick<
+  Tables<"royalty_transactions">,
+  | "report_id"
+  | "territory"
+  | "platform"
+  | "gross_revenue"
+  | "net_revenue"
+  | "commission"
+  | "quantity"
+  | "track_title"
+  | "artist_name"
+>;
+
+type Item = Pick<
+  Tables<"document_ai_report_items">,
+  | "report_id"
+  | "country"
+  | "channel"
+  | "report_date"
+  | "isrc"
+  | "track_title"
+  | "amount_in_original_currency"
+  | "amount_in_reporting_currency"
+  | "royalty_revenue"
+  | "master_commission"
+>;
+
+type ExtractorPayload = {
+  rows: Item[];
+  available: boolean;
+};
 
 const CHART_COLORS = [
-  "hsl(250, 65%, 55%)",
-  "hsl(142, 71%, 45%)",
-  "hsl(38, 92%, 50%)",
-  "hsl(0, 72%, 51%)",
-  "hsl(200, 70%, 50%)",
-  "hsl(280, 60%, 55%)",
+  "hsl(250 65% 55%)",
+  "hsl(160 65% 42%)",
+  "hsl(30 95% 52%)",
+  "hsl(355 72% 55%)",
+  "hsl(205 76% 48%)",
+  "hsl(338 72% 52%)",
 ];
 
+function isMissingRelationError(error: unknown, relation: string): boolean {
+  const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
+  if (!e) return false;
+  if (e.code === "42P01") return true;
+  const haystack = `${e.message ?? ""} ${e.details ?? ""} ${e.hint ?? ""}`.toLowerCase();
+  return haystack.includes(relation.toLowerCase());
+}
+
+function monthKey(input: string | null): string | null {
+  if (!input) return null;
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return null;
+  return format(date, "yyyy-MM");
+}
+
+function formatMonthLabel(month: string): string {
+  const date = new Date(`${month}-01T00:00:00`);
+  if (Number.isNaN(date.getTime())) return month;
+  return format(date, "MMM yy");
+}
+
+function safeDateLabel(input: string | null | undefined, pattern = "MMM d, yyyy"): string {
+  if (!input) return "-";
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return "-";
+  return format(date, pattern);
+}
+
+function extractorRevenue(row: Item): number {
+  return (
+    parseLooseNumber(row.amount_in_reporting_currency) ??
+    parseLooseNumber(row.royalty_revenue) ??
+    parseLooseNumber(row.amount_in_original_currency) ??
+    0
+  );
+}
+
+function extractorCommission(row: Item): number {
+  return parseLooseNumber(row.master_commission) ?? 0;
+}
+
+function nonEmptyValue(value: string | null | undefined): boolean {
+  return !!value && value.trim() !== "";
+}
+
 export default function Dashboard() {
-  const { data: reports } = useQuery({
-    queryKey: ["reports-summary"],
-    queryFn: async () => {
-      const { data } = await supabase.from("cmo_reports").select("*").order("created_at", { ascending: false });
+  const {
+    data: reports = [],
+    isLoading: reportsLoading,
+    error: reportsError,
+  } = useQuery({
+    queryKey: ["dashboard-reports"],
+    queryFn: async (): Promise<Report[]> => {
+      const { data, error } = await supabase
+        .from("cmo_reports")
+        .select(
+          "id,cmo_name,file_name,created_at,processed_at,report_period,status,transaction_count,total_revenue,accuracy_score,error_count"
+        )
+        .order("created_at", { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  const { data: transactions } = useQuery({
-    queryKey: ["transactions-summary"],
-    queryFn: async () => {
-      const { data } = await supabase.from("royalty_transactions").select("territory, platform, net_revenue");
+  const {
+    data: transactions = [],
+    isLoading: txLoading,
+    error: txError,
+  } = useQuery({
+    queryKey: ["dashboard-transactions"],
+    queryFn: async (): Promise<Tx[]> => {
+      const { data, error } = await supabase
+        .from("royalty_transactions")
+        .select("report_id,territory,platform,gross_revenue,net_revenue,commission,quantity,track_title,artist_name")
+        .limit(9000);
+      if (error) throw error;
       return data ?? [];
     },
   });
 
-  const { data: errors } = useQuery({
-    queryKey: ["errors-summary"],
-    queryFn: async () => {
-      const { data } = await supabase.from("validation_errors").select("severity");
-      return data ?? [];
+  const {
+    data: extractor = { rows: [], available: true },
+    isLoading: extractorLoading,
+    error: extractorError,
+  } = useQuery({
+    queryKey: ["dashboard-document-ai-items"],
+    queryFn: async (): Promise<ExtractorPayload> => {
+      const { data, error } = await supabase
+        .from("document_ai_report_items")
+        .select(
+          "report_id,country,channel,report_date,isrc,track_title,amount_in_original_currency,amount_in_reporting_currency,royalty_revenue,master_commission"
+        )
+        .limit(12000);
+
+      if (error) {
+        if (isMissingRelationError(error, "document_ai_report_items")) {
+          return { rows: [], available: false };
+        }
+        throw error;
+      }
+
+      return { rows: data ?? [], available: true };
     },
   });
 
-  const totalReports = reports?.length ?? 0;
-  const totalTransactions = transactions?.length ?? 0;
-  const totalRevenue = transactions?.reduce((sum, t) => sum + (t.net_revenue ?? 0), 0) ?? 0;
-  const avgAccuracy = reports?.length
-    ? reports.filter((r) => r.accuracy_score).reduce((sum, r) => sum + (r.accuracy_score ?? 0), 0) /
-      reports.filter((r) => r.accuracy_score).length
-    : 0;
+  const items = extractor.rows;
+  const extractorAvailable = extractor.available;
 
-  // Territory chart
-  const territoryMap: Record<string, number> = {};
-  transactions?.forEach((t) => {
-    if (t.territory && t.net_revenue) {
-      territoryMap[t.territory] = (territoryMap[t.territory] ?? 0) + t.net_revenue;
+  const reportById = useMemo(() => {
+    const map = new Map<string, Report>();
+    for (const report of reports) map.set(report.id, report);
+    return map;
+  }, [reports]);
+
+  const metrics = useMemo(() => {
+    const grossFromTx = transactions.reduce((sum, tx) => sum + (tx.gross_revenue ?? 0), 0);
+    const netFromTx = transactions.reduce((sum, tx) => sum + (tx.net_revenue ?? 0), 0);
+    const commissionFromTx = transactions.reduce((sum, tx) => sum + (tx.commission ?? 0), 0);
+
+    const grossFromExtractor = items.reduce((sum, row) => sum + extractorRevenue(row), 0);
+    const commissionFromExtractor = items.reduce((sum, row) => sum + extractorCommission(row), 0);
+
+    const hasTxFinance = grossFromTx > 0 || netFromTx > 0;
+    const gross = hasTxFinance ? grossFromTx : grossFromExtractor;
+    const net = hasTxFinance ? netFromTx : Math.max(0, grossFromExtractor - commissionFromExtractor);
+    const commission = hasTxFinance ? commissionFromTx : commissionFromExtractor;
+
+    const totalReports = reports.length;
+    const completedReports = reports.filter((r) => r.status === "completed").length;
+    const failedReports = reports.filter((r) => r.status === "failed").length;
+    const processingReports = reports.filter((r) => r.status === "processing" || r.status === "pending").length;
+    const processingRate = totalReports > 0 ? (completedReports / totalReports) * 100 : 0;
+    const activeCmos = new Set(reports.map((r) => r.cmo_name)).size;
+
+    const accuracyValues = reports
+      .map((r) => r.accuracy_score)
+      .filter((v): v is number => typeof v === "number");
+    const avgAccuracy =
+      accuracyValues.length > 0
+        ? accuracyValues.reduce((sum, value) => sum + value, 0) / accuracyValues.length
+        : null;
+
+    const extractedLines =
+      transactions.length > 0
+        ? transactions.length
+        : items.length > 0
+          ? items.length
+          : reports.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0);
+
+    return {
+      gross,
+      net,
+      commission,
+      commissionRate: gross > 0 ? (commission / gross) * 100 : null,
+      totalReports,
+      completedReports,
+      failedReports,
+      processingReports,
+      processingRate,
+      activeCmos,
+      avgAccuracy,
+      extractedLines,
+    };
+  }, [items, reports, transactions]);
+
+  const monthlyTrend = useMemo(() => {
+    const map = new Map<string, { gross: number; net: number; reports: number }>();
+
+    for (const report of reports) {
+      const key = monthKey(report.created_at);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, { gross: 0, net: 0, reports: 0 });
+      map.get(key)!.reports += 1;
     }
-  });
-  const territoryData = Object.entries(territoryMap)
-    .map(([name, value]) => ({ name, value: +value.toFixed(2) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
 
-  // Platform chart
-  const platformMap: Record<string, number> = {};
-  transactions?.forEach((t) => {
-    if (t.platform && t.net_revenue) {
-      platformMap[t.platform] = (platformMap[t.platform] ?? 0) + t.net_revenue;
+    if (transactions.length > 0) {
+      for (const tx of transactions) {
+        const report = reportById.get(tx.report_id);
+        const key = monthKey(report?.created_at ?? null);
+        if (!key) continue;
+        if (!map.has(key)) map.set(key, { gross: 0, net: 0, reports: 0 });
+        const row = map.get(key)!;
+        row.gross += tx.gross_revenue ?? 0;
+        row.net += tx.net_revenue ?? 0;
+      }
+    } else {
+      for (const item of items) {
+        const report = reportById.get(item.report_id);
+        const key = monthKey(item.report_date) ?? monthKey(report?.created_at ?? null);
+        if (!key) continue;
+        if (!map.has(key)) map.set(key, { gross: 0, net: 0, reports: 0 });
+        const row = map.get(key)!;
+        const gross = extractorRevenue(item);
+        row.gross += gross;
+        row.net += Math.max(0, gross - extractorCommission(item));
+      }
     }
-  });
-  const platformData = Object.entries(platformMap)
-    .map(([name, value]) => ({ name, value: +value.toFixed(2) }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 6);
 
-  const cards = [
-    { title: "Reports", value: totalReports, icon: FileText, fmt: String(totalReports) },
-    { title: "Transactions", value: totalTransactions, icon: ArrowRightLeft, fmt: totalTransactions.toLocaleString() },
-    { title: "Accuracy", value: avgAccuracy, icon: ShieldCheck, fmt: avgAccuracy ? `${avgAccuracy.toFixed(1)}%` : "—" },
-    { title: "Net Revenue", value: totalRevenue, icon: DollarSign, fmt: `$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` },
-  ];
+    return Array.from(map.entries())
+      .map(([month, row]) => ({
+        month,
+        label: formatMonthLabel(month),
+        gross: Number(row.gross.toFixed(2)),
+        net: Number(row.net.toFixed(2)),
+        reports: row.reports,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-12);
+  }, [items, reportById, reports, transactions]);
+
+  const territoryData = useMemo(() => {
+    const map = new Map<string, number>();
+    if (transactions.length > 0) {
+      for (const tx of transactions) {
+        const key = tx.territory ?? "Unknown";
+        map.set(key, (map.get(key) ?? 0) + (tx.net_revenue ?? 0));
+      }
+    } else {
+      for (const row of items) {
+        const key = row.country ?? "Unknown";
+        map.set(key, (map.get(key) ?? 0) + extractorRevenue(row));
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8);
+  }, [items, transactions]);
+
+  const platformData = useMemo(() => {
+    const map = new Map<string, number>();
+    if (transactions.length > 0) {
+      for (const tx of transactions) {
+        const key = tx.platform ?? "Unknown";
+        map.set(key, (map.get(key) ?? 0) + (tx.net_revenue ?? 0));
+      }
+    } else {
+      for (const row of items) {
+        const key = row.channel ?? "Unknown";
+        map.set(key, (map.get(key) ?? 0) + extractorRevenue(row));
+      }
+    }
+    return Array.from(map.entries())
+      .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [items, transactions]);
+
+  const cmoScorecard = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        cmo: string;
+        docs: number;
+        lines: number;
+        gross: number;
+        net: number;
+        failed: number;
+        processing: number;
+        accuracySum: number;
+        accuracyCount: number;
+        lastUpload: string | null;
+        territoryTotals: Map<string, number>;
+        platformTotals: Map<string, number>;
+      }
+    >();
+
+    for (const report of reports) {
+      if (!map.has(report.cmo_name)) {
+        map.set(report.cmo_name, {
+          cmo: report.cmo_name,
+          docs: 0,
+          lines: 0,
+          gross: 0,
+          net: 0,
+          failed: 0,
+          processing: 0,
+          accuracySum: 0,
+          accuracyCount: 0,
+          lastUpload: null,
+          territoryTotals: new Map<string, number>(),
+          platformTotals: new Map<string, number>(),
+        });
+      }
+
+      const row = map.get(report.cmo_name)!;
+      row.docs += 1;
+      row.lines += report.transaction_count ?? 0;
+      if (report.status === "failed") row.failed += 1;
+      if (report.status === "processing" || report.status === "pending") row.processing += 1;
+      if (report.accuracy_score != null) {
+        row.accuracySum += report.accuracy_score;
+        row.accuracyCount += 1;
+      }
+
+      if (!row.lastUpload || new Date(report.created_at) > new Date(row.lastUpload)) {
+        row.lastUpload = report.created_at;
+      }
+    }
+
+    if (transactions.length > 0) {
+      for (const tx of transactions) {
+        const report = reportById.get(tx.report_id);
+        if (!report) continue;
+        const row = map.get(report.cmo_name);
+        if (!row) continue;
+        row.gross += tx.gross_revenue ?? 0;
+        row.net += tx.net_revenue ?? 0;
+        if (tx.territory) {
+          row.territoryTotals.set(
+            tx.territory,
+            (row.territoryTotals.get(tx.territory) ?? 0) + (tx.net_revenue ?? 0)
+          );
+        }
+        if (tx.platform) {
+          row.platformTotals.set(
+            tx.platform,
+            (row.platformTotals.get(tx.platform) ?? 0) + (tx.net_revenue ?? 0)
+          );
+        }
+      }
+    } else {
+      for (const item of items) {
+        const report = reportById.get(item.report_id);
+        if (!report) continue;
+        const row = map.get(report.cmo_name);
+        if (!row) continue;
+        const gross = extractorRevenue(item);
+        row.gross += gross;
+        row.net += Math.max(0, gross - extractorCommission(item));
+        if (item.country) {
+          row.territoryTotals.set(item.country, (row.territoryTotals.get(item.country) ?? 0) + gross);
+        }
+        if (item.channel) {
+          row.platformTotals.set(item.channel, (row.platformTotals.get(item.channel) ?? 0) + gross);
+        }
+      }
+    }
+
+    const toTopKey = (bucket: Map<string, number>): string | null => {
+      let bestKey: string | null = null;
+      let bestValue = -1;
+      for (const [key, value] of bucket.entries()) {
+        if (value > bestValue) {
+          bestValue = value;
+          bestKey = key;
+        }
+      }
+      return bestKey;
+    };
+
+    return Array.from(map.values())
+      .map((row) => ({
+        cmo: row.cmo,
+        docs: row.docs,
+        lines: row.lines,
+        gross: row.gross,
+        net: row.net,
+        failed: row.failed,
+        processing: row.processing,
+        avgAccuracy: row.accuracyCount > 0 ? row.accuracySum / row.accuracyCount : null,
+        lastUpload: row.lastUpload,
+        topTerritory: toTopKey(row.territoryTotals),
+        topPlatform: toTopKey(row.platformTotals),
+      }))
+      .sort((a, b) => b.net - a.net);
+  }, [items, reportById, reports, transactions]);
+
+  const fieldCoverage = useMemo(() => {
+    if (items.length === 0) return [];
+    const fields: Array<{ key: keyof Item; label: string }> = [
+      { key: "isrc", label: "ISRC" },
+      { key: "track_title", label: "Track Title" },
+      { key: "country", label: "Territory" },
+      { key: "channel", label: "Platform" },
+      { key: "report_date", label: "Report Date" },
+      { key: "royalty_revenue", label: "Revenue Value" },
+    ];
+
+    return fields.map((field) => {
+      const populated = items.reduce(
+        (sum, row) => (nonEmptyValue(row[field.key] as string | null | undefined) ? sum + 1 : sum),
+        0
+      );
+      return {
+        label: field.label,
+        populated,
+        coverage: (populated / items.length) * 100,
+      };
+    });
+  }, [items]);
+
+  const alertRows = useMemo(() => {
+    const rows: Array<{ level: "critical" | "warning"; title: string; detail: string }> = [];
+    const failed = reports.filter((r) => r.status === "failed").slice(0, 3);
+    for (const report of failed) {
+      rows.push({
+        level: "critical",
+        title: `Failed: ${report.cmo_name}`,
+        detail: `${report.file_name} | uploaded ${safeDateLabel(report.created_at)}`,
+      });
+    }
+
+    const lowAccuracy = reports
+      .filter((r) => r.accuracy_score != null && r.accuracy_score < 85)
+      .sort((a, b) => (a.accuracy_score ?? 0) - (b.accuracy_score ?? 0))
+      .slice(0, 3);
+    for (const report of lowAccuracy) {
+      rows.push({
+        level: "warning",
+        title: `Low accuracy: ${safePercent(report.accuracy_score)}`,
+        detail: `${report.cmo_name} | ${report.file_name}`,
+      });
+    }
+    return rows.slice(0, 6);
+  }, [reports]);
+
+  const recentReports = reports.slice(0, 8);
+  const topCmo = cmoScorecard[0];
+  const loading = reportsLoading || txLoading || extractorLoading;
+  const criticalError = reportsError || txError || extractorError;
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground text-sm">Forensic royalty overview</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Publisher Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Revenue intelligence, statement health, and CMO performance in one view.
+          </p>
+        </div>
+        {topCmo ? (
+          <Badge variant="outline" className="font-mono text-xs">
+            Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
+          </Badge>
+        ) : null}
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map(({ title, icon: Icon, fmt }) => (
-          <Card key={title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-              <Icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{fmt}</div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {!extractorAvailable ? (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardContent className="pt-4 text-sm">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
+              <p>
+                Extractor table `document_ai_report_items` is not available in this environment yet.
+                The dashboard is running from normalized transactions only.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Revenue by Territory */}
-        <Card>
+      {criticalError ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="pt-4 text-sm">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
+              <p>
+                Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <div className="grid gap-4 xl:grid-cols-5">
+        <Card className="border-primary/25 bg-gradient-to-br from-primary/15 via-primary/5 to-background xl:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Revenue by Territory</CardTitle>
+            <CardTitle className="text-base">Portfolio Snapshot</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Net Revenue</p>
+                <p className="text-2xl font-bold">{toMoney(metrics.net)}</p>
+                <p className="text-xs text-muted-foreground">Gross {toMoney(metrics.gross)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Statements</p>
+                <p className="text-2xl font-bold">{metrics.totalReports.toLocaleString()}</p>
+                <p className="text-xs text-muted-foreground">
+                  {metrics.completedReports} completed | {metrics.processingReports} in-flight
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Commission</p>
+                <p className="text-2xl font-bold">{toMoney(metrics.commission)}</p>
+                <p className="text-xs text-muted-foreground">
+                  Effective rate {safePercent(metrics.commissionRate)}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-md border bg-background/80 p-3">
+                <p className="text-xs text-muted-foreground">Processing Success</p>
+                <p className="mt-1 text-lg font-semibold">{safePercent(metrics.processingRate)}</p>
+                <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
+              </div>
+              <div className="rounded-md border bg-background/80 p-3">
+                <p className="text-xs text-muted-foreground">Avg Extraction Accuracy</p>
+                <p className="mt-1 text-lg font-semibold">{safePercent(metrics.avgAccuracy)}</p>
+                <Progress
+                  value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
+                  className="mt-2 h-2"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Operational Alerts</CardTitle>
           </CardHeader>
           <CardContent>
-            {territoryData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={territoryData}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+            {alertRows.length > 0 ? (
+              <div className="space-y-2">
+                {alertRows.map((alert, index) => (
+                  <div key={`${alert.title}-${index}`} className="rounded-md border p-3">
+                    <div className="flex items-center gap-2">
+                      {alert.level === "critical" ? (
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
+                      ) : (
+                        <ShieldAlert className="h-4 w-4 text-warning" />
+                      )}
+                      <p className="text-sm font-medium">{alert.title}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{alert.detail}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex h-[180px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                No critical alerts. Processing is healthy.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <DollarSign className="h-4 w-4" />
+              Net
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{toMoney(metrics.net)}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Publisher cash view</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Building2 className="h-4 w-4" />
+              Active CMOs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{metrics.activeCmos}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Across all statements</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Layers3 className="h-4 w-4" />
+              Line Items
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{metrics.extractedLines.toLocaleString()}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Transaction-level rows</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <FileText className="h-4 w-4" />
+              Failed Docs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{metrics.failedReports}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Need reprocessing or review</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-5">
+        <Card className="xl:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Revenue Trend (12 Months)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {monthlyTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={monthlyTrend}>
+                  <defs>
+                    <linearGradient id="netFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(250 65% 55%)" stopOpacity={0.32} />
+                      <stop offset="95%" stopColor="hsl(250 65% 55%)" stopOpacity={0.05} />
+                    </linearGradient>
+                    <linearGradient id="grossFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(160 65% 42%)" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="hsl(160 65% 42%)" stopOpacity={0.03} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-25" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(v: number) => `$${v.toLocaleString()}`} />
-                  <Bar dataKey="value" fill="hsl(250, 65%, 55%)" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                  <Tooltip
+                    formatter={(value: number) => toMoney(value)}
+                    labelFormatter={(value) => `Month: ${value}`}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="gross"
+                    stroke="hsl(160 65% 42%)"
+                    fill="url(#grossFill)"
+                    strokeWidth={1.8}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="net"
+                    stroke="hsl(250 65% 55%)"
+                    fill="url(#netFill)"
+                    strokeWidth={2.2}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
-                No transaction data yet
+              <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+                {loading ? "Loading trend..." : "No trend data yet."}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Revenue by Platform */}
-        <Card>
+        <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Revenue by Platform</CardTitle>
+            <CardTitle className="text-base">Platform Revenue Mix</CardTitle>
           </CardHeader>
           <CardContent>
             {platformData.length > 0 ? (
-              <div className="flex items-center gap-6">
-                <ResponsiveContainer width="50%" height={260}>
+              <div className="flex items-center gap-3">
+                <ResponsiveContainer width="55%" height={300}>
                   <PieChart>
-                    <Pie data={platformData} cx="50%" cy="50%" innerRadius={50} outerRadius={90} dataKey="value" paddingAngle={2}>
-                      {platformData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Pie
+                      data={platformData}
+                      dataKey="value"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={56}
+                      outerRadius={98}
+                      paddingAngle={2}
+                    >
+                      {platformData.map((_, idx) => (
+                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => `$${v.toLocaleString()}`} />
+                    <Tooltip formatter={(value: number) => toMoney(value)} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
-                  {platformData.map((d, i) => (
-                    <div key={d.name} className="flex items-center gap-2 text-sm">
-                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
-                      <span className="text-muted-foreground">{d.name}</span>
+                  {platformData.map((row, idx) => (
+                    <div key={row.name} className="flex items-center gap-2 text-xs">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                      />
+                      <span className="max-w-[130px] truncate text-muted-foreground">{row.name}</span>
+                      <span className="font-mono">{toCompactMoney(row.value)}</span>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
-                No transaction data yet
+              <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+                {loading ? "Loading platforms..." : "No platform distribution yet."}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent Reports */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent Reports</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {reports && reports.length > 0 ? (
-            <div className="space-y-3">
-              {reports.slice(0, 5).map((r) => (
-                <div key={r.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-                  <div className="space-y-0.5">
-                    <p className="text-sm font-medium">{r.cmo_name} — {r.file_name}</p>
-                    <p className="text-xs text-muted-foreground">{format(new Date(r.created_at), "MMM d, yyyy HH:mm")}</p>
+      <div className="grid gap-6 xl:grid-cols-5">
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Globe2 className="h-4 w-4" />
+              Top Territories
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {territoryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={territoryData} layout="vertical" margin={{ left: 8 }}>
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis dataKey="name" type="category" width={84} tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(value: number) => toMoney(value)} />
+                  <Bar dataKey="value" fill="hsl(160 65% 42%)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+                {loading ? "Loading territories..." : "No territory data yet."}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="xl:col-span-3">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <RadioTower className="h-4 w-4" />
+              CMO Performance Scorecard
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {cmoScorecard.length > 0 ? (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>CMO</TableHead>
+                      <TableHead className="text-right">Docs</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                      <TableHead className="text-right">Accuracy</TableHead>
+                      <TableHead>Top Territory</TableHead>
+                      <TableHead>Top Platform</TableHead>
+                      <TableHead>Last Upload</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cmoScorecard.slice(0, 10).map((row) => (
+                      <TableRow key={row.cmo}>
+                        <TableCell className="font-medium">{row.cmo}</TableCell>
+                        <TableCell className="text-right font-mono">{row.docs}</TableCell>
+                        <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{toCompactMoney(row.net)}</TableCell>
+                        <TableCell className="text-right font-mono">{safePercent(row.avgAccuracy)}</TableCell>
+                        <TableCell>{row.topTerritory ?? "-"}</TableCell>
+                        <TableCell>{row.topPlatform ?? "-"}</TableCell>
+                        <TableCell>{safeDateLabel(row.lastUpload)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+                No CMO performance data yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-5">
+        <Card className="xl:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Extractor Field Coverage</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {fieldCoverage.length > 0 ? (
+              fieldCoverage.map((row) => (
+                <div key={row.label} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">{row.label}</span>
+                    <span className="font-mono">
+                      {row.populated}/{items.length} ({safePercent(row.coverage)})
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {r.accuracy_score && (
-                      <span className="text-xs font-mono text-muted-foreground">{r.accuracy_score}%</span>
-                    )}
-                    <StatusBadge status={r.status} />
-                  </div>
+                  <Progress value={Math.max(0, Math.min(100, row.coverage))} className="h-2" />
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No reports uploaded yet. Go to Reports to upload your first CMO report.</p>
-          )}
-        </CardContent>
-      </Card>
+              ))
+            ) : (
+              <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                No extractor rows yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="xl:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Recent Statements</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentReports.length > 0 ? (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>CMO</TableHead>
+                      <TableHead>File</TableHead>
+                      <TableHead>Period</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                      <TableHead>Uploaded</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {recentReports.map((report) => (
+                      <TableRow key={report.id}>
+                        <TableCell className="font-medium">{report.cmo_name}</TableCell>
+                        <TableCell className="max-w-[220px] truncate">{report.file_name}</TableCell>
+                        <TableCell>{report.report_period ?? "-"}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={report.status} />
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {(report.transaction_count ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {toMoney(report.total_revenue ?? 0)}
+                        </TableCell>
+                        <TableCell>{safeDateLabel(report.created_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
+                Upload statements to populate this dashboard.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {metrics.failedReports === 0 && metrics.processingReports === 0 && metrics.totalReports > 0 ? (
+        <Card className="border-success/30 bg-success/5">
+          <CardContent className="flex items-center gap-2 pt-4 text-sm">
+            <CheckCircle2 className="h-4 w-4 text-success" />
+            <span>All statements are completed with no current processing backlog.</span>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

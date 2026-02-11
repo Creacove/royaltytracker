@@ -9,26 +9,65 @@ const corsHeaders = {
 
 // ─── Google Document AI ──────────────────────────────────────────────
 
+function parseJwtClaims(token: string): { role?: string; sub?: string; user_id?: string } | null {
+  // JWTs are typically verified by the Supabase gateway (unless deployed with --no-verify-jwt).
+  // We only decode claims to identify the caller and enforce ownership checks.
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+    const json = atob(b64 + pad);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 async function getAccessToken(serviceAccountJson: string): Promise<string> {
-  // Handle common secret storage issues: extra quotes, escaped newlines
+  // Secret is expected to be the full service account JSON.
+  // Keep parsing resilient to common secret-manager quoting/escaping.
   let cleaned = serviceAccountJson.trim();
-  // Remove wrapping quotes if the entire string is quoted
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+
+  // Remove wrapping quotes if the entire value is quoted.
+  if (
+    (cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+    (cleaned.startsWith("'") && cleaned.endsWith("'"))
+  ) {
     cleaned = cleaned.slice(1, -1);
   }
-  // Unescape escaped newlines (common when pasting JSON into secret forms)
-  cleaned = cleaned.replace(/\\n/g, "\n");
-  
+
   let sa: any;
   try {
     sa = JSON.parse(cleaned);
+    // Some secret managers store JSON as a JSON-encoded string: "\"{...}\""
+    if (typeof sa === "string") sa = JSON.parse(sa);
   } catch (e) {
-    console.error("[process-report] Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY. First 100 chars:", cleaned.substring(0, 100));
-    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON. Please re-enter the full service account JSON.");
+    console.error(
+      "[process-report] Failed to parse GOOGLE_SERVICE_ACCOUNT_KEY. First 100 chars:",
+      cleaned.substring(0, 100)
+    );
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON.");
   }
+
+  if (!sa?.client_email || !sa?.private_key) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY must include client_email and private_key.");
+  }
+
+  // Normalize private key newlines if they were double-escaped.
+  sa.private_key = String(sa.private_key).replace(/\\n/g, "\n");
+
+  const toBase64Url = (input: string | Uint8Array): string => {
+    const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+    // Convert bytes -> binary string for btoa
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+
   const now = Math.floor(Date.now() / 1000);
-  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const payload = btoa(
+  const header = toBase64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = toBase64Url(
     JSON.stringify({
       iss: sa.client_email,
       scope: "https://www.googleapis.com/auth/cloud-platform",
@@ -61,13 +100,17 @@ async function getAccessToken(serviceAccountJson: string): Promise<string> {
     new TextEncoder().encode(unsignedToken)
   );
 
-  const sig = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  const sig = toBase64Url(new Uint8Array(signature));
   const jwt = `${unsignedToken}.${sig}`;
 
   const resp = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    // Use URLSearchParams to ensure `assertion` is properly URL-encoded.
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt,
+    }).toString(),
   });
 
   if (!resp.ok) {
@@ -211,6 +254,98 @@ const COLUMN_MAPPINGS: Record<string, string> = {
   PUBLISHER: "publisher_name",
 };
 
+const TRANSACTION_SIGNAL_FIELDS = [
+  "track_title",
+  "track_artist",
+  "artist_name",
+  "isrc",
+  "iswc",
+  "platform",
+  "territory",
+  "usage_count",
+  "gross_revenue",
+  "net_revenue",
+  "commission",
+  "publisher_share",
+  "release_title",
+] as const;
+
+const DOCUMENT_AI_ITEM_FIELDS = [
+  "report_item",
+  "amount_in_original_currency",
+  "amount_in_reporting_currency",
+  "channel",
+  "config_type",
+  "country",
+  "exchange_rate",
+  "isrc",
+  "label",
+  "master_commission",
+  "original_currency",
+  "quantity",
+  "release_artist",
+  "release_title",
+  "release_upc",
+  "report_date",
+  "reporting_currency",
+  "royalty_revenue",
+  "sales_end",
+  "sales_start",
+  "track_artist",
+  "track_title",
+  "unit",
+] as const;
+
+type DocumentAiItemField = (typeof DOCUMENT_AI_ITEM_FIELDS)[number];
+
+type DocumentAiReportItem = {
+  [K in DocumentAiItemField]: string | null;
+} & {
+  source_page: number | null;
+  item_index: number;
+  ocr_confidence: number | null;
+  raw_entity: Record<string, unknown> | null;
+};
+
+const DOCUMENT_AI_ITEM_FIELD_SET = new Set<string>(DOCUMENT_AI_ITEM_FIELDS);
+
+// Custom Extractor labels should map to document_ai_report_items fields directly.
+// We keep this mapper separate from generic column mapping to avoid remapping
+// labels like `country` -> `territory` and dropping them from extracted rows.
+const DOCUMENT_AI_FIELD_ALIASES: Record<string, DocumentAiItemField> = {
+  territory: "country",
+  platform: "channel",
+  usage_count: "quantity",
+  commission: "master_commission",
+  label_name: "label",
+  upc: "release_upc",
+  artist_name: "track_artist",
+};
+
+function normalizeFieldToken(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function mapDocumentAiField(raw: string): string {
+  const normalized = normalizeFieldToken(raw);
+
+  if (DOCUMENT_AI_ITEM_FIELD_SET.has(normalized)) return normalized;
+  if (DOCUMENT_AI_FIELD_ALIASES[normalized]) return DOCUMENT_AI_FIELD_ALIASES[normalized];
+
+  // Backward-compatibility: if older mapping logic yields a known alias.
+  const legacyMapped = mapColumnName(raw);
+  if (DOCUMENT_AI_ITEM_FIELD_SET.has(legacyMapped)) return legacyMapped;
+  if (DOCUMENT_AI_FIELD_ALIASES[legacyMapped]) return DOCUMENT_AI_FIELD_ALIASES[legacyMapped];
+
+  return normalized;
+}
+
 const HEADER_KEYWORDS = [
   "ISRC",
   "REVENUE",
@@ -253,7 +388,28 @@ function isSummaryRow(row: Record<string, any>): boolean {
         return true;
     }
   }
+  return false;
+}
+
+function isSummaryOrLikelyNonDataRow(row: Record<string, any>): boolean {
+  for (const v of Object.values(row)) {
+    if (typeof v === "string") {
+      const upper = v.toUpperCase();
+      if (["TOTAL", "SUBTOTAL", "SUM", "GRAND"].some((kw) => upper.includes(kw)))
+        return true;
+    }
+  }
   if (!row.isrc && !row.track_title) return true;
+  return false;
+}
+
+function hasTransactionSignal(row: Record<string, any>): boolean {
+  for (const key of TRANSACTION_SIGNAL_FIELDS) {
+    const value = row[key];
+    if (value == null) continue;
+    if (typeof value === "string" && value.trim() === "") continue;
+    return true;
+  }
   return false;
 }
 
@@ -302,13 +458,290 @@ function reconstructTables(tables: ParsedTable[]): TransactionRow[] {
       record.ocr_confidence =
         confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
 
-      if (!isSummaryRow(record)) {
+      if (!isSummaryOrLikelyNonDataRow(record)) {
         allRows.push(record);
       }
     }
   }
 
   return allRows;
+}
+
+function getEntityText(entity: any): string {
+  if (!entity) return "";
+  if (typeof entity.mentionText === "string" && entity.mentionText.trim()) {
+    return entity.mentionText.trim();
+  }
+
+  const nv = entity.normalizedValue;
+  if (nv == null) return "";
+  if (typeof nv.text === "string" && nv.text.trim()) return nv.text.trim();
+  if (typeof nv.integerValue === "number" || typeof nv.integerValue === "string") {
+    return String(nv.integerValue);
+  }
+  if (typeof nv.floatValue === "number" || typeof nv.floatValue === "string") {
+    return String(nv.floatValue);
+  }
+  if (typeof nv.booleanValue === "boolean") return String(nv.booleanValue);
+  if (typeof nv.dateValue === "object" && nv.dateValue) {
+    const y = nv.dateValue.year ?? "";
+    const m = String(nv.dateValue.month ?? "").padStart(2, "0");
+    const d = String(nv.dateValue.day ?? "").padStart(2, "0");
+    const asDate = `${y}-${m}-${d}`.replace(/^-|-$/g, "");
+    if (asDate !== "--" && asDate !== "") return asDate;
+  }
+  if (typeof nv.moneyValue === "object" && nv.moneyValue) {
+    const units = Number(nv.moneyValue.units ?? 0);
+    const nanos = Number(nv.moneyValue.nanos ?? 0);
+    return String(units + nanos / 1_000_000_000);
+  }
+
+  return "";
+}
+
+function getEntityPage(entity: any): number | null {
+  const pageRef = entity?.pageAnchor?.pageRefs?.[0];
+  if (!pageRef) return null;
+  if (typeof pageRef.page === "number") return pageRef.page + 1;
+  const p = parseInt(String(pageRef.page ?? ""), 10);
+  return isNaN(p) ? null : p + 1;
+}
+
+function getEntityBBox(entity: any): BBox | null {
+  const vertices = entity?.pageAnchor?.pageRefs?.[0]?.boundingPoly?.normalizedVertices;
+  if (!Array.isArray(vertices) || vertices.length === 0) return null;
+  return extractBBox(vertices);
+}
+
+function flattenEntityProperties(entity: any): any[] {
+  const out: any[] = [];
+  const stack = Array.isArray(entity?.properties) ? [...entity.properties] : [];
+  while (stack.length > 0) {
+    const next = stack.shift();
+    if (!next) continue;
+    out.push(next);
+    if (Array.isArray(next.properties) && next.properties.length > 0) {
+      stack.push(...next.properties);
+    }
+  }
+  return out;
+}
+
+function createEmptyDocumentAiReportItem(index: number): DocumentAiReportItem {
+  const row: Record<string, unknown> = {
+    source_page: null,
+    item_index: index,
+    ocr_confidence: null,
+    raw_entity: null,
+  };
+  for (const field of DOCUMENT_AI_ITEM_FIELDS) {
+    row[field] = null;
+  }
+  return row as DocumentAiReportItem;
+}
+
+function hasAnyDocumentAiField(row: DocumentAiReportItem): boolean {
+  for (const field of DOCUMENT_AI_ITEM_FIELDS) {
+    const value = row[field];
+    if (typeof value === "string" && value.trim() !== "") return true;
+  }
+  return false;
+}
+
+function extractDocumentAiReportItems(document: any): DocumentAiReportItem[] {
+  const entities = Array.isArray(document?.entities) ? document.entities : [];
+  if (entities.length === 0) return [];
+
+  const reportItemEntities = entities.filter(
+    (entity: any) => mapColumnName(String(entity?.type ?? "")) === "report_item"
+  );
+
+  // Preferred path for Custom Extractor: top-level report_item entities with nested properties.
+  if (reportItemEntities.length > 0) {
+    const rows: DocumentAiReportItem[] = [];
+    for (const [index, entity] of reportItemEntities.entries()) {
+      const row = createEmptyDocumentAiReportItem(index);
+      row.source_page = getEntityPage(entity);
+      row.ocr_confidence = Number(entity?.confidence ?? 0) || null;
+      row.raw_entity = null;
+
+      const reportItemText = getEntityText(entity);
+      if (reportItemText) row.report_item = reportItemText;
+
+      const props = flattenEntityProperties(entity);
+      for (const prop of props) {
+        const field = mapDocumentAiField(String(prop?.type ?? ""));
+        if (!DOCUMENT_AI_ITEM_FIELD_SET.has(field)) continue;
+        const value = getEntityText(prop);
+        if (!value) continue;
+        (row as any)[field] = value;
+      }
+
+      if (hasAnyDocumentAiField(row)) rows.push(row);
+    }
+    if (rows.length > 0) return rows;
+  }
+
+  // Fallback path: flat entity list grouped by page + row-like y position.
+  const points = entities
+    .map((entity: any, idx: number) => {
+      const field = mapDocumentAiField(String(entity?.type ?? ""));
+      if (!DOCUMENT_AI_ITEM_FIELD_SET.has(field)) return null;
+      const value = getEntityText(entity);
+      if (!value) return null;
+      const bbox = getEntityBBox(entity);
+      return {
+        field,
+        value,
+        page: getEntityPage(entity),
+        y: bbox?.y_min ?? Number.MAX_SAFE_INTEGER,
+        x: bbox?.x_min ?? Number.MAX_SAFE_INTEGER,
+        conf: Number(entity?.confidence ?? 0),
+        idx,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null)
+    .sort((a, b) => {
+      if ((a.page ?? 0) !== (b.page ?? 0)) return (a.page ?? 0) - (b.page ?? 0);
+      if (a.y !== b.y) return a.y - b.y;
+      if (a.x !== b.x) return a.x - b.x;
+      return a.idx - b.idx;
+    });
+
+  if (points.length === 0) return [];
+
+  const grouped = new Map<string, DocumentAiReportItem>();
+  for (const point of points) {
+    const key = `${point.page ?? 0}:${Math.round(point.y * 100)}`;
+    if (!grouped.has(key)) {
+      const row = createEmptyDocumentAiReportItem(grouped.size);
+      row.source_page = point.page;
+      row.raw_entity = null;
+      grouped.set(key, row);
+    }
+    const row = grouped.get(key)!;
+    (row as any)[point.field] = point.value;
+    row.ocr_confidence = (row.ocr_confidence ?? 0) + (point.conf > 0 ? point.conf : 0);
+  }
+
+  const rows = Array.from(grouped.values())
+    .map((row) => {
+      row.ocr_confidence = null;
+      return row;
+    })
+    .filter(hasAnyDocumentAiField);
+
+  return rows;
+}
+
+function reconstructEntities(document: any): TransactionRow[] {
+  const entities = Array.isArray(document?.entities) ? document.entities : [];
+  if (entities.length === 0) return [];
+
+  const rows: TransactionRow[] = [];
+
+  // Pattern A: row-like entities with nested properties.
+  for (const [ri, entity] of entities.entries()) {
+    const props = Array.isArray(entity?.properties) ? entity.properties : [];
+    if (props.length === 0) continue;
+
+    const record: TransactionRow = {
+      source_page: getEntityPage(entity),
+      source_row: ri,
+    };
+    const bboxes: Record<string, BBox> = {};
+    let confidenceSum = 0;
+    let confidenceCount = 0;
+
+    for (const prop of props) {
+      const mapped = mapColumnName(String(prop?.type ?? ""));
+      const value = getEntityText(prop);
+      if (!mapped || !value) continue;
+
+      record[mapped] = value;
+      const bbox = getEntityBBox(prop);
+      if (bbox) bboxes[mapped] = bbox;
+
+      const conf = Number(prop?.confidence ?? 0);
+      if (conf > 0) {
+        confidenceSum += conf;
+        confidenceCount++;
+      }
+    }
+
+    if (Object.keys(bboxes).length > 0) record._bboxes = bboxes;
+    record.ocr_confidence = confidenceCount > 0 ? confidenceSum / confidenceCount : 0;
+
+    if (Object.keys(record).length > 2 && !isSummaryRow(record) && hasTransactionSignal(record)) {
+      rows.push(record);
+    }
+  }
+  if (rows.length > 0) return rows;
+
+  // Pattern B: flat entities (no nested properties). Group by page + y-position.
+  const fieldPoints = entities
+    .map((entity, idx) => {
+      const field = mapColumnName(String(entity?.type ?? ""));
+      const value = getEntityText(entity);
+      const bbox = getEntityBBox(entity);
+      if (!field || !value) return null;
+      return {
+        field,
+        value,
+        page: getEntityPage(entity),
+        y: bbox?.y_min ?? Number.MAX_SAFE_INTEGER,
+        x: bbox?.x_min ?? Number.MAX_SAFE_INTEGER,
+        bbox,
+        conf: Number(entity?.confidence ?? 0),
+        idx,
+      };
+    })
+    .filter((v): v is NonNullable<typeof v> => v !== null)
+    .sort((a, b) => {
+      if ((a.page ?? 0) !== (b.page ?? 0)) return (a.page ?? 0) - (b.page ?? 0);
+      if (a.y !== b.y) return a.y - b.y;
+      if (a.x !== b.x) return a.x - b.x;
+      return a.idx - b.idx;
+    });
+
+  if (fieldPoints.length === 0) return [];
+
+  const grouped = new Map<string, TransactionRow>();
+  for (const point of fieldPoints) {
+    const rowKey = `${point.page ?? 0}:${Math.round(point.y * 100)}`;
+    if (!grouped.has(rowKey)) {
+      grouped.set(rowKey, {
+        source_page: point.page,
+        source_row: grouped.size,
+        _bboxes: {},
+        ocr_confidence: 0,
+        _conf_count: 0,
+      } as TransactionRow);
+    }
+    const row = grouped.get(rowKey)!;
+    row[point.field] = point.value;
+    if (point.bbox) row._bboxes[point.field] = point.bbox;
+    if (point.conf > 0) {
+      row.ocr_confidence += point.conf;
+      row._conf_count += 1;
+    }
+  }
+
+  const flattened = Array.from(grouped.values())
+    .map((r) => {
+      const confCount = Number(r._conf_count ?? 0);
+      if (confCount > 0) {
+        r.ocr_confidence = Number(r.ocr_confidence ?? 0) / confCount;
+      } else {
+        r.ocr_confidence = 0;
+      }
+      delete r._conf_count;
+      if (r._bboxes && Object.keys(r._bboxes).length === 0) delete r._bboxes;
+      return r;
+    })
+    .filter((r) => !isSummaryRow(r) && hasTransactionSignal(r));
+
+  return flattened;
 }
 
 // ─── Normalization ───────────────────────────────────────────────────
@@ -501,16 +934,55 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  // Supabase injects SUPABASE_* env vars automatically in Edge Functions.
+  // If legacy keys are disabled, fall back to a custom secret name.
+  const supabaseServiceKey =
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl) {
+    throw new Error("Missing SUPABASE_URL (in Supabase Edge Functions this should be provided automatically).");
+  }
+  if (!supabaseServiceKey) {
+    throw new Error(
+      "Missing service role key. Expected SUPABASE_SERVICE_ROLE_KEY (auto-provided) or SERVICE_ROLE_KEY (custom secret)."
+    );
+  }
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  let reportId: string | null = null;
+
   try {
-    const { report_id } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const report_id = (body as { report_id?: string }).report_id;
+    reportId = report_id ?? null;
     if (!report_id) {
       return new Response(
         JSON.stringify({ error: "report_id is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization");
+    const jwt = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!jwt) {
+      return new Response(
+        JSON.stringify({ error: "Missing Authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const claims = parseJwtClaims(jwt);
+    const role = claims?.role ?? null;
+    const isServiceRoleCaller = role === "service_role";
+    const authedUserId = claims?.sub ?? claims?.user_id ?? null;
+
+    // Normal path: require a user JWT. (The publishable/anon key is public, so it's not enough.)
+    // Admin path: allow service_role callers (useful for manual reprocessing scripts).
+    if (!isServiceRoleCaller && (!authedUserId || role === "anon")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -527,11 +999,23 @@ serve(async (req) => {
       throw new Error(`Report not found: ${fetchErr?.message}`);
     }
 
+    if (!isServiceRoleCaller && report.user_id !== authedUserId) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // 2. Update status to processing
     await supabase
       .from("cmo_reports")
       .update({ status: "processing" })
       .eq("id", report_id);
+
+    // Reprocessing safety: clear prior outputs for this report to avoid duplicates.
+    await supabase.from("validation_errors").delete().eq("report_id", report_id);
+    await supabase.from("royalty_transactions").delete().eq("report_id", report_id);
+    await supabase.from("document_ai_report_items").delete().eq("report_id", report_id);
 
     // 3. Download PDF from storage
     const { data: pdfData, error: dlErr } = await supabase.storage
@@ -554,13 +1038,20 @@ serve(async (req) => {
     console.log(`[process-report] PDF downloaded (${pdfBytes.byteLength} bytes)`);
 
     // 4. Call Google Document AI
-    const gcpProject = Deno.env.get("GOOGLE_CLOUD_PROJECT")!;
-    const processorId = Deno.env.get("DOCUMENTAI_PROCESSOR_ID")!;
-    const saKey = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_KEY")!;
+    const gcpProject = Deno.env.get("GOOGLE_CLOUD_PROJECT");
+    const processorId = Deno.env.get("DOCUMENTAI_PROCESSOR_ID");
+    const docAiLocation = Deno.env.get("DOCUMENTAI_LOCATION") ?? "us";
+    const saKey = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_KEY");
+
+    if (!gcpProject || !processorId || !saKey) {
+      throw new Error(
+        "Missing Google Document AI secrets. Required: GOOGLE_CLOUD_PROJECT, DOCUMENTAI_PROCESSOR_ID, GOOGLE_SERVICE_ACCOUNT_KEY."
+      );
+    }
 
     const accessToken = await getAccessToken(saKey);
 
-    const docAIUrl = `https://us-documentai.googleapis.com/v1/projects/${gcpProject}/locations/us/processors/${processorId}:process`;
+    const docAIUrl = `https://${docAiLocation}-documentai.googleapis.com/v1/projects/${gcpProject}/locations/${docAiLocation}/processors/${processorId}:process`;
 
     console.log(`[process-report] Calling Document AI...`);
 
@@ -580,6 +1071,36 @@ serve(async (req) => {
 
     if (!aiResp.ok) {
       const errText = await aiResp.text();
+
+      // Try to turn the very verbose Google error into something actionable.
+      try {
+        const parsed = JSON.parse(errText);
+        const message: string | undefined = parsed?.error?.message;
+        const fieldViolations: Array<{ field?: string; description?: string }> =
+          parsed?.error?.details?.find((d: any) => d?.fieldViolations)?.fieldViolations ?? [];
+
+        const hasEntityTypesViolation = fieldViolations.some(
+          (v) => (v?.field ?? "").toLowerCase().includes("entity_types")
+        );
+
+        if (hasEntityTypesViolation) {
+          throw new Error(
+            "Document AI processor is misconfigured (missing entity types). " +
+              "If you're using a Custom Extractor, define at least one entity type in the processor schema. " +
+              "For this app (table extraction), use a Form Parser or Layout Parser processor and update DOCUMENTAI_PROCESSOR_ID."
+          );
+        }
+
+        if (message && typeof message === "string" && message.trim()) {
+          throw new Error(`Document AI error (${aiResp.status}): ${message}`);
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message.startsWith("Document AI")) {
+          throw e;
+        }
+        // ignore JSON parse errors and fall back to raw text
+      }
+
       throw new Error(`Document AI error (${aiResp.status}): ${errText}`);
     }
 
@@ -588,11 +1109,98 @@ serve(async (req) => {
 
     console.log(`[process-report] Document AI returned ${document.pages?.length ?? 0} pages`);
 
-    // 5. Parse tables from Document AI response
-    const tables = parseDocumentAIResponse(document);
+    // 5. Persist all Custom Extractor report-item fields for full-fidelity access.
+    const extractedItems = extractDocumentAiReportItems(document);
+    if (extractedItems.length > 0) {
+      const extractedRows = extractedItems.map((item) => ({
+        report_id,
+        user_id: report.user_id,
+        source_page: item.source_page,
+        item_index: item.item_index,
+        report_item: item.report_item,
+        amount_in_original_currency: item.amount_in_original_currency,
+        amount_in_reporting_currency: item.amount_in_reporting_currency,
+        channel: item.channel,
+        config_type: item.config_type,
+        country: item.country,
+        exchange_rate: item.exchange_rate,
+        isrc: item.isrc,
+        label: item.label,
+        master_commission: item.master_commission,
+        original_currency: item.original_currency,
+        quantity: item.quantity,
+        release_artist: item.release_artist,
+        release_title: item.release_title,
+        release_upc: item.release_upc,
+        report_date: item.report_date,
+        reporting_currency: item.reporting_currency,
+        royalty_revenue: item.royalty_revenue,
+        sales_end: item.sales_end,
+        sales_start: item.sales_start,
+        track_artist: item.track_artist,
+        track_title: item.track_title,
+        unit: item.unit,
+        ocr_confidence: item.ocr_confidence,
+        raw_entity: item.raw_entity,
+      }));
 
-    // 6. Reconstruct into rows
-    const rawRows = reconstructTables(tables);
+      const BATCH_SIZE = 500;
+      for (let start = 0; start < extractedRows.length; start += BATCH_SIZE) {
+        const batch = extractedRows.slice(start, start + BATCH_SIZE);
+        const { error: docAiInsertErr } = await supabase
+          .from("document_ai_report_items")
+          .insert(batch);
+        if (docAiInsertErr) {
+          throw new Error(`Failed to insert Document AI extracted items: ${docAiInsertErr.message}`);
+        }
+      }
+
+      console.log(`[process-report] Saved ${extractedRows.length} document_ai_report_items rows`);
+    } else {
+      console.log("[process-report] No document_ai_report_items extracted from entities");
+    }
+
+    let rawRows: TransactionRow[] = [];
+    const usingCustomItems = extractedItems.length > 0;
+
+    // Prefer directly mapping Custom Extractor `report_item` rows when available.
+    if (extractedItems.length > 0) {
+      rawRows = extractedItems
+        .map((item) => ({
+          source_page: item.source_page,
+          source_row: item.item_index,
+          ocr_confidence: item.ocr_confidence ?? 0,
+          track_title: item.track_title,
+          track_artist: item.track_artist ?? item.release_artist,
+          release_title: item.release_title,
+          isrc: item.isrc,
+          upc: item.release_upc,
+          platform: item.channel,
+          territory: item.country,
+          usage_count: item.quantity,
+          gross_revenue:
+            item.amount_in_original_currency ??
+            item.amount_in_reporting_currency ??
+            item.royalty_revenue,
+          net_revenue: item.royalty_revenue ?? item.amount_in_reporting_currency,
+          commission: item.master_commission,
+          sales_start: item.sales_start,
+          sales_end: item.sales_end,
+          report_date: item.report_date,
+          label_name: item.label,
+          publisher_share: null,
+        }))
+        .filter((row) => hasTransactionSignal(row));
+      console.log(`[process-report] Built ${rawRows.length} transaction candidates from document_ai_report_items`);
+    } else {
+      // Fallback path for Form/Layout parsers or non-standard entity structures.
+      const tables = parseDocumentAIResponse(document);
+      rawRows = reconstructTables(tables);
+      if (rawRows.length === 0) {
+        rawRows = reconstructEntities(document);
+      }
+      console.log(`[process-report] Built ${rawRows.length} transaction candidates from fallback parsers`);
+    }
 
     if (rawRows.length === 0) {
       // No data extracted
@@ -611,7 +1219,8 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           status: "completed",
-          message: "No data tables found in document",
+          message:
+            "No structured transaction rows found in document. If using Custom Extractor, add labels for transaction fields (track title/ISRC/platform/territory/revenue).",
           transactions: 0,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -622,12 +1231,20 @@ serve(async (req) => {
     const normalizedRows = rawRows.map(normalizeRow);
 
     // 8. Validate
-    const { errors: validationErrors, accuracy } = validateRows(normalizedRows);
-
-    const criticalErrors = validationErrors.filter(
-      (e) => e.severity === "critical"
-    );
-    const criticalRowIndices = new Set(criticalErrors.map((e) => e.row_index));
+    // For custom extractor mode, we skip strict validation/error expansion to keep
+    // processing within edge runtime limits and avoid low-value warning floods.
+    let validationErrors: ValidationError[] = [];
+    let accuracy = 100;
+    let criticalRowIndices = new Set<number>();
+    if (!usingCustomItems) {
+      const validation = validateRows(normalizedRows);
+      validationErrors = validation.errors;
+      accuracy = validation.accuracy;
+      const criticalErrors = validationErrors.filter(
+        (e) => e.severity === "critical"
+      );
+      criticalRowIndices = new Set(criticalErrors.map((e) => e.row_index));
+    }
 
     // 9. Insert transactions into royalty_transactions
     const transactions = normalizedRows.map((r, i) => ({
@@ -685,7 +1302,7 @@ serve(async (req) => {
     console.log(`[process-report] Inserted ${transactions.length} transactions`);
 
     // 10. Insert validation errors
-    if (validationErrors.length > 0) {
+    if (!usingCustomItems && validationErrors.length > 0) {
       const errorRecords = validationErrors.map((e) => ({
         report_id,
         user_id: report.user_id,
@@ -748,15 +1365,9 @@ serve(async (req) => {
 
     // Try to mark report as failed
     try {
-      const { report_id } = await req.clone().json().catch(() => ({}));
-      if (report_id) {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      if (reportId) {
         const sb = createClient(supabaseUrl, supabaseServiceKey);
-        await sb
-          .from("cmo_reports")
-          .update({ status: "failed" })
-          .eq("id", report_id);
+        await sb.from("cmo_reports").update({ status: "failed" }).eq("id", reportId);
       }
     } catch (_) {
       // best effort

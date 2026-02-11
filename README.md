@@ -1,73 +1,59 @@
-# Welcome to your Lovable project
+# OrderSounds
 
-## Project info
+Forensic Royalty Platform for uploading CMO royalty reports, processing them, and exploring normalized royalty data.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Getting Started
 
-## How can I edit this code?
+1. Install dependencies: `npm i`
+2. Start the dev server: `npm run dev`
 
-There are several ways of editing your application.
+## Supabase
 
-**Use Lovable**
+Project ref: `vdzuypxdueelmkrwvyet` (royaltytracker)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+Local CLI setup (each developer machine):
+1. `supabase login`
+2. `supabase link --project-ref vdzuypxdueelmkrwvyet`
 
-Changes made via Lovable will be committed automatically to this repo.
+### Migrations
 
-**Use your preferred IDE**
+Apply schema to the remote database:
+- `supabase db push -p <DB_PASSWORD>`
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+You can find/reset the DB password in the Supabase dashboard under Project Settings -> Database.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Edge Function Secrets
 
-Follow these steps:
+The `process-report` edge function requires Google Document AI secrets.
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+1. Create `supabase/secrets.env` from `supabase/secrets.env.example`
+2. Apply secrets to the project:
+   - `supabase secrets set --env-file supabase/secrets.env --project-ref vdzuypxdueelmkrwvyet`
+3. Deploy the function:
+   - `supabase functions deploy process-report --project-ref vdzuypxdueelmkrwvyet`
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+Google requirements:
+- Billing must be enabled for `GOOGLE_CLOUD_PROJECT`
+- Document AI API must be enabled
+- The service account in `GOOGLE_SERVICE_ACCOUNT_KEY` must have permission to call Document AI
 
-# Step 3: Install the necessary dependencies.
-npm i
+Note: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` are provided automatically inside Supabase Edge Functions.
+The CLI intentionally prevents setting secrets that start with `SUPABASE_` because those names are reserved.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+### Auth (Email Signups)
 
-**Edit a file directly in GitHub**
+If sign-up says "confirmation email sent" but no email arrives:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+1. Supabase Dashboard -> Authentication -> Providers -> Email:
+   - For development, consider disabling email confirmations so you can sign in immediately.
+   - For production, configure a real SMTP provider for reliable delivery.
+2. Supabase Dashboard -> Authentication -> URL Configuration:
+   - Add your dev/prod URLs to the allowed redirect URLs (this app uses `window.location.origin` for `emailRedirectTo`).
+3. Supabase Dashboard -> Authentication -> Users:
+   - Check whether the user exists and is unconfirmed; you can manually confirm for testing.
 
-**Use GitHub Codespaces**
+## Backend
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Primary backend for the web app is the Supabase edge function in `supabase/functions/process-report`.
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+`backend/ordersounds_mvp` is a separate Python pipeline that can run locally; it uses its own `.env` (ignored by git) and `DATABASE_URL`. It is not currently wired to the Supabase migrations used by the web app.
