@@ -2,14 +2,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import Auth from "@/pages/Auth";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
 import Transactions from "@/pages/Transactions";
-import Validation from "@/pages/Validation";
+import DataQualityQueue from "@/pages/DataQualityQueue";
 import Analytics from "@/pages/Analytics";
 import NotFound from "./pages/NotFound";
 
@@ -34,7 +34,9 @@ function AppRoutes() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
-        <Route path="/validation" element={<Validation />} />
+        <Route path="/validation" element={<Navigate to="/transactions?view=issues" replace />} />
+        <Route path="/review-queue" element={<DataQualityQueue />} />
+        <Route path="/quality-queue" element={<Navigate to="/review-queue" replace />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

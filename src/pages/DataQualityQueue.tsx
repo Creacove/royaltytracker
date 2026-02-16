@@ -11,12 +11,125 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ClipboardCheck, AlertTriangle, CircleCheckBig } from "lucide-react";
+import { ClipboardCheck, AlertTriangle, CircleCheckBig, Lock } from "lucide-react";
 import { format, isValid } from "date-fns";
 
 type ReviewTask = Tables<"review_tasks">;
 type SourceRow = Tables<"source_rows">;
 type SourceField = Tables<"source_fields">;
+type TaskPayload = Record<string, any>;
+type QueueIssue = Record<string, any>;
+
+const toTaskPayload = (rawPayload: ReviewTask["payload"]): TaskPayload => {
+  if (typeof rawPayload === "object" && rawPayload !== null && !Array.isArray(rawPayload)) {
+    return rawPayload as TaskPayload;
+  }
+  if (typeof rawPayload === "string") {
+    try {
+      const parsed = JSON.parse(rawPayload);
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as TaskPayload)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+const toReadableField = (field: string | null | undefined): string => {
+  if (!field) return "this field";
+  return field.replace(/_/g, " ");
+};
+
+const toPublisherIssueLabel = (errorType: string | null | undefined): string => {
+  switch (errorType) {
+    case "numeric_outlier":
+      return "Unusual value";
+    case "revenue_math_mismatch":
+      return "Revenue mismatch";
+    case "numeric_parse_guard":
+    case "parse_guard":
+      return "Number needs review";
+    case "missing_required_field":
+      return "Missing required information";
+    case "quantity_missing":
+      return "Missing quantity";
+    case "currency_missing":
+      return "Missing currency";
+    case "mapping_unresolved":
+    case "mapping_unmapped_header":
+      return "Unknown column mapping";
+    case "mapping_low_confidence":
+    case "normalization_uncertainty":
+    case "low_confidence":
+      return "Low confidence match";
+    case "unrecognized_field_value":
+      return "Unrecognized value";
+    case "period_mismatch":
+    case "period_inversion":
+    case "period_year_out_of_range":
+      return "Invalid period";
+    case "provenance_missing":
+    case "provenance_missing_page":
+    case "provenance_missing_evidence":
+      return "Missing source evidence";
+    default:
+      return "Review needed";
+  }
+};
+
+const toPublisherIssueMessage = (issue: QueueIssue | null | undefined): string => {
+  if (!issue) return "Please review this row and confirm the correct value.";
+
+  const type = String(issue.type || issue.error_type || "");
+  const field = toReadableField(issue.field);
+  const actual = issue.actual != null ? String(issue.actual) : null;
+  const expected = issue.expected != null ? String(issue.expected) : null;
+
+  switch (type) {
+    case "numeric_outlier":
+      return `The ${field} value looks unusually high or low. Please confirm the correct amount.`;
+    case "revenue_math_mismatch":
+      return expected && actual
+        ? `Net revenue does not match gross minus commission. Expected ${expected}, got ${actual}.`
+        : "Net revenue does not match gross minus commission. Please confirm the values.";
+    case "numeric_parse_guard":
+    case "parse_guard":
+      return `We could not reliably read ${field} as a number. Please enter the correct value.`;
+    case "missing_required_field":
+      return `Required information is missing for ${field}. Please provide a value.`;
+    case "quantity_missing":
+      return "Quantity is missing. Please provide the usage count.";
+    case "currency_missing":
+      return "Currency is missing. Please select the correct currency code.";
+    case "mapping_unresolved":
+    case "mapping_unmapped_header":
+      return actual
+        ? `The column header "${actual}" is unknown. Please map it to the right field.`
+        : "A column header is unknown. Please map it to the right field.";
+    case "mapping_low_confidence":
+    case "normalization_uncertainty":
+    case "low_confidence":
+      return actual
+        ? `The value "${actual}" may be incorrect for ${field}. Confirm or replace it.`
+        : `The value for ${field} has low confidence. Confirm or replace it.`;
+    case "unrecognized_field_value":
+      return actual
+        ? `The value "${actual}" is not valid for ${field}. Please correct it.`
+        : `The value for ${field} is not valid. Please correct it.`;
+    case "period_mismatch":
+    case "period_inversion":
+    case "period_year_out_of_range":
+      return "The reporting period looks invalid. Please set the correct start and end dates.";
+    case "provenance_missing":
+    case "provenance_missing_page":
+    case "provenance_missing_evidence":
+      return "Source evidence is incomplete. Please confirm or provide the missing source details.";
+    default:
+      return String(issue.message || "Please review this row and confirm the correct value.");
+  }
+};
 
 export default function DataQualityQueue() {
   const { toast } = useToast();
@@ -35,11 +148,7 @@ export default function DataQualityQueue() {
   useEffect(() => {
     if (!selectedTask) return;
 
-    // Defensive payload handling (Supabase Json columns can be tricky)
-    const rawPayload = selectedTask.payload;
-    const payload = (typeof rawPayload === 'object' && rawPayload !== null)
-      ? (rawPayload as any)
-      : {};
+    const payload = toTaskPayload(selectedTask.payload);
 
     const initialValue = (
       selectedTask.task_type === "normalization_uncertainty" ||
@@ -57,7 +166,7 @@ export default function DataQualityQueue() {
       // First get reports
       const { data: reportsData, error: reportsError } = await supabase
         .from("cmo_reports")
-        .select("id, file_name, statement_reference, processed_at, status")
+        .select("id, cmo_name, file_name, statement_reference, processed_at, status")
         .order("processed_at", { ascending: false });
 
       if (reportsError) throw reportsError;
@@ -130,7 +239,16 @@ export default function DataQualityQueue() {
 
   const actionMutation = useMutation({
     mutationFn: async (payload: { taskId: string; action: string; rule?: any; correctedValue?: string; correctedField?: string; applyToReport?: boolean }) => {
+      const { data: authData } = await supabase.auth.getSession();
+      const accessToken = authData.session?.access_token;
+      if (!accessToken) {
+        throw new Error("Session expired. Please sign in again.");
+      }
+
       const { data, error } = await supabase.functions.invoke("submit-review-resolution", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: {
           task_id: payload.taskId,
           action: payload.action,
@@ -141,12 +259,32 @@ export default function DataQualityQueue() {
           rule: payload.rule,
         },
       });
-      if (error) throw error;
+      if (error) {
+        let message = error.message;
+        const context = (error as any)?.context;
+        if (context instanceof Response) {
+          try {
+            const body = await context.clone().json();
+            if (body?.error && typeof body.error === "string") {
+              message = body.error;
+            }
+          } catch {
+            // Ignore JSON parse failures and keep fallback message.
+          }
+        }
+        throw new Error(message);
+      }
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["review-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["reports_with_tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["report-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["analytics-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["source-fields"] });
+      queryClient.invalidateQueries({ queryKey: ["source-row"] });
 
       // Reset local input state
       setResolutionNote("");
@@ -177,9 +315,9 @@ export default function DataQualityQueue() {
   const handleResolve = () => {
     if (!selectedTask) return;
 
-    const payload = selectedTask.payload as any;
+    const payload = toTaskPayload(selectedTask.payload);
     // Sequential Multi-Issue Logic: Always target the FIRST unresolved error
-    const errors = payload?.errors || [];
+    const errors = Array.isArray(payload?.errors) ? payload.errors : [];
     const activeError = errors.length > 0 ? errors[0] : null;
     const activeErrorType = activeError?.type || payload?.error_type || selectedTask.task_type;
     const activeField = activeError?.field || payload?.field;
@@ -223,8 +361,23 @@ export default function DataQualityQueue() {
     ].includes(activeErrorType);
 
     if (isCorrectionType) {
-      if (!resolutionForm.correctedValue && !["provenance_missing", "provenance_missing_page"].includes(activeErrorType)) {
+      const isProvenanceType = ["provenance_missing", "provenance_missing_page"].includes(activeErrorType);
+      const requiresSourcePageValue = isProvenanceType && activeField === "source_page";
+      const hasCorrectedValue = Boolean(resolutionForm.correctedValue);
+
+      if (isProvenanceType && !activeField) {
+        // Non-field provenance acknowledgements should be approvals, not data corrections.
+        actionMutation.mutate({ taskId: selectedTask.id, action: "approve" });
+        return;
+      }
+
+      if (!hasCorrectedValue && !isProvenanceType) {
         toast({ title: `Please provide a value for ${activeField || "field"}`, variant: "destructive" });
+        return;
+      }
+
+      if (requiresSourcePageValue && !hasCorrectedValue) {
+        toast({ title: "Please provide a source page value", variant: "destructive" });
         return;
       }
 
@@ -259,7 +412,9 @@ export default function DataQualityQueue() {
   }, [tasks, reports, selectedReportId]);
 
   const selectedReportName = useMemo(() => {
-    return reports.find(r => r.id === selectedReportId)?.file_name || "Selected Report";
+    const report = reports.find(r => r.id === selectedReportId);
+    if (!report) return "Selected Report";
+    return `${report.cmo_name || "Unknown CMO"} | ${report.file_name}`;
   }, [reports, selectedReportId]);
 
   // SENIOR ENGINEER RELIABILITY: Safe date formatting wrapper
@@ -273,8 +428,7 @@ export default function DataQualityQueue() {
   // Memoize derived task state for stability and performance
   const activeDetail = useMemo(() => {
     if (!selectedTask) return null;
-    const rawPayload = selectedTask.payload;
-    const payload = (typeof rawPayload === 'object' && rawPayload !== null) ? (rawPayload as any) : {};
+    const payload = toTaskPayload(selectedTask.payload);
     const errors = Array.isArray(payload?.errors) ? payload.errors : [];
     const activeError = errors.length > 0
       ? errors[0]
@@ -291,11 +445,15 @@ export default function DataQualityQueue() {
       errors,
       activeError,
       isHeaderMapping: activeError.type === "mapping_unresolved" || activeError.type === "mapping_unmapped_header",
-      isUncertainty: activeError.type === "normalization_uncertainty" || activeError.type === "mapping_low_confidence",
+      isUncertainty:
+        activeError.type === "normalization_uncertainty" ||
+        activeError.type === "mapping_low_confidence" ||
+        activeError.type === "low_confidence" ||
+        selectedTask.task_type === "low_confidence",
       isCorrection: ["numeric_parse_guard", "revenue_math_mismatch", "numeric_outlier", "quantity_missing", "missing_required_field", "unrecognized_field_value", "parse_guard", "negative_value"].includes(activeError.type),
       isCurrency: activeError.type === "currency_missing",
       isPeriod: activeError.type === "period_mismatch" || activeError.type === "period_inversion" || activeError.type === "period_year_out_of_range",
-      isProvenance: activeError.type === "provenance_missing" || activeError.type === "provenance_missing_page" || activeError.type === "provenance_missing_evidence"
+      isProvenance: activeError.type === "provenance_missing" || activeError.type === "provenance_missing_page" || activeError.type === "provenance_missing_evidence",
     };
   }, [selectedTask]);
 
@@ -311,11 +469,11 @@ export default function DataQualityQueue() {
                 className="-ml-2 h-8 text-muted-foreground hover:text-foreground"
                 onClick={() => setSelectedReportId(null)}
               >
-                ← Reports
+                {"<"} Reports
               </Button>
             )}
             <h1 className="text-2xl font-bold tracking-tight">
-              {selectedReportId ? "Reviewing Report" : "Data Quality Queue"}
+              {selectedReportId ? "Reviewing Report" : "Review Queue"}
             </h1>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -366,7 +524,7 @@ export default function DataQualityQueue() {
       {!selectedReportId ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Reports with Tasks</CardTitle>
+            <CardTitle className="text-base">Reports Requiring Review</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoadingReports ? (
@@ -375,6 +533,7 @@ export default function DataQualityQueue() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>CMO</TableHead>
                     <TableHead>File Name</TableHead>
                     <TableHead>Processed</TableHead>
                     <TableHead>Open Issues</TableHead>
@@ -385,6 +544,9 @@ export default function DataQualityQueue() {
                 <TableBody>
                   {reports.map((report) => (
                     <TableRow key={report.id}>
+                      <TableCell className="font-medium">
+                        {report.cmo_name ?? "-"}
+                      </TableCell>
                       <TableCell className="font-medium">
                         {report.file_name}
                       </TableCell>
@@ -403,7 +565,7 @@ export default function DataQualityQueue() {
                       </TableCell>
                       <TableCell>
                         <Button size="sm" onClick={() => setSelectedReportId(report.id)}>
-                          Review Tasks
+                          Open Queue
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -429,26 +591,42 @@ export default function DataQualityQueue() {
                   <TableRow>
                     <TableHead>Status</TableHead>
                     <TableHead>Severity</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead>Issue</TableHead>
+                    <TableHead>What Needs Review</TableHead>
                     <TableHead>Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tasks.map((task) => (
-                    <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTask(task)}>
-                      <TableCell>
-                        <StatusBadge status={task.status} />
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={task.severity} />
-                      </TableCell>
-                      <TableCell className="font-mono text-[10px]">{task.task_type}</TableCell>
-                      <TableCell className="max-w-[400px] truncate text-sm">{task.reason}</TableCell>
-                      <TableCell className="text-muted-foreground text-[10px]">
-                        {safeFormat(task.created_at, "HH:mm")}
-                      </TableCell>
-                    </TableRow>
+                    (() => {
+                      const taskPayload = toTaskPayload(task.payload);
+                      const issueList = Array.isArray(taskPayload?.errors) ? taskPayload.errors : [];
+                      const issuePreview = issueList.length > 0
+                        ? issueList[0]
+                        : {
+                          type: taskPayload?.error_type || task.task_type,
+                          field: taskPayload?.field,
+                          actual: taskPayload?.actual,
+                          expected: taskPayload?.expected,
+                          message: task.reason,
+                        };
+
+                      return (
+                        <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTask(task)}>
+                          <TableCell>
+                            <StatusBadge status={task.status} />
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge status={task.severity} />
+                          </TableCell>
+                          <TableCell className="text-xs">{toPublisherIssueLabel(String(issuePreview.type || ""))}</TableCell>
+                          <TableCell className="max-w-[400px] truncate text-sm">{toPublisherIssueMessage(issuePreview)}</TableCell>
+                          <TableCell className="text-muted-foreground text-[10px]">
+                            {safeFormat(task.created_at, "HH:mm")}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })()
                   ))}
                 </TableBody>
               </Table>
@@ -523,7 +701,7 @@ export default function DataQualityQueue() {
 
                           <div className="flex justify-between items-start text-sm">
                             <span className="text-muted-foreground">Resolved By:</span>
-                            <span className="font-medium">Sovereign Engineer</span>
+                            <span className="font-medium font-mono text-xs">{selectedTask.resolved_by || "System/User"}</span>
                           </div>
 
                           <div className="flex justify-between items-start text-sm">
@@ -535,14 +713,14 @@ export default function DataQualityQueue() {
                             <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Impact Analysis</p>
                             <div className="space-y-2">
                               <p className="text-sm">
-                                Action <span className="font-mono text-xs bg-muted px-1 rounded">{(selectedTask.payload as any)?.resolution_action || "approval"}</span>
-                                {(selectedTask.payload as any)?.corrected_value && (
-                                  <> applied to <span className="font-bold">{(selectedTask.payload as any)?.field}</span></>
+                                Action <span className="font-mono text-xs bg-muted px-1 rounded">{activeDetail.payload?.resolution_action || "approval"}</span>
+                                {activeDetail.payload?.corrected_value && (
+                                  <> applied to <span className="font-bold">{activeDetail.payload?.field}</span></>
                                 )}
                               </p>
-                              {(selectedTask.payload as any)?.corrected_value && (
+                              {activeDetail.payload?.corrected_value && (
                                 <p className="text-sm">
-                                  Value corrected to: <span className="font-mono text-xs bg-yellow-50 text-yellow-800 px-1.5 py-0.5 rounded border border-yellow-100 font-bold">{(selectedTask.payload as any)?.corrected_value}</span>
+                                  Value corrected to: <span className="font-mono text-xs bg-yellow-50 text-yellow-800 px-1.5 py-0.5 rounded border border-yellow-100 font-bold">{activeDetail.payload?.corrected_value}</span>
                                 </p>
                               )}
                             </div>
@@ -594,7 +772,7 @@ export default function DataQualityQueue() {
                           <div className="p-4 rounded-lg border-2 border-primary/40 bg-background shadow-sm space-y-4">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-black uppercase tracking-widest text-primary/70">
-                                {String(activeDetail.activeError.field || "Critical Check").replace(/_/g, " ")}
+                                {toReadableField(activeDetail.activeError.field || "Review item")}
                               </span>
                               {activeDetail.activeError.severity && <StatusBadge status={activeDetail.activeError.severity} />}
                             </div>
@@ -602,11 +780,7 @@ export default function DataQualityQueue() {
                             {activeDetail.isHeaderMapping && (
                               <div className="space-y-3">
                                 <p className="text-sm text-foreground">
-                                  {activeDetail.activeError.actual ? (
-                                    <>Header <strong>"{activeDetail.activeError.actual}"</strong> not recognized. Map it to teach the system.</>
-                                  ) : (
-                                    <>Column header not recognized. Select target field.</>
-                                  )}
+                                  {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
                                 <select
                                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm"
@@ -630,8 +804,7 @@ export default function DataQualityQueue() {
                             {activeDetail.isUncertainty && (
                               <div className="space-y-3">
                                 <p className="text-sm text-foreground">
-                                  Uncertainty for <strong>{activeDetail.activeError.field || "this field"}</strong>.
-                                  Guess: <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-mono text-xs">{activeDetail.activeError.actual || "N/A"}</span>
+                                  {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
                                 <input
                                   type="text"
@@ -646,19 +819,12 @@ export default function DataQualityQueue() {
                             {activeDetail.isCorrection && (
                               <div className="space-y-3">
                                 <p className="text-sm text-foreground">
-                                  {activeDetail.activeError.type === "revenue_math_mismatch"
-                                    ? <div className="p-2 rounded bg-red-50 text-red-800 text-xs text-center border border-red-100">
-                                      <strong>Math Error:</strong> Found <span className="font-mono">{activeDetail.activeError.actual}</span>, expected <span className="font-mono">{(activeDetail.activeError as any).expected}</span>
-                                    </div>
-                                    : activeDetail.activeError.type === "unrecognized_field_value"
-                                      ? `Value "${activeDetail.activeError.actual}" is not a valid code.`
-                                      : activeDetail.activeError.message || `Problem with ${activeDetail.activeError.field}.`
-                                  }
+                                  {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
                                 <input
                                   type="text"
                                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm font-mono"
-                                  placeholder={`Enter corrected ${activeDetail.activeError.field || "value"}`}
+                                  placeholder={`Enter corrected ${toReadableField(activeDetail.activeError.field || "value")}`}
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
                                 />
@@ -684,7 +850,7 @@ export default function DataQualityQueue() {
 
                             {activeDetail.isPeriod && (
                               <div className="space-y-2">
-                                <p className="text-xs text-muted-foreground">{activeDetail.activeError.message}</p>
+                                <p className="text-xs text-muted-foreground">{toPublisherIssueMessage(activeDetail.activeError)}</p>
                                 <div className="grid grid-cols-2 gap-2">
                                   <input type="date" className="h-9 rounded border text-xs px-2" onChange={(e) => {
                                     try {
@@ -714,7 +880,7 @@ export default function DataQualityQueue() {
 
                             {activeDetail.isProvenance && (
                               <div className="space-y-2">
-                                <p className="text-sm">{activeDetail.activeError.message}</p>
+                                <p className="text-sm">{toPublisherIssueMessage(activeDetail.activeError)}</p>
                                 {activeDetail.activeError.field === "source_page" && (
                                   <input
                                     type="number"
@@ -735,7 +901,7 @@ export default function DataQualityQueue() {
                               {activeDetail.errors.slice(1).map((err: any, i: number) => (
                                 <div key={i} className="flex items-center gap-2 p-2 rounded border bg-muted/5 opacity-50 text-[10px]">
                                   <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-                                  <span className="font-bold">{err.field || err.type}</span>: {err.message || "Manual decision required."}
+                                  <span className="font-bold">{toPublisherIssueLabel(err?.type)}</span>: {toPublisherIssueMessage(err)}
                                 </div>
                               ))}
                             </div>
@@ -781,7 +947,7 @@ export default function DataQualityQueue() {
                             disabled={actionMutation.isPending}
                             className="flex-1 shadow-md hover:scale-[1.01] active:scale-100 transition-all font-bold"
                           >
-                            {actionMutation.isPending ? "Applying..." : "Fix Issue"}
+                            {actionMutation.isPending ? "Applying..." : "Apply Decision"}
                           </Button>
                           <Button
                             variant="ghost"

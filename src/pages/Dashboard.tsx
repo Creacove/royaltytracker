@@ -18,12 +18,8 @@ import {
 } from "recharts";
 import {
   AlertTriangle,
-  Building2,
   CheckCircle2,
-  DollarSign,
-  FileText,
   Globe2,
-  Layers3,
   RadioTower,
   ShieldAlert,
 } from "lucide-react";
@@ -33,7 +29,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { StatusBadge } from "@/components/StatusBadge";
 import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
 
 type Report = Pick<
@@ -220,7 +215,9 @@ export default function Dashboard() {
     const commission = hasTxFinance ? commissionFromTx : commissionFromExtractor;
 
     const totalReports = reports.length;
-    const completedReports = reports.filter((r) => r.status === "completed").length;
+    const completedReports = reports.filter((r) =>
+      ["completed", "completed_passed", "completed_with_warnings"].includes(r.status)
+    ).length;
     const failedReports = reports.filter((r) => r.status === "failed").length;
     const processingReports = reports.filter((r) => r.status === "processing" || r.status === "pending").length;
     const processingRate = totalReports > 0 ? (completedReports / totalReports) * 100 : 0;
@@ -460,56 +457,42 @@ export default function Dashboard() {
       .sort((a, b) => b.net - a.net);
   }, [items, reportById, reports, transactions]);
 
-  const fieldCoverage = useMemo(() => {
-    if (items.length === 0) return [];
-    const fields: Array<{ key: keyof Item; label: string }> = [
-      { key: "isrc", label: "ISRC" },
-      { key: "track_title", label: "Track Title" },
-      { key: "country", label: "Territory" },
-      { key: "channel", label: "Platform" },
-      { key: "report_date", label: "Report Date" },
-      { key: "royalty_revenue", label: "Revenue Value" },
-    ];
+  const reportStatusMix = useMemo(() => {
+    const order = ["completed", "completed_passed", "completed_with_warnings", "needs_review", "processing", "pending", "failed"];
+    const labelFor = (status: string) => {
+      switch (status) {
+        case "completed":
+        case "completed_passed":
+          return "Completed";
+        case "completed_with_warnings":
+          return "Completed w/ Warnings";
+        case "needs_review":
+          return "Needs Review";
+        case "processing":
+          return "Processing";
+        case "pending":
+          return "Pending";
+        case "failed":
+          return "Failed";
+        default:
+          return status;
+      }
+    };
 
-    return fields.map((field) => {
-      const populated = items.reduce(
-        (sum, row) => (nonEmptyValue(row[field.key] as string | null | undefined) ? sum + 1 : sum),
-        0
-      );
-      return {
-        label: field.label,
-        populated,
-        coverage: (populated / items.length) * 100,
-      };
-    });
-  }, [items]);
-
-  const alertRows = useMemo(() => {
-    const rows: Array<{ level: "critical" | "warning"; title: string; detail: string }> = [];
-    const failed = reports.filter((r) => r.status === "failed").slice(0, 3);
-    for (const report of failed) {
-      rows.push({
-        level: "critical",
-        title: `Failed: ${report.cmo_name}`,
-        detail: `${report.file_name} | uploaded ${safeDateLabel(report.created_at)}`,
-      });
+    const byStatus = new Map<string, number>();
+    for (const report of reports) {
+      byStatus.set(report.status, (byStatus.get(report.status) ?? 0) + 1);
     }
 
-    const lowAccuracy = reports
-      .filter((r) => r.accuracy_score != null && r.accuracy_score < 85)
-      .sort((a, b) => (a.accuracy_score ?? 0) - (b.accuracy_score ?? 0))
-      .slice(0, 3);
-    for (const report of lowAccuracy) {
-      rows.push({
-        level: "warning",
-        title: `Low accuracy: ${safePercent(report.accuracy_score)}`,
-        detail: `${report.cmo_name} | ${report.file_name}`,
-      });
-    }
-    return rows.slice(0, 6);
+    return order
+      .filter((status) => (byStatus.get(status) ?? 0) > 0)
+      .map((status) => ({
+        status,
+        label: labelFor(status),
+        value: byStatus.get(status) ?? 0,
+      }));
   }, [reports]);
 
-  const recentReports = reports.slice(0, 8);
   const topCmo = cmoScorecard[0];
   const loading = reportsLoading || txLoading || extractorLoading;
   const criticalError = reportsError || txError || extractorError;
@@ -518,9 +501,9 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Publisher Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
           <p className="text-sm text-muted-foreground">
-            Revenue intelligence, statement health, and CMO performance in one view.
+            Revenue pulse, report progress, and CMO performance at a glance.
           </p>
         </div>
         {topCmo ? (
@@ -560,7 +543,7 @@ export default function Dashboard() {
       <div className="grid gap-4 xl:grid-cols-5">
         <Card className="border-primary/25 bg-gradient-to-br from-primary/15 via-primary/5 to-background xl:col-span-3">
           <CardHeader>
-            <CardTitle className="text-base">Portfolio Snapshot</CardTitle>
+            <CardTitle className="text-base">Publisher Snapshot</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-3">
@@ -605,81 +588,29 @@ export default function Dashboard() {
 
         <Card className="xl:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Operational Alerts</CardTitle>
+            <CardTitle className="text-base">Publishing Priorities</CardTitle>
           </CardHeader>
-          <CardContent>
-            {alertRows.length > 0 ? (
-              <div className="space-y-2">
-                {alertRows.map((alert, index) => (
-                  <div key={`${alert.title}-${index}`} className="rounded-md border p-3">
-                    <div className="flex items-center gap-2">
-                      {alert.level === "critical" ? (
-                        <AlertTriangle className="h-4 w-4 text-destructive" />
-                      ) : (
-                        <ShieldAlert className="h-4 w-4 text-warning" />
-                      )}
-                      <p className="text-sm font-medium">{alert.title}</p>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{alert.detail}</p>
-                  </div>
-                ))}
+          <CardContent className="space-y-3">
+            <div className="rounded-md border bg-background p-3">
+              <p className="text-xs text-muted-foreground">Reports In Progress</p>
+              <p className="mt-1 text-xl font-semibold">{metrics.processingReports}</p>
+              <p className="text-xs text-muted-foreground">Currently being processed</p>
+            </div>
+            <div className="rounded-md border bg-background p-3">
+              <p className="text-xs text-muted-foreground">Reports Needing Attention</p>
+              <p className="mt-1 text-xl font-semibold">{metrics.failedReports}</p>
+              <p className="text-xs text-muted-foreground">Require review or reprocessing</p>
+            </div>
+            <div className="rounded-md border bg-background p-3">
+              <p className="text-xs text-muted-foreground">Active CMOs</p>
+              <p className="mt-1 text-xl font-semibold">{metrics.activeCmos}</p>
+              <p className="text-xs text-muted-foreground">Publishing partners this period</p>
+            </div>
+            {metrics.totalReports === 0 ? (
+              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                Upload your first CMO report to start tracking performance.
               </div>
-            ) : (
-              <div className="flex h-[180px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                No critical alerts. Processing is healthy.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <DollarSign className="h-4 w-4" />
-              Net
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{toMoney(metrics.net)}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Publisher cash view</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Building2 className="h-4 w-4" />
-              Active CMOs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{metrics.activeCmos}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Across all statements</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <Layers3 className="h-4 w-4" />
-              Line Items
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{metrics.extractedLines.toLocaleString()}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Transaction-level rows</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-              <FileText className="h-4 w-4" />
-              Failed Docs
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{metrics.failedReports}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Need reprocessing or review</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
@@ -789,18 +720,62 @@ export default function Dashboard() {
               Top Territories
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {territoryData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={territoryData} layout="vertical" margin={{ left: 8 }}>
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" width={84} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value: number) => toMoney(value)} />
-                  <Bar dataKey="value" fill="hsl(160 65% 42%)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="space-y-4">
+                <ResponsiveContainer width="100%" height={190}>
+                  <BarChart data={territoryData} layout="vertical" margin={{ left: 8 }}>
+                    <XAxis type="number" tick={{ fontSize: 11 }} />
+                    <YAxis dataKey="name" type="category" width={84} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(value: number) => toMoney(value)} />
+                    <Bar dataKey="value" fill="hsl(160 65% 42%)" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+
+                <div className="rounded-md border p-3">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Report Status Mix</p>
+                  {reportStatusMix.length > 0 ? (
+                    <div className="flex items-center gap-3">
+                      <ResponsiveContainer width="50%" height={130}>
+                        <PieChart>
+                          <Pie
+                            data={reportStatusMix}
+                            dataKey="value"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={28}
+                            outerRadius={46}
+                            paddingAngle={2}
+                          >
+                            {reportStatusMix.map((_, idx) => (
+                              <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value: number) => `${value.toLocaleString()} report(s)`} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="space-y-1">
+                        {reportStatusMix.map((row, idx) => (
+                          <div key={row.status} className="flex items-center gap-2 text-[11px]">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                            />
+                            <span className="max-w-[120px] truncate text-muted-foreground">{row.label}</span>
+                            <span className="font-mono">{row.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex h-[130px] items-center justify-center text-xs text-muted-foreground">
+                      No report status data yet.
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
-              <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
+              <div className="flex h-[324px] items-center justify-center text-sm text-muted-foreground">
                 {loading ? "Loading territories..." : "No territory data yet."}
               </div>
             )}
@@ -849,81 +824,6 @@ export default function Dashboard() {
             ) : (
               <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                 No CMO performance data yet.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Extractor Field Coverage</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {fieldCoverage.length > 0 ? (
-              fieldCoverage.map((row) => (
-                <div key={row.label} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">{row.label}</span>
-                    <span className="font-mono">
-                      {row.populated}/{items.length} ({safePercent(row.coverage)})
-                    </span>
-                  </div>
-                  <Progress value={Math.max(0, Math.min(100, row.coverage))} className="h-2" />
-                </div>
-              ))
-            ) : (
-              <div className="flex h-[220px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                No extractor rows yet.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="xl:col-span-3">
-          <CardHeader>
-            <CardTitle className="text-base">Recent Statements</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentReports.length > 0 ? (
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>CMO</TableHead>
-                      <TableHead>File</TableHead>
-                      <TableHead>Period</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
-                      <TableHead className="text-right">Revenue</TableHead>
-                      <TableHead>Uploaded</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentReports.map((report) => (
-                      <TableRow key={report.id}>
-                        <TableCell className="font-medium">{report.cmo_name}</TableCell>
-                        <TableCell className="max-w-[220px] truncate">{report.file_name}</TableCell>
-                        <TableCell>{report.report_period ?? "-"}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={report.status} />
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {(report.transaction_count ?? 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {toMoney(report.total_revenue ?? 0)}
-                        </TableCell>
-                        <TableCell>{safeDateLabel(report.created_at)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <div className="flex h-[240px] items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                Upload statements to populate this dashboard.
               </div>
             )}
           </CardContent>

@@ -24,3 +24,24 @@ verify_enabled = true
 
 [functions.process-report]
 verify_jwt = false
+
+[functions.create-ingestion-file]
+verify_jwt = false
+
+[functions.run-extraction]
+verify_jwt = false
+
+[functions.run-normalization]
+verify_jwt = false
+
+[functions.run-validation]
+verify_jwt = false
+
+[functions.reprocess-file]
+verify_jwt = false
+
+[functions.publish-canonical-rows]
+verify_jwt = false
+
+[functions.submit-review-resolution]
+verify_jwt = false

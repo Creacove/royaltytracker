@@ -927,6 +927,19 @@ function validateRows(
   return { errors, accuracy };
 }
 
+function mapValidationErrorToTaskType(errorType: string): string {
+  switch (errorType) {
+    case "missing_required_field":
+      return "missing_required_field";
+    case "revenue_math_mismatch":
+      return "revenue_math_mismatch";
+    case "negative_value":
+      return "numeric_outlier";
+    default:
+      return "other";
+  }
+}
+
 // ─── Main Handler ────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -1007,15 +1020,31 @@ serve(async (req) => {
     }
 
     // 2. Update status to processing
-    await supabase
-      .from("cmo_reports")
-      .update({ status: "processing" })
-      .eq("id", report_id);
+    {
+      const { error: statusErr } = await supabase
+        .from("cmo_reports")
+        .update({ status: "processing" })
+        .eq("id", report_id);
+      if (statusErr) throw new Error(`Failed to set report status to processing: ${statusErr.message}`);
+    }
 
     // Reprocessing safety: clear prior outputs for this report to avoid duplicates.
-    await supabase.from("validation_errors").delete().eq("report_id", report_id);
-    await supabase.from("royalty_transactions").delete().eq("report_id", report_id);
-    await supabase.from("document_ai_report_items").delete().eq("report_id", report_id);
+    {
+      const { error } = await supabase.from("validation_errors").delete().eq("report_id", report_id);
+      if (error) throw new Error(`Failed to clear validation_errors: ${error.message}`);
+    }
+    {
+      const { error } = await supabase.from("review_tasks").delete().eq("report_id", report_id);
+      if (error) throw new Error(`Failed to clear review_tasks: ${error.message}`);
+    }
+    {
+      const { error } = await supabase.from("royalty_transactions").delete().eq("report_id", report_id);
+      if (error) throw new Error(`Failed to clear royalty_transactions: ${error.message}`);
+    }
+    {
+      const { error } = await supabase.from("document_ai_report_items").delete().eq("report_id", report_id);
+      if (error) throw new Error(`Failed to clear document_ai_report_items: ${error.message}`);
+    }
 
     // 3. Download PDF from storage
     const { data: pdfData, error: dlErr } = await supabase.storage
@@ -1161,8 +1190,6 @@ serve(async (req) => {
     }
 
     let rawRows: TransactionRow[] = [];
-    const usingCustomItems = extractedItems.length > 0;
-
     // Prefer directly mapping Custom Extractor `report_item` rows when available.
     if (extractedItems.length > 0) {
       rawRows = extractedItems
@@ -1204,10 +1231,11 @@ serve(async (req) => {
 
     if (rawRows.length === 0) {
       // No data extracted
-      await supabase
+      const { error: emptyUpdateErr } = await supabase
         .from("cmo_reports")
         .update({
-          status: "completed",
+          status: "processing",
+          quality_gate_status: "needs_review",
           processed_at: new Date().toISOString(),
           transaction_count: 0,
           accuracy_score: 0,
@@ -1215,10 +1243,13 @@ serve(async (req) => {
           total_revenue: 0,
         })
         .eq("id", report_id);
+      if (emptyUpdateErr) {
+        throw new Error(`Failed to update empty extraction report state: ${emptyUpdateErr.message}`);
+      }
 
       return new Response(
         JSON.stringify({
-          status: "completed",
+          status: "processing",
           message:
             "No structured transaction rows found in document. If using Custom Extractor, add labels for transaction fields (track title/ISRC/platform/territory/revenue).",
           transactions: 0,
@@ -1231,20 +1262,17 @@ serve(async (req) => {
     const normalizedRows = rawRows.map(normalizeRow);
 
     // 8. Validate
-    // For custom extractor mode, we skip strict validation/error expansion to keep
-    // processing within edge runtime limits and avoid low-value warning floods.
+    // Always validate so review queue behavior is consistent across parser modes.
     let validationErrors: ValidationError[] = [];
     let accuracy = 100;
     let criticalRowIndices = new Set<number>();
-    if (!usingCustomItems) {
-      const validation = validateRows(normalizedRows);
-      validationErrors = validation.errors;
-      accuracy = validation.accuracy;
-      const criticalErrors = validationErrors.filter(
-        (e) => e.severity === "critical"
-      );
-      criticalRowIndices = new Set(criticalErrors.map((e) => e.row_index));
-    }
+    const validation = validateRows(normalizedRows);
+    validationErrors = validation.errors;
+    accuracy = validation.accuracy;
+    const criticalErrors = validationErrors.filter(
+      (e) => e.severity === "critical"
+    );
+    criticalRowIndices = new Set(criticalErrors.map((e) => e.row_index));
 
     // 9. Insert transactions into royalty_transactions
     const transactions = normalizedRows.map((r, i) => ({
@@ -1286,25 +1314,34 @@ serve(async (req) => {
       raw_data: r._bboxes ? { bounding_boxes: r._bboxes } : null,
     }));
 
-    // Insert in batches of 500
+    // Insert in batches of 500 and keep inserted ids for task linkage.
     const BATCH_SIZE = 500;
+    const insertedTransactionIds: Array<string | null> = new Array(transactions.length).fill(null);
     for (let start = 0; start < transactions.length; start += BATCH_SIZE) {
       const batch = transactions.slice(start, start + BATCH_SIZE);
-      const { error: insErr } = await supabase
+      const { data: insertedBatch, error: insErr } = await supabase
         .from("royalty_transactions")
-        .insert(batch);
+        .insert(batch)
+        .select("id");
       if (insErr) {
         console.error(`[process-report] Insert error at batch ${start}:`, insErr.message);
         throw new Error(`Failed to insert transactions: ${insErr.message}`);
+      }
+      if (!insertedBatch || insertedBatch.length !== batch.length) {
+        throw new Error("Failed to confirm inserted transactions for task linkage.");
+      }
+      for (let i = 0; i < insertedBatch.length; i++) {
+        insertedTransactionIds[start + i] = insertedBatch[i].id ?? null;
       }
     }
 
     console.log(`[process-report] Inserted ${transactions.length} transactions`);
 
     // 10. Insert validation errors
-    if (!usingCustomItems && validationErrors.length > 0) {
+    if (validationErrors.length > 0) {
       const errorRecords = validationErrors.map((e) => ({
         report_id,
+        transaction_id: insertedTransactionIds[e.row_index] ?? null,
         user_id: report.user_id,
         error_type: e.error_type,
         severity: e.severity,
@@ -1320,12 +1357,53 @@ serve(async (req) => {
         const { error: errInsErr } = await supabase
           .from("validation_errors")
           .insert(batch);
-        if (errInsErr) {
-          console.error(`[process-report] Validation error insert failed:`, errInsErr.message);
-        }
+        if (errInsErr) throw new Error(`Validation error insert failed: ${errInsErr.message}`);
       }
 
       console.log(`[process-report] Inserted ${errorRecords.length} validation errors`);
+
+      const reviewTasks = validationErrors.map((e) => {
+        const mappedTaskType = mapValidationErrorToTaskType(e.error_type);
+        const payload = {
+          error_type: e.error_type,
+          field: e.field,
+          actual: e.actual,
+          expected: e.expected,
+          row_index: e.row_index,
+          source_page: normalizedRows[e.row_index]?.source_page ?? null,
+          transaction_id: insertedTransactionIds[e.row_index] ?? null,
+          errors: [
+            {
+              type: e.error_type,
+              field: e.field,
+              actual: e.actual,
+              expected: e.expected,
+              severity: e.severity,
+              message: e.message,
+            },
+          ],
+        };
+
+        return {
+          report_id,
+          user_id: report.user_id,
+          source_row_id: null,
+          source_field_id: null,
+          task_type: mappedTaskType,
+          severity: e.severity === "critical" ? "critical" : "warning",
+          status: "open",
+          reason: e.message,
+          payload,
+        };
+      });
+
+      for (let start = 0; start < reviewTasks.length; start += BATCH_SIZE) {
+        const batch = reviewTasks.slice(start, start + BATCH_SIZE);
+        const { error: taskErr } = await supabase.from("review_tasks").insert(batch);
+        if (taskErr) throw new Error(`Review task insert failed: ${taskErr.message}`);
+      }
+
+      console.log(`[process-report] Inserted ${reviewTasks.length} review tasks`);
     }
 
     // 11. Update report with results
@@ -1334,10 +1412,12 @@ serve(async (req) => {
       0
     );
 
-    await supabase
+    {
+      const { error: reportUpdateErr } = await supabase
       .from("cmo_reports")
       .update({
-        status: "completed",
+        status: "processing",
+        quality_gate_status: "needs_review",
         processed_at: new Date().toISOString(),
         transaction_count: transactions.length,
         accuracy_score: Math.round(accuracy * 100) / 100,
@@ -1346,12 +1426,14 @@ serve(async (req) => {
         page_count: document.pages?.length ?? 0,
       })
       .eq("id", report_id);
+      if (reportUpdateErr) throw new Error(`Failed to update report summary: ${reportUpdateErr.message}`);
+    }
 
     console.log(`[process-report] Done. ${transactions.length} transactions, ${accuracy.toFixed(1)}% accuracy`);
 
     return new Response(
       JSON.stringify({
-        status: "completed",
+        status: "processing",
         transactions: transactions.length,
         errors: validationErrors.length,
         accuracy: Math.round(accuracy * 100) / 100,

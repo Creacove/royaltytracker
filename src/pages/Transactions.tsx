@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -14,19 +15,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, ArrowRightLeft } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Search, ArrowRightLeft, AlertTriangle, Info } from "lucide-react";
 import { toMoney } from "@/lib/royalty";
 import { format } from "date-fns";
 
 type Transaction = Tables<"royalty_transactions">;
+type ValidationError = Tables<"validation_errors">;
 type Report = Pick<
   Tables<"cmo_reports">,
   "id" | "cmo_name" | "file_name" | "report_period" | "created_at" | "status"
 >;
 
 type GroupMode = "line" | "report" | "cmo" | "platform" | "territory" | "track";
+type TransactionView = "transactions" | "issues";
 
 export default function Transactions() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [selectedCmo, setSelectedCmo] = useState("all");
@@ -34,6 +39,10 @@ export default function Transactions() {
   const [selectedTerritory, setSelectedTerritory] = useState("all");
   const [selectedPlatform, setSelectedPlatform] = useState("all");
   const [groupMode, setGroupMode] = useState<GroupMode>("line");
+  const initialViewParam = searchParams.get("view");
+  const [activeView, setActiveView] = useState<TransactionView>(
+    initialViewParam === "issues" ? "issues" : "transactions"
+  );
 
   const { data: reports = [] } = useQuery({
     queryKey: ["tx-reports-lookup"],
@@ -60,6 +69,19 @@ export default function Transactions() {
     },
   });
 
+  const { data: validationErrors = [], isLoading: isLoadingValidationErrors } = useQuery({
+    queryKey: ["validation-errors"],
+    queryFn: async (): Promise<ValidationError[]> => {
+      const { data, error } = await supabase
+        .from("validation_errors")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
   const reportById = useMemo(() => {
     const map = new Map<string, Report>();
     for (const report of reports) map.set(report.id, report);
@@ -81,6 +103,12 @@ export default function Transactions() {
     const exists = reportOptions.some((r) => r.id === selectedReportId);
     if (!exists) setSelectedReportId("all");
   }, [reportOptions, selectedReportId]);
+
+  useEffect(() => {
+    const viewParam = searchParams.get("view");
+    const nextView: TransactionView = viewParam === "issues" ? "issues" : "transactions";
+    if (nextView !== activeView) setActiveView(nextView);
+  }, [searchParams, activeView]);
 
   const territoryOptions = useMemo(
     () =>
@@ -188,53 +216,143 @@ export default function Transactions() {
       .slice(0, 200);
   }, [filteredTransactions, groupMode, reportById]);
 
+  const filteredValidationErrors = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return validationErrors.filter((err) => {
+      const report = reportById.get(err.report_id);
+      const byCmo = selectedCmo === "all" || report?.cmo_name === selectedCmo;
+      const byReport = selectedReportId === "all" || err.report_id === selectedReportId;
+      const bySearch =
+        !s ||
+        [
+          err.error_type,
+          err.field_name,
+          err.expected_value,
+          err.actual_value,
+          err.message,
+          report?.cmo_name,
+          report?.file_name,
+        ]
+          .map((v) => (v ?? "").toLowerCase())
+          .some((v) => v.includes(s));
+
+      return byCmo && byReport && bySearch;
+    });
+  }, [reportById, search, selectedCmo, selectedReportId, validationErrors]);
+
+  const validationMetrics = useMemo(() => {
+    const critical = filteredValidationErrors.filter((e) => e.severity === "critical").length;
+    const warning = filteredValidationErrors.filter((e) => e.severity === "warning").length;
+    const info = filteredValidationErrors.filter((e) => e.severity === "info").length;
+    return { critical, warning, info };
+  }, [filteredValidationErrors]);
+
   const selectedReport = selected ? reportById.get(selected.report_id) : null;
+  const handleViewChange = (value: string) => {
+    const nextView: TransactionView = value === "issues" ? "issues" : "transactions";
+    setActiveView(nextView);
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextView === "issues") nextParams.set("view", "issues");
+    else nextParams.delete("view");
+    setSearchParams(nextParams, { replace: true });
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
         <p className="text-muted-foreground text-sm">
-          Analyze normalized line items with CMO/document drilldowns and grouping controls.
+          One workspace for transaction history and validation issues.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Lines (Filtered)</p>
-            <p className="text-2xl font-bold">{filteredTransactions.length.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Gross</p>
-            <p className="text-2xl font-bold">{toMoney(summary.gross)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Net</p>
-            <p className="text-2xl font-bold">{toMoney(summary.net)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-xs text-muted-foreground">Unique Tracks</p>
-            <p className="text-2xl font-bold">{summary.tracks.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <Tabs value={activeView} onValueChange={handleViewChange}>
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="transactions">Transactions</TabsTrigger>
+          <TabsTrigger value="issues">Validation Issues</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {activeView === "transactions" ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Lines (Filtered)</p>
+              <p className="text-2xl font-bold">{filteredTransactions.length.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Gross</p>
+              <p className="text-2xl font-bold">{toMoney(summary.gross)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Net</p>
+              <p className="text-2xl font-bold">{toMoney(summary.net)}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-xs text-muted-foreground">Unique Tracks</p>
+              <p className="text-2xl font-bold">{summary.tracks.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <div className="rounded-lg bg-destructive/10 p-2">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{validationMetrics.critical}</p>
+                <p className="text-xs text-muted-foreground">Critical</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <div className="rounded-lg bg-warning/10 p-2">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{validationMetrics.warning}</p>
+                <p className="text-xs text-muted-foreground">Warnings</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <div className="rounded-lg bg-accent p-2">
+                <Info className="h-5 w-5 text-accent-foreground" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{validationMetrics.info}</p>
+                <p className="text-xs text-muted-foreground">Info</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="space-y-3">
-          <CardTitle className="text-base">Transaction Explorer</CardTitle>
+          <CardTitle className="text-base">
+            {activeView === "transactions" ? "Transaction Explorer" : "Validation Explorer"}
+          </CardTitle>
           <div className="grid gap-3 md:grid-cols-6">
             <div className="relative md:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Search artist, track, ISRC, CMO, file..."
+                placeholder={
+                  activeView === "transactions"
+                    ? "Search artist, track, ISRC, CMO, file..."
+                    : "Search issue type, field, value, message..."
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -265,84 +383,122 @@ export default function Transactions() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
-              <SelectTrigger>
-                <SelectValue placeholder="Territory" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Territories</SelectItem>
-                {territoryOptions.map((territory) => (
-                  <SelectItem key={territory} value={territory}>
-                    {territory}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-              <SelectTrigger>
-                <SelectValue placeholder="Platform" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Platforms</SelectItem>
-                {platformOptions.map((platform) => (
-                  <SelectItem key={platform} value={platform}>
-                    {platform}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={groupMode} onValueChange={(v) => setGroupMode(v as GroupMode)}>
-              <SelectTrigger className="md:col-span-2">
-                <SelectValue placeholder="Group By" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="line">Line Items</SelectItem>
-                <SelectItem value="report">Document</SelectItem>
-                <SelectItem value="cmo">CMO</SelectItem>
-                <SelectItem value="platform">Platform</SelectItem>
-                <SelectItem value="territory">Territory</SelectItem>
-                <SelectItem value="track">Track</SelectItem>
-              </SelectContent>
-            </Select>
+            {activeView === "transactions" ? (
+              <>
+                <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Territory" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Territories</SelectItem>
+                    {territoryOptions.map((territory) => (
+                      <SelectItem key={territory} value={territory}>
+                        {territory}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Platforms</SelectItem>
+                    {platformOptions.map((platform) => (
+                      <SelectItem key={platform} value={platform}>
+                        {platform}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={groupMode} onValueChange={(v) => setGroupMode(v as GroupMode)}>
+                  <SelectTrigger className="md:col-span-2">
+                    <SelectValue placeholder="Group By" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="line">Line Items</SelectItem>
+                    <SelectItem value="report">Document</SelectItem>
+                    <SelectItem value="cmo">CMO</SelectItem>
+                    <SelectItem value="platform">Platform</SelectItem>
+                    <SelectItem value="territory">Territory</SelectItem>
+                    <SelectItem value="track">Track</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            ) : null}
           </div>
         </CardHeader>
 
         <CardContent>
-          {isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading...</p>
-          ) : groupMode === "line" ? (
-            filteredTransactions.length > 0 ? (
+          {activeView === "transactions" ? (
+            isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : groupMode === "line" ? (
+              filteredTransactions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>CMO</TableHead>
+                        <TableHead>Track</TableHead>
+                        <TableHead>Artist</TableHead>
+                        <TableHead>ISRC</TableHead>
+                        <TableHead>Territory</TableHead>
+                        <TableHead>Platform</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Gross</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredTransactions.map((tx) => (
+                        <TableRow key={tx.id} className="cursor-pointer" onClick={() => setSelected(tx)}>
+                          <TableCell>{reportById.get(tx.report_id)?.cmo_name ?? "-"}</TableCell>
+                          <TableCell className="max-w-[180px] truncate">{tx.track_title ?? "-"}</TableCell>
+                          <TableCell>{tx.artist_name ?? "-"}</TableCell>
+                          <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
+                          <TableCell>{tx.territory ?? "-"}</TableCell>
+                          <TableCell>{tx.platform ?? "-"}</TableCell>
+                          <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
+                          <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
+                          <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={tx.validation_status ?? "pending"} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center py-10 text-center">
+                  <ArrowRightLeft className="mb-3 h-10 w-10 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No transactions found for the current filters.</p>
+                </div>
+              )
+            ) : grouped && grouped.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>CMO</TableHead>
-                      <TableHead>Track</TableHead>
-                      <TableHead>Artist</TableHead>
-                      <TableHead>ISRC</TableHead>
-                      <TableHead>Territory</TableHead>
-                      <TableHead>Platform</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead>{groupMode.toUpperCase()}</TableHead>
+                      <TableHead className="text-right">Docs</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
                       <TableHead className="text-right">Net</TableHead>
-                      <TableHead>Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransactions.map((tx) => (
-                      <TableRow key={tx.id} className="cursor-pointer" onClick={() => setSelected(tx)}>
-                        <TableCell>{reportById.get(tx.report_id)?.cmo_name ?? "-"}</TableCell>
-                        <TableCell className="max-w-[180px] truncate">{tx.track_title ?? "-"}</TableCell>
-                        <TableCell>{tx.artist_name ?? "-"}</TableCell>
-                        <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
-                        <TableCell>{tx.territory ?? "-"}</TableCell>
-                        <TableCell>{tx.platform ?? "-"}</TableCell>
-                        <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
-                        <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
-                        <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={tx.validation_status ?? "pending"} />
-                        </TableCell>
+                    {grouped.map((row) => (
+                      <TableRow key={row.key}>
+                        <TableCell className="font-medium">{row.key}</TableCell>
+                        <TableCell className="text-right font-mono">{row.distinctReports}</TableCell>
+                        <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{row.quantity.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{toMoney(row.gross)}</TableCell>
+                        <TableCell className="text-right font-mono">{toMoney(row.net)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -351,31 +507,45 @@ export default function Transactions() {
             ) : (
               <div className="flex flex-col items-center py-10 text-center">
                 <ArrowRightLeft className="mb-3 h-10 w-10 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">No transactions found for the current filters.</p>
+                <p className="text-sm text-muted-foreground">No grouped transaction data available.</p>
               </div>
             )
-          ) : grouped && grouped.length > 0 ? (
+          ) : isLoadingValidationErrors ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : filteredValidationErrors.length > 0 ? (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{groupMode.toUpperCase()}</TableHead>
-                    <TableHead className="text-right">Docs</TableHead>
-                    <TableHead className="text-right">Lines</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Gross</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>CMO</TableHead>
+                    <TableHead>Document</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Field</TableHead>
+                    <TableHead>Expected</TableHead>
+                    <TableHead>Actual</TableHead>
+                    <TableHead>Message</TableHead>
+                    <TableHead>Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {grouped.map((row) => (
-                    <TableRow key={row.key}>
-                      <TableCell className="font-medium">{row.key}</TableCell>
-                      <TableCell className="text-right font-mono">{row.distinctReports}</TableCell>
-                      <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{row.quantity.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{toMoney(row.gross)}</TableCell>
-                      <TableCell className="text-right font-mono">{toMoney(row.net)}</TableCell>
+                  {filteredValidationErrors.map((err) => (
+                    <TableRow key={err.id}>
+                      <TableCell>
+                        <StatusBadge status={err.severity} />
+                      </TableCell>
+                      <TableCell>{reportById.get(err.report_id)?.cmo_name ?? "-"}</TableCell>
+                      <TableCell className="max-w-[240px] truncate">
+                        {reportById.get(err.report_id)?.file_name ?? "-"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">{err.error_type}</TableCell>
+                      <TableCell className="font-mono text-xs">{err.field_name ?? "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">{err.expected_value ?? "-"}</TableCell>
+                      <TableCell className="font-mono text-xs">{err.actual_value ?? "-"}</TableCell>
+                      <TableCell className="max-w-[320px] truncate">{err.message}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {format(new Date(err.created_at), "MMM d, yyyy")}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -383,8 +553,8 @@ export default function Transactions() {
             </div>
           ) : (
             <div className="flex flex-col items-center py-10 text-center">
-              <ArrowRightLeft className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">No grouped transaction data available.</p>
+              <AlertTriangle className="mb-3 h-10 w-10 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">No validation issues found for the current filters.</p>
             </div>
           )}
         </CardContent>

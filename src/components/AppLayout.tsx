@@ -1,16 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Upload, ArrowRightLeft, ShieldCheck, BarChart3, LogOut, Moon, Sun } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LayoutDashboard, Upload, ArrowRightLeft, ShieldAlert, LogOut, Moon, Sun } from "lucide-react";
 import { useState, useEffect } from "react";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/reports", icon: Upload, label: "Reports" },
+  { to: "/", icon: LayoutDashboard, label: "Overview" },
+  { to: "/reports", icon: Upload, label: "CMO Reports" },
+  { to: "/review-queue", icon: ShieldAlert, label: "Review Queue" },
   { to: "/transactions", icon: ArrowRightLeft, label: "Transactions" },
-  { to: "/validation", icon: ShieldCheck, label: "Validation" },
-  { to: "/analytics", icon: BarChart3, label: "Analytics" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

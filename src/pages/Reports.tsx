@@ -67,7 +67,7 @@ export default function Reports() {
   const [search, setSearch] = useState("");
   const [selectedCmo, setSelectedCmo] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
-  const [layout, setLayout] = useState<"grouped" | "flat">("grouped");
+  const [layout, setLayout] = useState<"grouped" | "flat">("flat");
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   const { data: reports = [], isLoading } = useQuery({
@@ -148,7 +148,9 @@ export default function Reports() {
   }, [filteredReports]);
 
   const stats = useMemo(() => {
-    const completed = filteredReports.filter((r) => r.status === "completed").length;
+    const completed = filteredReports.filter((r) =>
+      ["completed", "completed_passed", "completed_with_warnings"].includes(r.status)
+    ).length;
     const processing = filteredReports.filter((r) => r.status === "processing").length;
     const lines = filteredReports.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0);
     const revenue = filteredReports.reduce((sum, r) => sum + (r.total_revenue ?? 0), 0);
@@ -179,12 +181,25 @@ export default function Reports() {
       if (insertError) throw insertError;
 
       const reportId = inserted.id;
-      supabase.functions.invoke("process-report", { body: { report_id: reportId } }).then(async ({ error }) => {
+      const invokeStage = async (fn: string, body: Record<string, unknown> = {}) => {
+        const { data: authData } = await supabase.auth.getSession();
+        const accessToken = authData.session?.access_token;
+        if (!accessToken) {
+          throw new Error("Session expired. Please sign in again.");
+        }
+
+        const { data, error } = await supabase.functions.invoke(fn, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: { report_id: reportId, ...body },
+        });
         if (error) {
-          let message = error.message || "Processing failed.";
+          let message = error.message || `${fn} failed.`;
           let status: number | undefined;
           try {
-            const resp = (error as any)?.context;
+            const errWithContext = error as { context?: unknown };
+            const resp = errWithContext.context as { status?: number; text?: () => Promise<string> } | undefined;
             if (resp && typeof resp.text === "function") {
               status = resp.status;
               const text = await resp.text();
@@ -192,21 +207,19 @@ export default function Reports() {
               message = parsed?.error ?? parsed?.message ?? text ?? message;
             }
           } catch {
-            // ignore and keep fallback message
+            // Keep fallback message if response body parsing fails.
           }
-
-          toast({
-            title: status ? `Processing failed (${status})` : "Processing failed",
-            description: String(message).slice(0, 220),
-            variant: "destructive",
-          });
+          throw new Error(status ? `${fn} failed (${status}): ${message}` : `${fn} failed: ${message}`);
         }
-        queryClient.invalidateQueries({ queryKey: ["reports"] });
-        queryClient.invalidateQueries({ queryKey: ["dashboard-reports"] });
-      });
+        return data;
+      };
+
+      await invokeStage("run-extraction", { force_reprocess: true });
+      await invokeStage("run-normalization");
+      await invokeStage("run-validation");
     },
     onSuccess: () => {
-      toast({ title: "Report uploaded", description: "Document sent for processing." });
+      toast({ title: "Report processed", description: "Pipeline v2 completed with quality gate applied." });
       setFile(null);
       setCmoName("");
       setReportPeriod("");
@@ -373,6 +386,10 @@ export default function Reports() {
             </div>
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            Quarterly workflow supported: upload multiple reports for the same CMO (for example Q1, Q2, Q3, Q4).
+          </p>
+
           <Button onClick={() => uploadMutation.mutate()} disabled={!file || uploadMutation.isPending}>
             {uploadMutation.isPending ? "Uploading..." : "Upload & Process"}
           </Button>
@@ -423,13 +440,13 @@ export default function Reports() {
         <CardContent>
           <Tabs value={layout} onValueChange={(v) => setLayout(v as "grouped" | "flat")} className="space-y-4">
             <TabsList>
-              <TabsTrigger value="grouped">
-                <Building2 className="mr-1.5 h-4 w-4" />
-                Grouped by CMO
-              </TabsTrigger>
               <TabsTrigger value="flat">
                 <Layers3 className="mr-1.5 h-4 w-4" />
                 Flat List
+              </TabsTrigger>
+              <TabsTrigger value="grouped">
+                <Building2 className="mr-1.5 h-4 w-4" />
+                Grouped by CMO
               </TabsTrigger>
             </TabsList>
 
@@ -577,8 +594,8 @@ export default function Reports() {
               <Tabs defaultValue="summary" className="mt-5">
                 <TabsList>
                   <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="transactions">Transactions</TabsTrigger>
-                  <TabsTrigger value="extractor">Extractor Fields</TabsTrigger>
+                  <TabsTrigger value="transactions">Normalized Table</TabsTrigger>
+                  <TabsTrigger value="extractor">Extractor Fields (Raw)</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="summary" className="mt-4 space-y-3">
@@ -609,10 +626,15 @@ export default function Reports() {
                             <TableHead>Track</TableHead>
                             <TableHead>Artist</TableHead>
                             <TableHead>ISRC</TableHead>
+                            <TableHead>ISWC</TableHead>
                             <TableHead>Territory</TableHead>
                             <TableHead>Platform</TableHead>
+                            <TableHead>Usage</TableHead>
+                            <TableHead>Period</TableHead>
+                            <TableHead>Currency</TableHead>
                             <TableHead className="text-right">Qty</TableHead>
                             <TableHead className="text-right">Gross</TableHead>
+                            <TableHead className="text-right">Commission</TableHead>
                             <TableHead className="text-right">Net</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -622,10 +644,17 @@ export default function Reports() {
                               <TableCell>{tx.track_title ?? "-"}</TableCell>
                               <TableCell>{tx.artist_name ?? "-"}</TableCell>
                               <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
+                              <TableCell className="font-mono text-xs">{tx.iswc ?? "-"}</TableCell>
                               <TableCell>{tx.territory ?? "-"}</TableCell>
                               <TableCell>{tx.platform ?? "-"}</TableCell>
+                              <TableCell>{tx.usage_type ?? "-"}</TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {tx.period_start && tx.period_end ? `${tx.period_start} -> ${tx.period_end}` : "-"}
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">{tx.currency ?? "-"}</TableCell>
                               <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
                               <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
+                              <TableCell className="text-right font-mono">{toMoney(tx.commission)}</TableCell>
                               <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
                             </TableRow>
                           ))}
@@ -638,6 +667,9 @@ export default function Reports() {
                 </TabsContent>
 
                 <TabsContent value="extractor" className="mt-4">
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    Raw extraction snapshot from OCR. Review Queue corrections update normalized transactions, not this raw table.
+                  </p>
                   {extractedRows.length > 0 ? (
                     <div className="overflow-x-auto rounded-md border">
                       <Table>
