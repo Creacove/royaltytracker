@@ -249,7 +249,11 @@ export default function Reports() {
     e.preventDefault();
     setDragActive(false);
     const f = e.dataTransfer.files[0];
-    if (f && f.type === "application/pdf") setFile(f);
+    const allowedExtensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png"];
+    // Always check by extension first - MIME type can be unreliable especially for dragged files
+    if (f && allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext))) {
+      setFile(f);
+    }
   }, []);
 
   const renderReportRows = (rows: Report[]) =>
@@ -341,14 +345,14 @@ export default function Reports() {
               </p>
             ) : (
               <>
-                <p className="text-sm font-medium">Drop PDF here or click to browse</p>
-                <p className="mt-1 text-xs text-muted-foreground">CMO royalty statement PDF only</p>
+                <p className="text-sm font-medium">Drop file here or click to browse</p>
+                <p className="mt-1 text-xs text-muted-foreground">Supports PDF, Word, Excel, TXT, and images</p>
               </>
             )}
             <input
               id="pdf-upload"
               type="file"
-              accept=".pdf"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.[0]) setFile(e.target.files[0]);

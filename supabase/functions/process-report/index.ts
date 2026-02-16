@@ -1055,16 +1055,33 @@ serve(async (req) => {
       throw new Error(`Failed to download PDF: ${dlErr?.message}`);
     }
 
-    const pdfBytes = new Uint8Array(await pdfData.arrayBuffer());
+    const fileBytes = new Uint8Array(await pdfData.arrayBuffer());
     // Chunk the conversion to avoid call stack overflow on large files
     let binary = "";
     const CHUNK = 8192;
-    for (let i = 0; i < pdfBytes.length; i += CHUNK) {
-      binary += String.fromCharCode(...pdfBytes.subarray(i, i + CHUNK));
+    for (let i = 0; i < fileBytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...fileBytes.subarray(i, i + CHUNK));
     }
-    const pdfBase64 = btoa(binary);
+    const fileBase64 = btoa(binary);
 
-    console.log(`[process-report] PDF downloaded (${pdfBytes.byteLength} bytes)`);
+    console.log(`[process-report] File downloaded (${fileBytes.byteLength} bytes)`);
+
+    // Detect MIME type from file extension
+    const fileName = report.file_name || "";
+    const ext = fileName.split(".").pop()?.toLowerCase() || "";
+    const mimeTypes: Record<string, string> = {
+      pdf: "application/pdf",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xls: "application/vnd.ms-excel",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      txt: "text/plain",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+    };
+    const mimeType = mimeTypes[ext] || "application/pdf";
+    console.log(`[process-report] Detected MIME type: ${mimeType} (from .${ext})`);
 
     // 4. Call Google Document AI
     const gcpProject = Deno.env.get("GOOGLE_CLOUD_PROJECT");
@@ -1092,8 +1109,8 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         rawDocument: {
-          content: pdfBase64,
-          mimeType: "application/pdf",
+          content: fileBase64,
+          mimeType: mimeType,
         },
       }),
     });
@@ -1274,7 +1291,42 @@ serve(async (req) => {
     );
     criticalRowIndices = new Set(criticalErrors.map((e) => e.row_index));
 
-    // 9. Insert transactions into royalty_transactions
+    // 9. Insert source_rows FIRST (before transactions) to establish provenance links
+    // This enables Audit Reference (Page X, Row Y) and Source Evidence in the review queue UI.
+    const sourceRowsToInsert = rawRows.map((r, i) => ({
+      report_id,
+      user_id: report.user_id,
+      ingestion_file_id: null, // Will be populated if we have ingestion file ID
+      source_page: r.source_page ?? null,
+      source_row_index: r.source_row ?? i,
+      raw_payload: r, // Store the full raw row data for evidence display
+    }));
+
+    const insertedSourceRowIds: Array<string | null> = new Array(sourceRowsToInsert.length).fill(null);
+    
+    // Insert source_rows in batches and capture the IDs
+    const SOURCE_BATCH_SIZE = 500;
+    for (let start = 0; start < sourceRowsToInsert.length; start += SOURCE_BATCH_SIZE) {
+      const batch = sourceRowsToInsert.slice(start, start + SOURCE_BATCH_SIZE);
+      const { data: insertedSourceRows, error: srcErr } = await supabase
+        .from("source_rows")
+        .insert(batch)
+        .select("id");
+      if (srcErr) {
+        console.error(`[process-report] Source rows insert error at batch ${start}:`, srcErr.message);
+        throw new Error(`Failed to insert source rows: ${srcErr.message}`);
+      }
+      if (!insertedSourceRows || insertedSourceRows.length !== batch.length) {
+        throw new Error("Failed to confirm inserted source rows for linkage.");
+      }
+      for (let i = 0; i < insertedSourceRows.length; i++) {
+        insertedSourceRowIds[start + i] = insertedSourceRows[i].id ?? null;
+      }
+    }
+
+    console.log(`[process-report] Inserted ${sourceRowsToInsert.length} source_rows for provenance tracking`);
+
+    // 10. Insert transactions into royalty_transactions (now with source_row_id links)
     const transactions = normalizedRows.map((r, i) => ({
       report_id,
       user_id: report.user_id,
@@ -1291,6 +1343,7 @@ serve(async (req) => {
       currency: "USD",
       source_page: r.source_page ?? null,
       source_row: r.source_row ?? null,
+      source_row_id: insertedSourceRowIds[i] ?? null, // Link to source_row for provenance
       ocr_confidence: r.ocr_confidence ?? null,
       bbox_x: r._bboxes
         ? Object.values(r._bboxes as Record<string, BBox>)[0]?.x_min ?? null
@@ -1362,6 +1415,7 @@ serve(async (req) => {
 
       console.log(`[process-report] Inserted ${errorRecords.length} validation errors`);
 
+      // Link review tasks to source_rows for provenance tracking (Audit Reference & Source Evidence)
       const reviewTasks = validationErrors.map((e) => {
         const mappedTaskType = mapValidationErrorToTaskType(e.error_type);
         const payload = {
@@ -1387,7 +1441,7 @@ serve(async (req) => {
         return {
           report_id,
           user_id: report.user_id,
-          source_row_id: null,
+          source_row_id: insertedSourceRowIds[e.row_index] ?? null, // Link to source_row for provenance
           source_field_id: null,
           task_type: mappedTaskType,
           severity: e.severity === "critical" ? "critical" : "warning",
@@ -1405,6 +1459,7 @@ serve(async (req) => {
 
       console.log(`[process-report] Inserted ${reviewTasks.length} review tasks`);
     }
+
 
     // 11. Update report with results
     const totalRevenue = normalizedRows.reduce(
