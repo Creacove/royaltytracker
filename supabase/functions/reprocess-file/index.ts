@@ -88,7 +88,15 @@ serve(async (req) => {
       return { ok: true as const, status: resp.status, text };
     };
 
-    const extraction = await invokeStage("run-extraction");
+    const ingestion = await invokeStage("create-ingestion-file");
+    if (!ingestion.ok) {
+      return new Response(ingestion.text, {
+        status: ingestion.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const extraction = await invokeStage("process-report");
     if (!extraction.ok) {
       return new Response(extraction.text, {
         status: extraction.status,
@@ -116,6 +124,7 @@ serve(async (req) => {
       JSON.stringify({
         status: "reprocessed",
         report_id: reportId,
+        ingestion: ingestion.text ? JSON.parse(ingestion.text) : null,
         extraction: extraction.text ? JSON.parse(extraction.text) : null,
         normalization: normalization.text ? JSON.parse(normalization.text) : null,
         validation: validation.text ? JSON.parse(validation.text) : null,

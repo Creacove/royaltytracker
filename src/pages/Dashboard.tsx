@@ -4,10 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ResponsiveContainer,
-  AreaChart,
-  Area,
+  ComposedChart,
   BarChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -26,7 +26,6 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
@@ -78,14 +77,47 @@ type ExtractorPayload = {
   available: boolean;
 };
 
-const CHART_COLORS = [
-  "hsl(250 65% 55%)",
-  "hsl(160 65% 42%)",
-  "hsl(30 95% 52%)",
-  "hsl(355 72% 55%)",
-  "hsl(205 76% 48%)",
-  "hsl(338 72% 52%)",
+const CHART_CATEGORY_COLORS = [
+  "hsl(var(--brand-accent))",
+  "hsl(var(--tone-pending))",
+  "hsl(var(--tone-success))",
+  "hsl(var(--tone-info))",
+  "hsl(var(--tone-warning))",
+  "hsl(var(--tone-archived))",
 ];
+const CHART_STATUS_COLORS: Record<string, string> = {
+  completed: "hsl(var(--tone-success))",
+  completed_passed: "hsl(var(--tone-success))",
+  completed_with_warnings: "hsl(var(--tone-warning))",
+  needs_review: "hsl(var(--brand-accent))",
+  processing: "hsl(var(--tone-pending))",
+  pending: "hsl(var(--tone-pending))",
+  failed: "hsl(var(--tone-critical))",
+};
+const CHART_TICK_STYLE = {
+  fontSize: 10,
+  fill: "hsl(0 0% 33%)",
+  fontFamily: '"Courier New", monospace',
+};
+const CHART_AXIS_STYLE = {
+  stroke: "hsl(0 0% 20%)",
+  strokeWidth: 1,
+};
+const CHART_TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "hsl(44 14% 90%)",
+  border: "1px solid hsl(0 0% 9%)",
+  borderRadius: 0,
+  color: "hsl(0 0% 9%)",
+  fontFamily: '"Courier New", monospace',
+  fontSize: "11px",
+};
+const CHART_TOOLTIP_LABEL_STYLE = {
+  color: "hsl(0 0% 9%)",
+  fontFamily: "Antonio, sans-serif",
+  fontSize: "10px",
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+};
 
 function isMissingRelationError(error: unknown, relation: string): boolean {
   const e = error as { code?: string; message?: string; details?: string; hint?: string } | null;
@@ -498,164 +530,167 @@ export default function Dashboard() {
   const criticalError = reportsError || txError || extractorError;
 
   return (
-    <div className="space-y-6">
+    <div className="rhythm-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
+          <h1 className="font-display text-4xl tracking-[0.03em]">Overview</h1>
           <p className="text-sm text-muted-foreground">
             Revenue pulse, report progress, and CMO performance at a glance.
           </p>
         </div>
         {topCmo ? (
-          <Badge variant="outline" className="font-mono text-xs">
+          <p className="font-mono text-xs text-muted-foreground">
             Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
-          </Badge>
+          </p>
         ) : null}
       </div>
 
       {!extractorAvailable ? (
-        <Card className="border-warning/40 bg-warning/5">
-          <CardContent className="pt-4 text-sm">
-            <div className="flex items-start gap-2">
-              <ShieldAlert className="mt-0.5 h-4 w-4 text-warning" />
-              <p>
-                Extractor table `document_ai_report_items` is not available in this environment yet.
-                The dashboard is running from normalized transactions only.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="border-l border-foreground pl-3 text-sm">
+          <div className="flex items-start gap-2">
+            <ShieldAlert className="mt-0.5 h-4 w-4 text-foreground" />
+            <p>
+              Extractor table `document_ai_report_items` is not available in this environment yet.
+              The dashboard is running from normalized transactions only.
+            </p>
+          </div>
+        </div>
       ) : null}
 
       {criticalError ? (
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardContent className="pt-4 text-sm">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" />
-              <p>
-                Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="border-l border-foreground pl-3 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-foreground" />
+            <p>
+              Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}
+            </p>
+          </div>
+        </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-5">
-        <Card className="border-primary/25 bg-gradient-to-br from-primary/15 via-primary/5 to-background xl:col-span-3">
-          <CardHeader>
-            <CardTitle className="text-base">Publisher Snapshot</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Net Revenue</p>
-                <p className="text-2xl font-bold">{toMoney(metrics.net)}</p>
-                <p className="text-xs text-muted-foreground">Gross {toMoney(metrics.gross)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Statements</p>
-                <p className="text-2xl font-bold">{metrics.totalReports.toLocaleString()}</p>
-                <p className="text-xs text-muted-foreground">
-                  {metrics.completedReports} completed | {metrics.processingReports} in-flight
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Commission</p>
-                <p className="text-2xl font-bold">{toMoney(metrics.commission)}</p>
-                <p className="text-xs text-muted-foreground">
-                  Effective rate {safePercent(metrics.commissionRate)}
-                </p>
+      <section className="border-y border-foreground py-6">
+        <div className="grid gap-8 xl:grid-cols-5">
+          <div className="rhythm-section xl:col-span-3">
+            <div>
+              <p className="font-display text-xs text-muted-foreground">Publisher Snapshot</p>
+              <div className="mt-4 grid gap-6 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Net Revenue</p>
+                  <p className="font-display text-3xl">{toMoney(metrics.net)}</p>
+                  <p className="text-xs text-muted-foreground">Gross {toMoney(metrics.gross)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Statements</p>
+                  <p className="font-display text-3xl">{metrics.totalReports.toLocaleString()}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {metrics.completedReports} completed | {metrics.processingReports} in-flight
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Commission</p>
+                  <p className="font-display text-3xl">{toMoney(metrics.commission)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Effective rate {safePercent(metrics.commissionRate)}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border bg-background/80 p-3">
-                <p className="text-xs text-muted-foreground">Processing Success</p>
-                <p className="mt-1 text-lg font-semibold">{safePercent(metrics.processingRate)}</p>
+            <div className="grid gap-6 border-t border-black/20 pt-4 sm:grid-cols-2">
+              <div>
+                <p className="font-display text-xs text-muted-foreground">Processing Success</p>
+                <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
                 <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
               </div>
-              <div className="rounded-md border bg-background/80 p-3">
-                <p className="text-xs text-muted-foreground">Avg Extraction Accuracy</p>
-                <p className="mt-1 text-lg font-semibold">{safePercent(metrics.avgAccuracy)}</p>
+              <div>
+                <p className="font-display text-xs text-muted-foreground">Avg Extraction Accuracy</p>
+                <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
                 <Progress
                   value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
                   className="mt-2 h-2"
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Publishing Priorities</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="rounded-md border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Reports In Progress</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.processingReports}</p>
-              <p className="text-xs text-muted-foreground">Currently being processed</p>
-            </div>
-            <div className="rounded-md border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Reports Needing Attention</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.failedReports}</p>
-              <p className="text-xs text-muted-foreground">Require review or reprocessing</p>
-            </div>
-            <div className="rounded-md border bg-background p-3">
-              <p className="text-xs text-muted-foreground">Active CMOs</p>
-              <p className="mt-1 text-xl font-semibold">{metrics.activeCmos}</p>
-              <p className="text-xs text-muted-foreground">Publishing partners this period</p>
+          <div className="space-y-4 xl:col-span-2 xl:border-l xl:border-black/20 xl:pl-6">
+            <p className="font-display text-xs text-muted-foreground">Publishing Priorities</p>
+            <div className="divide-y divide-black/20 border-t border-black/20">
+              <div className="py-3">
+                <p className="text-xs text-muted-foreground">Reports In Progress</p>
+                <p className="font-display text-2xl">{metrics.processingReports}</p>
+                <p className="text-xs text-muted-foreground">Currently being processed</p>
+              </div>
+              <div className="py-3">
+                <p className="text-xs text-muted-foreground">Reports Needing Attention</p>
+                <p className="font-display text-2xl">{metrics.failedReports}</p>
+                <p className="text-xs text-muted-foreground">Require review or reprocessing</p>
+              </div>
+              <div className="py-3">
+                <p className="text-xs text-muted-foreground">Active CMOs</p>
+                <p className="font-display text-2xl">{metrics.activeCmos}</p>
+                <p className="text-xs text-muted-foreground">Publishing partners this period</p>
+              </div>
             </div>
             {metrics.totalReports === 0 ? (
-              <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Upload your first CMO report to start tracking performance.
-              </div>
+              </p>
             ) : null}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </section>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-3">
-          <CardHeader>
+        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
+          <CardHeader className="px-0 pb-3 pt-4">
             <CardTitle className="text-base">Revenue Trend (12 Months)</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-0">
             {monthlyTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={monthlyTrend}>
-                  <defs>
-                    <linearGradient id="netFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(250 65% 55%)" stopOpacity={0.32} />
-                      <stop offset="95%" stopColor="hsl(250 65% 55%)" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="grossFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(160 65% 42%)" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(160 65% 42%)" stopOpacity={0.03} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-25" />
-                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
+                <ComposedChart data={monthlyTrend}>
+                  <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.16} vertical={false} />
+                  <XAxis dataKey="label" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
+                  <YAxis
+                    yAxisId="revenue"
+                    tick={CHART_TICK_STYLE}
+                    axisLine={CHART_AXIS_STYLE}
+                    tickLine={false}
+                    tickFormatter={(value: number) => toCompactMoney(value)}
+                    width={68}
+                  />
                   <Tooltip
-                    formatter={(value: number) => toMoney(value)}
+                    formatter={(value: number, name: string) => [
+                      toMoney(value),
+                      name === "net" ? "Net Revenue" : "Gross Revenue",
+                    ]}
                     labelFormatter={(value) => `Month: ${value}`}
+                    contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                    labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                    itemStyle={{ color: "hsl(0 0% 9%)" }}
+                    cursor={{ fill: "hsla(0, 0%, 9%, 0.06)" }}
                   />
-                  <Area
-                    type="monotone"
+                  <Bar
+                    yAxisId="revenue"
                     dataKey="gross"
-                    stroke="hsl(160 65% 42%)"
-                    fill="url(#grossFill)"
-                    strokeWidth={1.8}
+                    name="Gross Revenue"
+                    fill="hsl(var(--tone-pending))"
+                    fillOpacity={0.4}
+                    maxBarSize={30}
+                    radius={[2, 2, 0, 0]}
                   />
-                  <Area
+                  <Line
+                    yAxisId="revenue"
                     type="monotone"
                     dataKey="net"
-                    stroke="hsl(250 65% 55%)"
-                    fill="url(#netFill)"
-                    strokeWidth={2.2}
+                    name="Net Revenue"
+                    stroke="hsl(var(--brand-accent))"
+                    strokeWidth={2.4}
+                    dot={{ r: 2.5, strokeWidth: 1, fill: "hsl(var(--brand-accent))", stroke: "hsl(var(--background))" }}
+                    activeDot={{ r: 4 }}
                   />
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
@@ -665,11 +700,11 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2">
-          <CardHeader>
+        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
+          <CardHeader className="px-0 pb-3 pt-4">
             <CardTitle className="text-base">Platform Revenue Mix</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-0">
             {platformData.length > 0 ? (
               <div className="flex items-center gap-3">
                 <ResponsiveContainer width="55%" height={300}>
@@ -684,18 +719,23 @@ export default function Dashboard() {
                       paddingAngle={2}
                     >
                       {platformData.map((_, idx) => (
-                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                        <Cell key={idx} fill={CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => toMoney(value)} />
+                    <Tooltip
+                      formatter={(value: number) => toMoney(value)}
+                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                      itemStyle={{ color: "hsl(0 0% 9%)" }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
                   {platformData.map((row, idx) => (
                     <div key={row.name} className="flex items-center gap-2 text-xs">
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                        className="h-2.5 w-2.5 border border-border"
+                        style={{ backgroundColor: CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length] }}
                       />
                       <span className="max-w-[130px] truncate text-muted-foreground">{row.name}</span>
                       <span className="font-mono">{toCompactMoney(row.value)}</span>
@@ -713,26 +753,45 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
-          <CardHeader>
+        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
+          <CardHeader className="px-0 pb-3 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Globe2 className="h-4 w-4" />
               Top Territories
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-0">
             {territoryData.length > 0 ? (
               <div className="space-y-4">
                 <ResponsiveContainer width="100%" height={190}>
                   <BarChart data={territoryData} layout="vertical" margin={{ left: 8 }}>
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="name" type="category" width={84} tick={{ fontSize: 11 }} />
-                    <Tooltip formatter={(value: number) => toMoney(value)} />
-                    <Bar dataKey="value" fill="hsl(160 65% 42%)" radius={[0, 4, 4, 0]} />
+                    <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                    <XAxis
+                      type="number"
+                      tick={CHART_TICK_STYLE}
+                      axisLine={CHART_AXIS_STYLE}
+                      tickLine={false}
+                      tickFormatter={(value) => toCompactMoney(Number(value))}
+                    />
+                    <YAxis
+                      dataKey="name"
+                      type="category"
+                      width={84}
+                      tick={CHART_TICK_STYLE}
+                      axisLine={CHART_AXIS_STYLE}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => toMoney(value)}
+                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                      itemStyle={{ color: "hsl(0 0% 9%)" }}
+                    />
+                    <Bar dataKey="value" fill="hsl(var(--tone-pending))" radius={[0, 0, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
 
-                <div className="rounded-md border p-3">
+                <div className="border-t border-black/20 pt-3">
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Report Status Mix</p>
                   {reportStatusMix.length > 0 ? (
                     <div className="flex items-center gap-3">
@@ -748,18 +807,29 @@ export default function Dashboard() {
                             paddingAngle={2}
                           >
                             {reportStatusMix.map((_, idx) => (
-                              <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                              <Cell
+                                key={idx}
+                                fill={CHART_STATUS_COLORS[reportStatusMix[idx].status] ?? CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length]}
+                              />
                             ))}
                           </Pie>
-                          <Tooltip formatter={(value: number) => `${value.toLocaleString()} report(s)`} />
+                          <Tooltip
+                            formatter={(value: number) => `${value.toLocaleString()} report(s)`}
+                            contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                            labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                            itemStyle={{ color: "hsl(0 0% 9%)" }}
+                          />
                         </PieChart>
                       </ResponsiveContainer>
                       <div className="space-y-1">
                         {reportStatusMix.map((row, idx) => (
                           <div key={row.status} className="flex items-center gap-2 text-[11px]">
                             <span
-                              className="h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                              className="h-2.5 w-2.5 border border-border"
+                              style={{
+                                backgroundColor:
+                                  CHART_STATUS_COLORS[row.status] ?? CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length],
+                              }}
                             />
                             <span className="max-w-[120px] truncate text-muted-foreground">{row.label}</span>
                             <span className="font-mono">{row.value}</span>
@@ -782,16 +852,16 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-3">
-          <CardHeader>
+        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
+          <CardHeader className="px-0 pb-3 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <RadioTower className="h-4 w-4" />
               CMO Performance Scorecard
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-0">
             {cmoScorecard.length > 0 ? (
-              <div className="overflow-x-auto rounded-md border">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -831,12 +901,12 @@ export default function Dashboard() {
       </div>
 
       {metrics.failedReports === 0 && metrics.processingReports === 0 && metrics.totalReports > 0 ? (
-        <Card className="border-success/30 bg-success/5">
-          <CardContent className="flex items-center gap-2 pt-4 text-sm">
-            <CheckCircle2 className="h-4 w-4 text-success" />
+        <div className="border-t border-black/20 pt-3">
+          <div className="flex items-center gap-2 text-sm">
+            <CheckCircle2 className="h-4 w-4 text-foreground" />
             <span>All statements are completed with no current processing backlog.</span>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : null}
     </div>
   );

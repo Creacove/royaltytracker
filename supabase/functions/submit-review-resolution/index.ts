@@ -187,6 +187,131 @@ function deriveValidationStatus(errors: JsonRecord[]): "failed" | "passed" {
   return hasCritical ? "failed" : "passed";
 }
 
+async function recomputeReportQualityGate(
+  supabase: ReturnType<typeof createClient>,
+  reportId: string
+): Promise<{
+  quality_gate_status: "passed" | "needs_review" | "failed";
+  report_status: "completed_passed" | "completed_with_warnings" | "needs_review";
+  ingestion_status: "validated" | "needs_review";
+  metrics: {
+    transactions: number;
+    failed_transactions: number;
+    open_review_tasks: number;
+    open_critical_review_tasks: number;
+    validation_errors: number;
+  };
+}> {
+  const { data: report, error: reportErr } = await supabase
+    .from("cmo_reports")
+    .select("id, ingestion_file_id")
+    .eq("id", reportId)
+    .single();
+  if (reportErr || !report) {
+    throw new Error(`Failed to load report for gate recompute: ${reportErr?.message ?? "missing"}`);
+  }
+
+  const [txCountRes, failedTxRes, openTasksRes, openCriticalTasksRes, validationErrorsRes] =
+    await Promise.all([
+      supabase
+        .from("royalty_transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("report_id", reportId),
+      supabase
+        .from("royalty_transactions")
+        .select("*", { count: "exact", head: true })
+        .eq("report_id", reportId)
+        .eq("validation_status", "failed"),
+      supabase
+        .from("review_tasks")
+        .select("*", { count: "exact", head: true })
+        .eq("report_id", reportId)
+        .in("status", ["open", "in_progress"]),
+      supabase
+        .from("review_tasks")
+        .select("*", { count: "exact", head: true })
+        .eq("report_id", reportId)
+        .in("status", ["open", "in_progress"])
+        .eq("severity", "critical"),
+      supabase
+        .from("validation_errors")
+        .select("*", { count: "exact", head: true })
+        .eq("report_id", reportId),
+    ]);
+
+  if (txCountRes.error) throw new Error(`Failed to count transactions: ${txCountRes.error.message}`);
+  if (failedTxRes.error) throw new Error(`Failed to count failed transactions: ${failedTxRes.error.message}`);
+  if (openTasksRes.error) throw new Error(`Failed to count open review tasks: ${openTasksRes.error.message}`);
+  if (openCriticalTasksRes.error) {
+    throw new Error(`Failed to count critical review tasks: ${openCriticalTasksRes.error.message}`);
+  }
+  if (validationErrorsRes.error) {
+    throw new Error(`Failed to count validation errors: ${validationErrorsRes.error.message}`);
+  }
+
+  const txCount = txCountRes.count ?? 0;
+  const failedTxCount = failedTxRes.count ?? 0;
+  const openTaskCount = openTasksRes.count ?? 0;
+  const openCriticalTaskCount = openCriticalTasksRes.count ?? 0;
+  const validationErrorCount = validationErrorsRes.count ?? 0;
+
+  let qualityGateStatus: "passed" | "needs_review" | "failed" = "passed";
+  let reportStatus: "completed_passed" | "completed_with_warnings" | "needs_review" = "completed_passed";
+  let ingestionStatus: "validated" | "needs_review" = "validated";
+
+  if (txCount === 0) {
+    qualityGateStatus = "failed";
+    reportStatus = "needs_review";
+    ingestionStatus = "needs_review";
+  } else if (openCriticalTaskCount > 0 || failedTxCount > 0) {
+    qualityGateStatus = "failed";
+    reportStatus = "needs_review";
+    ingestionStatus = "needs_review";
+  } else if (openTaskCount > 0) {
+    qualityGateStatus = "needs_review";
+    reportStatus = "needs_review";
+    ingestionStatus = "needs_review";
+  } else if (validationErrorCount > 0) {
+    qualityGateStatus = "passed";
+    reportStatus = "completed_with_warnings";
+    ingestionStatus = "validated";
+  }
+
+  const { error: reportUpdateErr } = await supabase
+    .from("cmo_reports")
+    .update({
+      status: reportStatus,
+      quality_gate_status: qualityGateStatus,
+    })
+    .eq("id", reportId);
+  if (reportUpdateErr) {
+    throw new Error(`Failed to update report gate state: ${reportUpdateErr.message}`);
+  }
+
+  if (report.ingestion_file_id) {
+    const { error: ingestionUpdateErr } = await supabase
+      .from("ingestion_files")
+      .update({ ingestion_status: ingestionStatus })
+      .eq("id", report.ingestion_file_id);
+    if (ingestionUpdateErr) {
+      throw new Error(`Failed to update ingestion gate state: ${ingestionUpdateErr.message}`);
+    }
+  }
+
+  return {
+    quality_gate_status: qualityGateStatus,
+    report_status: reportStatus,
+    ingestion_status: ingestionStatus,
+    metrics: {
+      transactions: txCount,
+      failed_transactions: failedTxCount,
+      open_review_tasks: openTaskCount,
+      open_critical_review_tasks: openCriticalTaskCount,
+      validation_errors: validationErrorCount,
+    },
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -441,6 +566,7 @@ serve(async (req) => {
         updatedCount += 1;
       }
 
+      const gateState = await recomputeReportQualityGate(supabase, task.report_id);
       return new Response(
         JSON.stringify({
           bulk: true,
@@ -450,6 +576,7 @@ serve(async (req) => {
               : `Applied ${activeField} correction to ${updatedCount} task(s).`,
           tasks_updated: updatedCount,
           tasks_skipped: skippedCount,
+          gate: gateState,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
@@ -596,6 +723,9 @@ serve(async (req) => {
         if (matchedFieldsErr) throw new Error(`Failed to fetch source fields: ${matchedFieldsErr.message}`);
 
         if (matchedFields && matchedFields.length > 0) {
+          const isCustom = canonicalField.startsWith("custom:");
+          const customKey = isCustom ? canonicalField.split(":")[1] : null;
+
           const numericFields = [
             "quantity",
             "gross_revenue",
@@ -607,20 +737,66 @@ serve(async (req) => {
           ];
 
           for (const field of matchedFields) {
-            if (field.normalized_value === null) continue;
-            const updates: JsonRecord = {};
-            updates[canonicalField] = numericFields.includes(canonicalField)
-              ? Number(field.normalized_value)
-              : field.normalized_value;
+            if (isCustom && customKey) {
+              // Primary path: use the atomic RPC
+              const { error: rpcErr } = await supabase.rpc('merge_custom_property', {
+                p_report_id: task.report_id,
+                p_source_row_id: field.source_row_id,
+                p_key: customKey,
+                p_value: field.normalized_value
+              });
 
-            const { error: txUpdateErr } = await supabase
-              .from("royalty_transactions")
-              .update(updates)
-              .eq("report_id", task.report_id)
-              .eq("source_row_id", field.source_row_id);
-            if (txUpdateErr) {
-              throw new Error(`Failed to apply mapping to transaction rows: ${txUpdateErr.message}`);
+              if (rpcErr) {
+                // Fallback: fetch-merge-write (safe, no exotic Supabase tricks)
+                console.warn("[submit-review-resolution] RPC failed, using fetch-merge-write:", rpcErr.message);
+                const { data: existing, error: fetchErr } = await supabase
+                  .from("royalty_transactions")
+                  .select("custom_properties")
+                  .eq("report_id", task.report_id)
+                  .eq("source_row_id", field.source_row_id)
+                  .maybeSingle();
+
+                if (fetchErr) throw new Error(`Failed to fetch transaction for merge: ${fetchErr.message}`);
+
+                const merged = { ...(existing?.custom_properties as Record<string, any> || {}), [customKey]: field.normalized_value };
+                const { error: writeErr } = await supabase
+                  .from("royalty_transactions")
+                  .update({ custom_properties: merged })
+                  .eq("report_id", task.report_id)
+                  .eq("source_row_id", field.source_row_id);
+
+                if (writeErr) throw new Error(`Failed to write merged custom_properties: ${writeErr.message}`);
+              }
+            } else {
+              const updates: JsonRecord = {};
+              updates[canonicalField] = numericFields.includes(canonicalField)
+                ? Number(field.normalized_value)
+                : field.normalized_value;
+
+              const { error: txUpdateErr } = await supabase
+                .from("royalty_transactions")
+                .update(updates)
+                .eq("report_id", task.report_id)
+                .eq("source_row_id", field.source_row_id);
+
+              if (txUpdateErr) {
+                throw new Error(`Failed to apply mapping to transaction rows: ${txUpdateErr.message}`);
+              }
             }
+          }
+
+          // Mark source_fields as mapped
+          const { error: sfUpdateErr } = await supabase
+            .from("source_fields")
+            .update({
+              is_mapped: true,
+              mapping_rule: canonicalField
+            })
+            .eq("report_id", task.report_id)
+            .eq("field_name", rawHeader);
+
+          if (sfUpdateErr) {
+            console.error("[submit-review-resolution] Failed to update source_fields:", sfUpdateErr.message);
           }
         }
       } else {
@@ -690,22 +866,14 @@ serve(async (req) => {
       }
     }
 
-    const { count: openCount } = await supabase
-      .from("review_tasks")
-      .select("*", { count: "exact", head: true })
-      .eq("report_id", task.report_id)
-      .in("status", ["open", "in_progress"]);
-
-    if ((openCount ?? 0) === 0) {
-      await supabase
-        .from("cmo_reports")
-        .update({ status: "completed_passed", quality_gate_status: "passed" })
-        .eq("id", task.report_id)
-        .in("status", ["needs_review", "completed_with_warnings"]);
-    }
+    const gateState = await recomputeReportQualityGate(supabase, task.report_id);
 
     return new Response(
-      JSON.stringify({ task: updatedTask, open_tasks_remaining: openCount ?? 0 }),
+      JSON.stringify({
+        task: updatedTask,
+        open_tasks_remaining: gateState.metrics.open_review_tasks,
+        gate: gateState,
+      }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {

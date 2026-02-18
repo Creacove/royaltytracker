@@ -27,6 +27,33 @@ type Report = Tables<"cmo_reports">;
 type Tx = Tables<"royalty_transactions">;
 type ExtractedRow = Tables<"document_ai_report_items">;
 
+const toCustomColumnLabel = (key: string) =>
+  key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const readCustomProperties = (tx: Tx): Record<string, unknown> => {
+  const value = tx.custom_properties;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+};
+
+const formatCustomValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
 const EXTRACTED_COLUMNS: Array<{ key: keyof ExtractedRow; label: string }> = [
   { key: "report_item", label: "report_item" },
   { key: "amount_in_original_currency", label: "amount_in_original_currency" },
@@ -114,6 +141,18 @@ export default function Reports() {
     },
   });
 
+  const customPropertyColumns = useMemo(() => {
+    const keys = new Set<string>();
+    reportTransactions.forEach((tx) => {
+      const properties = readCustomProperties(tx);
+      Object.keys(properties).forEach((key) => {
+        const clean = key.trim();
+        if (clean) keys.add(clean);
+      });
+    });
+    return Array.from(keys).sort((a, b) => a.localeCompare(b));
+  }, [reportTransactions]);
+
   const cmoOptions = useMemo(
     () => Array.from(new Set(reports.map((r) => r.cmo_name))).sort((a, b) => a.localeCompare(b)),
     [reports]
@@ -182,16 +221,12 @@ export default function Reports() {
 
       const reportId = inserted.id;
       const invokeStage = async (fn: string, body: Record<string, unknown> = {}) => {
-        const { data: authData } = await supabase.auth.getSession();
-        const accessToken = authData.session?.access_token;
-        if (!accessToken) {
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !userData.user) {
           throw new Error("Session expired. Please sign in again.");
         }
 
         const { data, error } = await supabase.functions.invoke(fn, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
           body: { report_id: reportId, ...body },
         });
         if (error) {
@@ -214,7 +249,8 @@ export default function Reports() {
         return data;
       };
 
-      await invokeStage("run-extraction", { force_reprocess: true });
+      await invokeStage("create-ingestion-file", { force_reprocess: true });
+      await invokeStage("process-report", { force_reprocess: true });
       await invokeStage("run-normalization");
       await invokeStage("run-validation");
     },
@@ -249,7 +285,7 @@ export default function Reports() {
     e.preventDefault();
     setDragActive(false);
     const f = e.dataTransfer.files[0];
-    const allowedExtensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png"];
+    const allowedExtensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png", ".csv"];
     // Always check by extension first - MIME type can be unreliable especially for dragged files
     if (f && allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext))) {
       setFile(f);
@@ -283,42 +319,36 @@ export default function Reports() {
     ));
 
   return (
-    <div className="space-y-6">
+    <div className="rhythm-page">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Reports & Statements</h1>
+        <h1 className="font-display text-4xl tracking-[0.03em]">Reports & Statements</h1>
         <p className="text-sm text-muted-foreground">
           Upload CMO statements, monitor processing, and drill into each document's extracted payload.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card>
-          <CardContent className="pt-6">
+      <section className="border-y border-foreground py-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
             <p className="text-xs text-muted-foreground">Visible Reports</p>
-            <p className="text-2xl font-bold">{filteredReports.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
+            <p className="font-display text-3xl">{filteredReports.length}</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground">Completed</p>
-            <p className="text-2xl font-bold">{stats.completed}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
+            <p className="font-display text-3xl">{stats.completed}</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground">Total Line Items</p>
-            <p className="text-2xl font-bold">{stats.lines.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
+            <p className="font-display text-3xl">{stats.lines.toLocaleString()}</p>
+          </div>
+          <div>
             <p className="text-xs text-muted-foreground">Total Revenue</p>
-            <p className="text-2xl font-bold">{toMoney(stats.revenue)}</p>
-          </CardContent>
-        </Card>
-      </div>
+            <p className="font-display text-3xl">{toMoney(stats.revenue)}</p>
+          </div>
+        </div>
+      </section>
 
-      <Card>
+      <Card className="!border-0 border-t border-border bg-transparent">
         <CardHeader>
           <CardTitle className="text-base">Upload New Statement</CardTitle>
         </CardHeader>
@@ -330,9 +360,8 @@ export default function Reports() {
             }}
             onDragLeave={() => setDragActive(false)}
             onDrop={handleDrop}
-            className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
-              dragActive ? "border-primary bg-accent/30" : "border-border hover:border-primary/40"
-            }`}
+            className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${dragActive ? "border-primary bg-accent/30" : "border-border hover:border-primary/40"
+              }`}
             onClick={() => document.getElementById("pdf-upload")?.click()}
           >
             <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
@@ -352,7 +381,7 @@ export default function Reports() {
             <input
               id="pdf-upload"
               type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.csv"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files?.[0]) setFile(e.target.files[0]);
@@ -395,12 +424,12 @@ export default function Reports() {
           </p>
 
           <Button onClick={() => uploadMutation.mutate()} disabled={!file || uploadMutation.isPending}>
-            {uploadMutation.isPending ? "Uploading..." : "Upload & Process"}
+            {uploadMutation.isPending ? "Uploading..." : "Upload Statement"}
           </Button>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="!border-0 border-t border-border bg-transparent">
         <CardHeader className="space-y-3">
           <CardTitle className="text-base">Portfolio Documents</CardTitle>
           <div className="grid gap-3 md:grid-cols-4">
@@ -446,11 +475,11 @@ export default function Reports() {
             <TabsList>
               <TabsTrigger value="flat">
                 <Layers3 className="mr-1.5 h-4 w-4" />
-                Flat List
+                All Statements
               </TabsTrigger>
               <TabsTrigger value="grouped">
                 <Building2 className="mr-1.5 h-4 w-4" />
-                Grouped by CMO
+                By CMO
               </TabsTrigger>
             </TabsList>
 
@@ -459,34 +488,30 @@ export default function Reports() {
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : groupedReports.length > 0 ? (
                 groupedReports.map(([cmo, rows]) => (
-                  <Card key={cmo} className="border-dashed">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="flex items-center justify-between text-sm">
-                        <span>{cmo}</span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {rows.length} docs | {rows.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0)} lines
-                        </span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>File</TableHead>
-                              <TableHead>Period</TableHead>
-                              <TableHead>Status</TableHead>
-                              <TableHead className="text-right">Lines</TableHead>
-                              <TableHead className="text-right">Revenue</TableHead>
-                              <TableHead>Uploaded</TableHead>
-                              <TableHead />
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>{renderReportRows(rows)}</TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <section key={cmo} className="border-t border-black/20 pt-3">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="font-display text-sm">{cmo}</p>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {rows.length} docs | {rows.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0)} lines
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>File</TableHead>
+                            <TableHead>Period</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Lines</TableHead>
+                            <TableHead className="text-right">Revenue</TableHead>
+                            <TableHead>Uploaded</TableHead>
+                            <TableHead />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>{renderReportRows(rows)}</TableBody>
+                      </Table>
+                    </div>
+                  </section>
                 ))
               ) : (
                 <div className="flex flex-col items-center py-12 text-center">
@@ -566,43 +591,34 @@ export default function Reports() {
                 <SheetTitle>{selectedReport.cmo_name} | {selectedReport.file_name}</SheetTitle>
               </SheetHeader>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Status</p>
-                    <div className="mt-1">
-                      <StatusBadge status={selectedReport.status} />
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Normalized Lines</p>
-                    <p className="text-xl font-bold">{reportTransactions.length.toLocaleString()}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Extractor Rows</p>
-                    <p className="text-xl font-bold">{extractedRows.length.toLocaleString()}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Revenue</p>
-                    <p className="text-xl font-bold">{toMoney(selectedReport.total_revenue ?? 0)}</p>
-                  </CardContent>
-                </Card>
+              <div className="mt-4 grid gap-3 border-y border-black/20 py-3 sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <div className="mt-1">
+                    <StatusBadge status={selectedReport.status} />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Normalized Lines</p>
+                  <p className="text-xl font-bold">{reportTransactions.length.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Extractor Rows</p>
+                  <p className="text-xl font-bold">{extractedRows.length.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Revenue</p>
+                  <p className="text-xl font-bold">{toMoney(selectedReport.total_revenue ?? 0)}</p>
+                </div>
               </div>
 
               <Tabs defaultValue="summary" className="mt-5">
                 <TabsList>
                   <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="transactions">Normalized Table</TabsTrigger>
-                  <TabsTrigger value="extractor">Extractor Fields (Raw)</TabsTrigger>
+                  <TabsTrigger value="transactions">Processed Transactions</TabsTrigger>
                 </TabsList>
 
-                <TabsContent value="summary" className="mt-4 space-y-3">
+                <TabsContent value="summary" className="mt-4">
                   {[
                     ["CMO", selectedReport.cmo_name],
                     ["File", selectedReport.file_name],
@@ -614,7 +630,7 @@ export default function Reports() {
                     ["Error Count", selectedReport.error_count?.toLocaleString()],
                     ["Notes", selectedReport.notes],
                   ].map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
+                    <div key={label} className="flex items-center justify-between border-b border-black/20 py-2 text-sm">
                       <span className="text-muted-foreground">{label}</span>
                       <span className="font-medium">{value ?? "-"}</span>
                     </div>
@@ -623,8 +639,8 @@ export default function Reports() {
 
                 <TabsContent value="transactions" className="mt-4">
                   {reportTransactions.length > 0 ? (
-                    <div className="overflow-x-auto rounded-md border">
-                      <Table>
+                    <div className="overflow-x-auto">
+                      <Table className="min-w-max">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Track</TableHead>
@@ -640,67 +656,47 @@ export default function Reports() {
                             <TableHead className="text-right">Gross</TableHead>
                             <TableHead className="text-right">Commission</TableHead>
                             <TableHead className="text-right">Net</TableHead>
+                            {customPropertyColumns.map((column) => (
+                              <TableHead key={column}>{toCustomColumnLabel(column)}</TableHead>
+                            ))}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {reportTransactions.slice(0, 200).map((tx) => (
-                            <TableRow key={tx.id}>
-                              <TableCell>{tx.track_title ?? "-"}</TableCell>
-                              <TableCell>{tx.artist_name ?? "-"}</TableCell>
-                              <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
-                              <TableCell className="font-mono text-xs">{tx.iswc ?? "-"}</TableCell>
-                              <TableCell>{tx.territory ?? "-"}</TableCell>
-                              <TableCell>{tx.platform ?? "-"}</TableCell>
-                              <TableCell>{tx.usage_type ?? "-"}</TableCell>
-                              <TableCell className="font-mono text-xs">
-                                {tx.period_start && tx.period_end ? `${tx.period_start} -> ${tx.period_end}` : "-"}
-                              </TableCell>
-                              <TableCell className="font-mono text-xs">{tx.currency ?? "-"}</TableCell>
-                              <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
-                              <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
-                              <TableCell className="text-right font-mono">{toMoney(tx.commission)}</TableCell>
-                              <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
-                            </TableRow>
-                          ))}
+                          {reportTransactions.slice(0, 200).map((tx) => {
+                            const customProperties = readCustomProperties(tx);
+                            return (
+                              <TableRow key={tx.id}>
+                                <TableCell>{tx.track_title ?? "-"}</TableCell>
+                                <TableCell>{tx.artist_name ?? "-"}</TableCell>
+                                <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
+                                <TableCell className="font-mono text-xs">{tx.iswc ?? "-"}</TableCell>
+                                <TableCell>{tx.territory ?? "-"}</TableCell>
+                                <TableCell>{tx.platform ?? "-"}</TableCell>
+                                <TableCell>{tx.usage_type ?? "-"}</TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {tx.period_start && tx.period_end ? `${tx.period_start} -> ${tx.period_end}` : "-"}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">{tx.currency ?? "-"}</TableCell>
+                                <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
+                                <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
+                                <TableCell className="text-right font-mono">{toMoney(tx.commission)}</TableCell>
+                                <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
+                                {customPropertyColumns.map((column) => {
+                                  const value = formatCustomValue(customProperties[column]);
+                                  return (
+                                    <TableCell key={column} className="max-w-[220px] truncate" title={value}>
+                                      {value}
+                                    </TableCell>
+                                  );
+                                })}
+                              </TableRow>
+                            );
+                          })}
                         </TableBody>
                       </Table>
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">No normalized transactions available.</p>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="extractor" className="mt-4">
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    Raw extraction snapshot from OCR. Review Queue corrections update normalized transactions, not this raw table.
-                  </p>
-                  {extractedRows.length > 0 ? (
-                    <div className="overflow-x-auto rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[80px]">item_index</TableHead>
-                            {EXTRACTED_COLUMNS.map((col) => (
-                              <TableHead key={col.key as string}>{col.label}</TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {extractedRows.map((row) => (
-                            <TableRow key={row.id}>
-                              <TableCell className="font-mono text-xs">{row.item_index}</TableCell>
-                              {EXTRACTED_COLUMNS.map((col) => (
-                                <TableCell key={col.key as string} className="max-w-[220px] truncate">
-                                  {(row[col.key] as string | null) ?? "-"}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No extracted field rows found for this document.</p>
                   )}
                 </TabsContent>
               </Tabs>

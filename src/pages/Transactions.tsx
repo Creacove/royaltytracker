@@ -32,7 +32,8 @@ type TransactionView = "transactions" | "issues";
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [search, setSearch] = useState("");
+  const initialSearchParam = searchParams.get("q") ?? "";
+  const [search, setSearch] = useState(initialSearchParam);
   const [selected, setSelected] = useState<Transaction | null>(null);
   const [selectedCmo, setSelectedCmo] = useState("all");
   const [selectedReportId, setSelectedReportId] = useState("all");
@@ -109,6 +110,11 @@ export default function Transactions() {
     const nextView: TransactionView = viewParam === "issues" ? "issues" : "transactions";
     if (nextView !== activeView) setActiveView(nextView);
   }, [searchParams, activeView]);
+
+  useEffect(() => {
+    const qParam = searchParams.get("q") ?? "";
+    setSearch(qParam);
+  }, [searchParams]);
 
   const territoryOptions = useMemo(
     () =>
@@ -258,9 +264,9 @@ export default function Transactions() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="rhythm-page">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Transactions</h1>
+        <h1 className="font-display text-4xl tracking-[0.03em]">Transactions</h1>
         <p className="text-muted-foreground text-sm">
           One workspace for transaction history and validation issues.
         </p>
@@ -269,79 +275,54 @@ export default function Transactions() {
       <Tabs value={activeView} onValueChange={handleViewChange}>
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="issues">Validation Issues</TabsTrigger>
+          <TabsTrigger value="issues">Issues to Review</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {activeView === "transactions" ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card>
-            <CardContent className="pt-6">
+        <section className="border-y border-foreground py-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
               <p className="text-xs text-muted-foreground">Lines (Filtered)</p>
-              <p className="text-2xl font-bold">{filteredTransactions.length.toLocaleString()}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
+              <p className="font-display text-3xl">{filteredTransactions.length.toLocaleString()}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground">Gross</p>
-              <p className="text-2xl font-bold">{toMoney(summary.gross)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
+              <p className="font-display text-3xl">{toMoney(summary.gross)}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground">Net</p>
-              <p className="text-2xl font-bold">{toMoney(summary.net)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
+              <p className="font-display text-3xl">{toMoney(summary.net)}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground">Unique Tracks</p>
-              <p className="text-2xl font-bold">{summary.tracks.toLocaleString()}</p>
-            </CardContent>
-          </Card>
-        </div>
+              <p className="font-display text-3xl">{summary.tracks.toLocaleString()}</p>
+            </div>
+          </div>
+        </section>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-lg bg-destructive/10 p-2">
-                <AlertTriangle className="h-5 w-5 text-destructive" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{validationMetrics.critical}</p>
-                <p className="text-xs text-muted-foreground">Critical</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-lg bg-warning/10 p-2">
-                <AlertTriangle className="h-5 w-5 text-warning" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{validationMetrics.warning}</p>
-                <p className="text-xs text-muted-foreground">Warnings</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 pt-6">
-              <div className="rounded-lg bg-accent p-2">
-                <Info className="h-5 w-5 text-accent-foreground" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{validationMetrics.info}</p>
-                <p className="text-xs text-muted-foreground">Info</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <section className="border-y border-foreground py-4">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Critical</p>
+              <p className="font-display text-3xl">{validationMetrics.critical}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Warnings</p>
+              <p className="font-display text-3xl">{validationMetrics.warning}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Info</p>
+              <p className="font-display text-3xl">{validationMetrics.info}</p>
+            </div>
+          </div>
+        </section>
       )}
 
-      <Card>
+      <Card className="!border-0 border-t border-border bg-transparent">
         <CardHeader className="space-y-3">
           <CardTitle className="text-base">
-            {activeView === "transactions" ? "Transaction Explorer" : "Validation Explorer"}
+            {activeView === "transactions" ? "Transaction View" : "Issue Review"}
           </CardTitle>
           <div className="grid gap-3 md:grid-cols-6">
             <div className="relative md:col-span-2">
@@ -568,35 +549,33 @@ export default function Transactions() {
 
           {selected ? (
             <div className="mt-6 space-y-4">
-              <Card>
-                <CardContent className="pt-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Document Context
+              <section className="border-t border-black/20 pt-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Document Context
+                </p>
+                <div className="space-y-1 text-sm">
+                  <p>
+                    <span className="text-muted-foreground">CMO:</span>{" "}
+                    <span className="font-medium">{selectedReport?.cmo_name ?? "-"}</span>
                   </p>
-                  <div className="space-y-1 text-sm">
-                    <p>
-                      <span className="text-muted-foreground">CMO:</span>{" "}
-                      <span className="font-medium">{selectedReport?.cmo_name ?? "-"}</span>
-                    </p>
-                    <p>
-                      <span className="text-muted-foreground">File:</span>{" "}
-                      <span className="font-medium">{selectedReport?.file_name ?? "-"}</span>
-                    </p>
-                    <p>
-                      <span className="text-muted-foreground">Period:</span>{" "}
-                      <span className="font-medium">{selectedReport?.report_period ?? "-"}</span>
-                    </p>
-                    <p>
-                      <span className="text-muted-foreground">Uploaded:</span>{" "}
-                      <span className="font-medium">
-                        {selectedReport?.created_at
-                          ? format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")
-                          : "-"}
-                      </span>
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                  <p>
+                    <span className="text-muted-foreground">File:</span>{" "}
+                    <span className="font-medium">{selectedReport?.file_name ?? "-"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Period:</span>{" "}
+                    <span className="font-medium">{selectedReport?.report_period ?? "-"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Uploaded:</span>{" "}
+                    <span className="font-medium">
+                      {selectedReport?.created_at
+                        ? format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")
+                        : "-"}
+                    </span>
+                  </p>
+                </div>
+              </section>
 
               {[
                 ["Artist", selected.artist_name],
@@ -624,19 +603,17 @@ export default function Transactions() {
                 </div>
               ))}
 
-              <Card>
-                <CardContent className="pt-4 text-sm font-mono">
-                  <p>Source Page: {selected.source_page ?? "-"}</p>
-                  <p>Source Row: {selected.source_row ?? "-"}</p>
-                  <p>OCR Confidence: {selected.ocr_confidence ?? "-"}</p>
-                  <p>
-                    Bounding Box:{" "}
-                    {selected.bbox_x != null
-                      ? `(${selected.bbox_x}, ${selected.bbox_y}) ${selected.bbox_width}x${selected.bbox_height}`
-                      : "-"}
-                  </p>
-                </CardContent>
-              </Card>
+              <section className="border-t border-black/20 pt-3 text-sm font-mono">
+                <p>Source Page: {selected.source_page ?? "-"}</p>
+                <p>Source Row: {selected.source_row ?? "-"}</p>
+                <p>OCR Confidence: {selected.ocr_confidence ?? "-"}</p>
+                <p>
+                  Bounding Box:{" "}
+                  {selected.bbox_x != null
+                    ? `(${selected.bbox_x}, ${selected.bbox_y}) ${selected.bbox_width}x${selected.bbox_height}`
+                    : "-"}
+                </p>
+              </section>
 
               <StatusBadge status={selected.validation_status ?? "pending"} />
             </div>

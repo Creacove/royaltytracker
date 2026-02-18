@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -15,8 +16,6 @@ export default function Auth() {
   const { toast } = useToast();
 
   const emailRedirectTo = useMemo(() => {
-    // Keep confirmation/reset links landing back in this app.
-    // Supabase must allow this origin in Auth -> URL Configuration.
     return window.location.origin;
   }, []);
 
@@ -31,7 +30,6 @@ export default function Auth() {
           const msg = error.message || "Login failed";
           toast({ title: "Login failed", description: msg, variant: "destructive" });
 
-          // Common case when email confirmations are enabled in Supabase.
           if (msg.toLowerCase().includes("confirm") || msg.toLowerCase().includes("not confirmed")) {
             setPendingEmailConfirmation(true);
           }
@@ -48,7 +46,6 @@ export default function Auth() {
         if (error) {
           toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
         } else {
-          // If email confirmations are enabled, session will be null until the user clicks the link.
           const needsEmailConfirm = !data.session;
           setPendingEmailConfirmation(needsEmailConfirm);
 
@@ -92,23 +89,38 @@ export default function Auth() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md !border-0 border-y border-border bg-transparent py-3">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 overflow-hidden rounded-xl border bg-white p-1">
+          <div className="mx-auto mb-4 h-16 w-16 overflow-hidden border border-border bg-background p-1">
             <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
           </div>
-          <CardTitle className="text-2xl">OrderSounds</CardTitle>
+          <CardTitle className="text-3xl">OrderSounds</CardTitle>
           <CardDescription>Forensic Royalty Platform</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" />
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="you@example.com"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="••••••••" minLength={6} />
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="********"
+                minLength={6}
+              />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
@@ -127,7 +139,7 @@ export default function Auth() {
                 setIsLogin(!isLogin);
                 setPendingEmailConfirmation(false);
               }}
-              className="text-primary hover:underline font-medium"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
             >
               {isLogin ? "Sign Up" : "Sign In"}
             </button>

@@ -42,6 +42,21 @@ const toReadableField = (field: string | null | undefined): string => {
   return field.replace(/_/g, " ");
 };
 
+const toSnakeCase = (str: string) => {
+  return str
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+};
+
+const toCustomFieldLabel = (key: string) =>
+  key
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
 const toPublisherIssueLabel = (errorType: string | null | undefined): string => {
   switch (errorType) {
     case "numeric_outlier":
@@ -139,6 +154,7 @@ export default function DataQualityQueue() {
   const [resolutionNote, setResolutionNote] = useState("");
   const [resolutionForm, setResolutionForm] = useState({
     canonicalField: "",
+    customMappingKey: "",
     correctedValue: "",
   });
   const [applyToReport, setApplyToReport] = useState(false);
@@ -155,7 +171,13 @@ export default function DataQualityQueue() {
       ["normalization_uncertainty", "mapping_low_confidence", "numeric_parse_guard", "revenue_math_mismatch", "numeric_outlier", "quantity_missing", "unrecognized_field_value", "currency_missing"].includes(payload?.error_type)
     ) ? (payload?.actual || payload?.raw_value || "") : "";
 
-    setResolutionForm({ canonicalField: "", correctedValue: String(initialValue ?? "") });
+    const rawHeader = payload?.unmapped_header || payload?.actual || "";
+
+    setResolutionForm({
+      canonicalField: "",
+      customMappingKey: toSnakeCase(String(rawHeader)),
+      correctedValue: String(initialValue ?? ""),
+    });
     setResolutionNote("");
     setApplyToReport(false);
   }, [selectedTask?.id]);
@@ -206,12 +228,53 @@ export default function DataQualityQueue() {
     },
   });
 
+  const { data: knownCustomFields = [] } = useQuery({
+    queryKey: ["known-custom-fields"],
+    queryFn: async (): Promise<string[]> => {
+      try {
+        const [mappingRes, sourceFieldRes] = await Promise.all([
+          (supabase as any)
+            .from("column_mappings")
+            .select("canonical_field")
+            .eq("is_active", true)
+            .ilike("canonical_field", "custom:%"),
+          (supabase as any)
+            .from("source_fields")
+            .select("mapping_rule")
+            .not("mapping_rule", "is", null)
+            .ilike("mapping_rule", "custom:%")
+            .limit(1000),
+        ]);
+
+        const keys = new Set<string>();
+        for (const row of mappingRes.data ?? []) {
+          const canonical = String(row?.canonical_field ?? "");
+          if (canonical.startsWith("custom:")) {
+            const key = toSnakeCase(canonical.slice("custom:".length));
+            if (key) keys.add(key);
+          }
+        }
+        for (const row of sourceFieldRes.data ?? []) {
+          const canonical = String(row?.mapping_rule ?? "");
+          if (canonical.startsWith("custom:")) {
+            const key = toSnakeCase(canonical.slice("custom:".length));
+            if (key) keys.add(key);
+          }
+        }
+
+        return Array.from(keys).sort((a, b) => a.localeCompare(b));
+      } catch (error) {
+        console.warn("[DataQualityQueue] Failed to load known custom fields:", error);
+        return [];
+      }
+    },
+  });
+
   // ... (existing queries) ...
   const { data: sourceRow } = useQuery({
     queryKey: ["source-row", selectedTask?.source_row_id],
     enabled: !!selectedTask?.source_row_id,
     queryFn: async (): Promise<SourceRow | null> => {
-      // ... existing ... 
       const { data, error } = await supabase
         .from("source_rows")
         .select("*")
@@ -237,18 +300,31 @@ export default function DataQualityQueue() {
     }
   });
 
+  const { data: transaction } = useQuery({
+    queryKey: ["transaction", selectedTask?.source_row_id],
+    enabled: !!selectedTask?.source_row_id,
+    queryFn: async (): Promise<Tables<"royalty_transactions"> | null> => {
+      const sourceRowId = selectedTask?.source_row_id;
+      if (!sourceRowId) return null;
+
+      const { data, error } = await supabase
+        .from("royalty_transactions")
+        .select("*")
+        .eq("source_row_id", sourceRowId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    }
+  });
+
   const actionMutation = useMutation({
     mutationFn: async (payload: { taskId: string; action: string; rule?: any; correctedValue?: string; correctedField?: string; applyToReport?: boolean }) => {
-      const { data: authData } = await supabase.auth.getSession();
-      const accessToken = authData.session?.access_token;
-      if (!accessToken) {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData.user) {
         throw new Error("Session expired. Please sign in again.");
       }
 
       const { data, error } = await supabase.functions.invoke("submit-review-resolution", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
         body: {
           task_id: payload.taskId,
           action: payload.action,
@@ -285,10 +361,11 @@ export default function DataQualityQueue() {
       queryClient.invalidateQueries({ queryKey: ["analytics-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["source-fields"] });
       queryClient.invalidateQueries({ queryKey: ["source-row"] });
+      queryClient.invalidateQueries({ queryKey: ["known-custom-fields"] });
 
       // Reset local input state
       setResolutionNote("");
-      setResolutionForm({ canonicalField: "", correctedValue: "" });
+      setResolutionForm({ canonicalField: "", customMappingKey: "", correctedValue: "" });
       setApplyToReport(false);
 
       if (data.bulk) {
@@ -324,17 +401,25 @@ export default function DataQualityQueue() {
 
     // 1. Header Mapping (Global)
     if (activeErrorType === "mapping_unresolved" || activeErrorType === "mapping_unmapped_header") {
+      const isCustomMapping = resolutionForm.canonicalField === "custom_property";
+      const finalCanonical = isCustomMapping ? `custom:${resolutionForm.customMappingKey}` : resolutionForm.canonicalField;
+
       if (!resolutionForm.canonicalField) {
         toast({ title: "Please select a field to map to", variant: "destructive" });
         return;
       }
+      if (isCustomMapping && !resolutionForm.customMappingKey) {
+        toast({ title: "Please enter a key for the custom property", variant: "destructive" });
+        return;
+      }
+
       actionMutation.mutate({
         taskId: selectedTask.id,
         action: "define_rule",
         rule: {
           target_table: "column_mappings",
           raw_header: activeError?.actual || payload?.unmapped_header,
-          canonical_field: resolutionForm.canonicalField,
+          canonical_field: finalCanonical,
         }
       });
       return;
@@ -458,7 +543,7 @@ export default function DataQualityQueue() {
   }, [selectedTask]);
 
   return (
-    <div className="space-y-6">
+    <div className="rhythm-page">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -472,59 +557,49 @@ export default function DataQualityQueue() {
                 {"<"} Reports
               </Button>
             )}
-            <h1 className="text-2xl font-bold tracking-tight">
-              {selectedReportId ? "Reviewing Report" : "Review Queue"}
+            <h1 className="font-display text-4xl tracking-[0.03em]">
+              {selectedReportId ? "Reviewing Statement" : "Statement Reviews"}
             </h1>
           </div>
           <p className="text-sm text-muted-foreground">
             {selectedReportId
               ? `Resolving issues for ${selectedReportName}`
-              : "Grouped by submission. Review blockers and low-confidence data."
+              : "Choose a statement and resolve flagged items."
             }
           </p>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="border-accent/20 bg-accent/5">
-          <CardContent className="flex items-center gap-3 pt-6">
-            <div className="rounded-lg bg-accent p-2">
-              <ClipboardCheck className="h-5 w-5 text-accent-foreground" />
-            </div>
+      <section className="border-y border-foreground py-4">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
             <div>
-              <p className="text-2xl font-bold">{metrics.open}</p>
               <p className="text-xs text-muted-foreground">Open Tasks</p>
+              <p className="font-display text-3xl">{metrics.open}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="border-destructive/20 bg-destructive/5">
-          <CardContent className="flex items-center gap-3 pt-6">
-            <div className="rounded-lg bg-destructive/10 p-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-[hsl(var(--tone-critical))]" />
             <div>
-              <p className="text-2xl font-bold">{metrics.critical}</p>
               <p className="text-xs text-muted-foreground">Critical Open</p>
+              <p className="font-display text-3xl">{metrics.critical}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="border-success/20 bg-success/5">
-          <CardContent className="flex items-center gap-3 pt-6">
-            <div className="rounded-lg bg-success/10 p-2">
-              <CircleCheckBig className="h-5 w-5 text-success" />
-            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <CircleCheckBig className="h-4 w-4 text-[hsl(var(--tone-success))]" />
             <div>
-              <p className="text-2xl font-bold">{metrics.resolved}</p>
               <p className="text-xs text-muted-foreground">Resolved</p>
+              <p className="font-display text-3xl">{metrics.resolved}</p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </section>
 
       {!selectedReportId ? (
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader>
-            <CardTitle className="text-base">Reports Requiring Review</CardTitle>
+            <CardTitle className="text-base">Statements Requiring Review</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoadingReports ? (
@@ -558,14 +633,14 @@ export default function DataQualityQueue() {
                       </TableCell>
                       <TableCell>
                         {(report.metrics?.critical ?? 0) > 0 ? (
-                          <span className="text-destructive font-bold">{report.metrics?.critical}</span>
+                          <span className="font-mono font-bold">{report.metrics?.critical}</span>
                         ) : (
-                          <span className="text-muted-foreground">0</span>
+                          <span className="font-mono text-muted-foreground">0</span>
                         )}
                       </TableCell>
                       <TableCell>
                         <Button size="sm" onClick={() => setSelectedReportId(report.id)}>
-                          Open Queue
+                          Review Statement
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -578,9 +653,9 @@ export default function DataQualityQueue() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-base">Tasks for {selectedReportName}</CardTitle>
+            <CardTitle className="text-base">Issues in {selectedReportName}</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoadingTasks ? (
@@ -663,29 +738,29 @@ export default function DataQualityQueue() {
                 </SheetTitle>
               </SheetHeader>
 
-              <div className="mt-6 space-y-6">
+              <div className="mt-6 rhythm-section">
                 {/* 1. Decision Card (Action Area) */}
-                <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-6 shadow-sm">
+                <div className="border-t border-black/20 pt-4">
                   <div className="flex items-center gap-3 mb-4">
-                    <div className={`p-2 rounded-full ${selectedTask.status === "resolved" ? "bg-success/10" : "bg-primary/10"}`}>
-                      {selectedTask.status === "resolved" ? <CircleCheckBig className="h-5 w-5 text-success" /> : <ClipboardCheck className="h-5 w-5 text-primary" />}
+                    <div className="p-1">
+                      {selectedTask.status === "resolved"
+                        ? <CircleCheckBig className="h-5 w-5 text-[hsl(var(--tone-success))]" />
+                        : <ClipboardCheck className="h-5 w-5 text-[hsl(var(--brand-accent))]" />}
                     </div>
-                    <h3 className="text-lg font-bold">
+                    <h3 className="font-display text-xl">
                       {selectedTask.status === "resolved" ? "Resolution Summary" : selectedTask.status === "in_progress" ? "Continue Review" : "Review Decision"}
                     </h3>
                   </div>
 
                   {selectedTask.status === "resolved" ? (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <div className="p-5 rounded-xl bg-success/5 border-2 border-success/20 space-y-4 shadow-inner">
-                        <div className="flex items-center justify-between border-b border-success/10 pb-3">
+                      <div className="space-y-4 border-t border-black/20 pt-3">
+                        <div className="flex items-center justify-between border-b border-black/20 pb-3">
                           <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-success/20 flex items-center justify-center">
-                              <Lock className="h-3 w-3 text-success" />
-                            </div>
-                            <span className="text-[10px] font-black tracking-widest text-success uppercase">Audit Trail Locked</span>
+                            <Lock className="h-3 w-3 text-foreground" />
+                            <span className="text-[10px] font-black tracking-widest text-foreground uppercase">Audit Trail Locked</span>
                           </div>
-                          <span className="text-[9px] font-mono text-muted-foreground bg-muted px-2 py-0.5 rounded italic">
+                          <span className="text-[9px] font-mono text-muted-foreground italic">
                             REF-{selectedTask.id.split('-')[0].toUpperCase()}
                           </span>
                         </div>
@@ -693,7 +768,7 @@ export default function DataQualityQueue() {
                         <div className="space-y-3">
                           <div className="flex justify-between items-start text-sm">
                             <span className="text-muted-foreground">Decision Outcome:</span>
-                            <span className="font-bold text-success flex items-center gap-1">
+                            <span className="font-bold text-foreground flex items-center gap-1">
                               <CircleCheckBig className="h-4 w-4" />
                               Resolution Applied
                             </span>
@@ -709,18 +784,18 @@ export default function DataQualityQueue() {
                             <span className="font-medium font-mono text-xs">{safeFormat(selectedTask.resolved_at, "PPP 'at' HH:mm")}</span>
                           </div>
 
-                          <div className="p-3 rounded-lg bg-background/50 border border-muted mt-2">
+                          <div className="mt-2 border-t border-black/20 pt-3">
                             <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Impact Analysis</p>
                             <div className="space-y-2">
                               <p className="text-sm">
-                                Action <span className="font-mono text-xs bg-muted px-1 rounded">{activeDetail.payload?.resolution_action || "approval"}</span>
+                                Action <span className="font-mono text-xs">{activeDetail.payload?.resolution_action || "approval"}</span>
                                 {activeDetail.payload?.corrected_value && (
                                   <> applied to <span className="font-bold">{activeDetail.payload?.field}</span></>
                                 )}
                               </p>
                               {activeDetail.payload?.corrected_value && (
                                 <p className="text-sm">
-                                  Value corrected to: <span className="font-mono text-xs bg-yellow-50 text-yellow-800 px-1.5 py-0.5 rounded border border-yellow-100 font-bold">{activeDetail.payload?.corrected_value}</span>
+                                  Value corrected to: <span className="font-mono text-xs text-foreground font-bold">{activeDetail.payload?.corrected_value}</span>
                                 </p>
                               )}
                             </div>
@@ -729,23 +804,23 @@ export default function DataQualityQueue() {
                           {selectedTask.resolution_note && (
                             <div className="pt-2">
                               <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Decision Note</p>
-                              <p className="text-sm italic text-muted-foreground border-l-2 border-primary/30 pl-3 py-1 bg-primary/5 rounded-r">
+                              <p className="text-sm italic text-muted-foreground">
                                 "{selectedTask.resolution_note}"
                               </p>
                             </div>
                           )}
                         </div>
                       </div>
-                      <Button variant="outline" className="w-full shadow-sm hover:bg-muted/50 transition-colors" onClick={() => setSelectedTask(null)}>
-                        Back to Queue
+                      <Button variant="outline" className="w-full" onClick={() => setSelectedTask(null)}>
+                        Back to Statements
                       </Button>
                     </div>
                   ) : (
                     <>
                       {/* Multi-Issue Warning */}
                       {activeDetail.errors.length > 1 && (
-                        <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-100 text-blue-800 text-xs flex items-start gap-2">
-                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <div className="mb-4 border-t border-black/20 pt-3 text-foreground text-xs flex items-start gap-2">
+                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-[hsl(var(--tone-warning))]" />
                           <div>
                             <p className="font-bold">Multiple issues found for this row.</p>
                             <p>Please resolve each issue below. The task will stay open until all critical items are fixed.</p>
@@ -754,24 +829,24 @@ export default function DataQualityQueue() {
                       )}
 
                       {/* Dynamic Resolution Form */}
-                      <div className="space-y-6">
-                        <div className="space-y-6">
+                      <div className="rhythm-section">
+                        <div className="rhythm-section">
                           {/* Progress Indicator */}
                           {activeDetail.errors.length > 1 && (
-                            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-tighter text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                            <div className="flex items-center justify-between border-t border-black/20 py-2 text-[10px] font-black uppercase tracking-tighter text-foreground">
                               <span>Now Resolving: Issue 1 of {activeDetail.errors.length}</span>
                               <div className="flex gap-1">
                                 {activeDetail.errors.map((_: any, i: number) => (
-                                  <div key={i} className={`h-1.5 w-4 rounded-full ${i === 0 ? "bg-blue-600" : "bg-blue-200"}`} />
+                                  <div key={i} className={`h-1.5 w-4 border border-border ${i === 0 ? "bg-foreground" : "bg-transparent"}`} />
                                 ))}
                               </div>
                             </div>
                           )}
 
                           {/* Active Error Form */}
-                          <div className="p-4 rounded-lg border-2 border-primary/40 bg-background shadow-sm space-y-4">
+                          <div className="space-y-4 border-t border-black/20 pt-3">
                             <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-primary/70">
+                              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                 {toReadableField(activeDetail.activeError.field || "Review item")}
                               </span>
                               {activeDetail.activeError.severity && <StatusBadge status={activeDetail.activeError.severity} />}
@@ -783,21 +858,54 @@ export default function DataQualityQueue() {
                                   {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
                                 <select
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm"
+                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                   value={resolutionForm.canonicalField}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, canonicalField: e.target.value })}
                                 >
                                   <option value="">Select Target...</option>
-                                  <option value="track_title">Track Title</option>
-                                  <option value="artist_name">Artist Name</option>
-                                  <option value="isrc">ISRC</option>
-                                  <option value="iswc">ISWC</option>
-                                  <option value="territory">Territory</option>
-                                  <option value="platform">Platform</option>
-                                  <option value="quantity">Quantity</option>
-                                  <option value="gross_revenue">Gross Revenue</option>
-                                  <option value="net_revenue">Net Revenue</option>
+                                  <optgroup label="Standard Fields">
+                                    <option value="track_title">Track Title</option>
+                                    <option value="artist_name">Artist Name</option>
+                                    <option value="isrc">ISRC</option>
+                                    <option value="iswc">ISWC</option>
+                                    <option value="territory">Territory</option>
+                                    <option value="platform">Platform</option>
+                                    <option value="quantity">Quantity</option>
+                                    <option value="gross_revenue">Gross Revenue</option>
+                                    <option value="net_revenue">Net Revenue</option>
+                                    <option value="commission">Commission</option>
+                                    <option value="label_name">Label Name</option>
+                                    <option value="rights_type">Rights Type</option>
+                                  </optgroup>
+                                  {knownCustomFields.length > 0 && (
+                                    <optgroup label="Saved Custom Fields">
+                                      {knownCustomFields.map((fieldKey) => (
+                                        <option key={fieldKey} value={`custom:${fieldKey}`}>
+                                          {toCustomFieldLabel(fieldKey)}
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label="Custom Data">
+                                    <option value="custom_property">Save as custom property...</option>
+                                  </optgroup>
                                 </select>
+
+                                {resolutionForm.canonicalField === "custom_property" && (
+                                  <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Property Name (System ID)</Label>
+                                    <input
+                                      type="text"
+                                      className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                                      placeholder="e.g. label_code"
+                                      value={resolutionForm.customMappingKey}
+                                      onChange={(e) => setResolutionForm({ ...resolutionForm, customMappingKey: toSnakeCase(e.target.value) })}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground italic">
+                                      This will be saved as <span className="font-bold text-primary">{resolutionForm.customMappingKey || "..."}</span>
+                                    </p>
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -808,7 +916,7 @@ export default function DataQualityQueue() {
                                 </p>
                                 <input
                                   type="text"
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm"
+                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                   placeholder="Enter correct value"
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -823,7 +931,7 @@ export default function DataQualityQueue() {
                                 </p>
                                 <input
                                   type="text"
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm font-mono"
+                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
                                   placeholder={`Enter corrected ${toReadableField(activeDetail.activeError.field || "value")}`}
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -835,7 +943,7 @@ export default function DataQualityQueue() {
                               <div className="space-y-3">
                                 <p className="text-sm text-foreground">Currency is missing.</p>
                                 <select
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:ring-2 focus:ring-primary shadow-sm"
+                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
                                 >
@@ -852,7 +960,7 @@ export default function DataQualityQueue() {
                               <div className="space-y-2">
                                 <p className="text-xs text-muted-foreground">{toPublisherIssueMessage(activeDetail.activeError)}</p>
                                 <div className="grid grid-cols-2 gap-2">
-                                  <input type="date" className="h-9 rounded border text-xs px-2" onChange={(e) => {
+                                  <input type="date" className="h-9 border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring" onChange={(e) => {
                                     try {
                                       const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
                                         ? JSON.parse(resolutionForm.correctedValue)
@@ -863,7 +971,7 @@ export default function DataQualityQueue() {
                                       setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify({ start: e.target.value }) });
                                     }
                                   }} />
-                                  <input type="date" className="h-9 rounded border text-xs px-2" onChange={(e) => {
+                                  <input type="date" className="h-9 border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring" onChange={(e) => {
                                     try {
                                       const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
                                         ? JSON.parse(resolutionForm.correctedValue)
@@ -884,7 +992,7 @@ export default function DataQualityQueue() {
                                 {activeDetail.activeError.field === "source_page" && (
                                   <input
                                     type="number"
-                                    className="h-10 w-full rounded border px-3 text-sm"
+                                    className="h-10 w-full border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     placeholder="Page #"
                                     value={resolutionForm.correctedValue}
                                     onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -899,8 +1007,8 @@ export default function DataQualityQueue() {
                             <div className="space-y-2">
                               <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Pending Fixes ({activeDetail.errors.length - 1})</span>
                               {activeDetail.errors.slice(1).map((err: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 p-2 rounded border bg-muted/5 opacity-50 text-[10px]">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                                <div key={i} className="flex items-center gap-2 border-b border-black/15 py-1.5 text-[10px] text-muted-foreground">
+                                  <div className="h-1.5 w-1.5 bg-muted-foreground" />
                                   <span className="font-bold">{toPublisherIssueLabel(err?.type)}</span>: {toPublisherIssueMessage(err)}
                                 </div>
                               ))}
@@ -910,7 +1018,7 @@ export default function DataQualityQueue() {
 
                         {/* Mass Fix Toggle */}
                         {(activeDetail.isCurrency || activeDetail.isPeriod) && (
-                          <div className="flex items-center space-x-2 py-2 px-3 rounded-lg border border-blue-100 bg-blue-50/50 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                          <div className="flex items-center space-x-2 border-t border-black/20 py-3">
                             <Checkbox
                               id="mass-fix"
                               checked={applyToReport}
@@ -919,24 +1027,24 @@ export default function DataQualityQueue() {
                             <div className="grid gap-1.5 leading-none">
                               <label
                                 htmlFor="mass-fix"
-                                className="text-xs font-bold leading-none cursor-pointer text-blue-800"
+                                className="text-xs font-bold leading-none cursor-pointer text-foreground"
                               >
-                                Apply to all issues in this report
+                                Apply to all similar issues in this statement
                               </label>
-                              <p className="text-[10px] text-blue-600/70">
-                                Perform this correction for all rows in {reports.find(r => r.id === selectedReportId)?.file_name || "this report"}.
+                              <p className="text-[10px] text-muted-foreground">
+                                Use this correction for all matching rows in {reports.find(r => r.id === selectedReportId)?.file_name || "this statement"}.
                               </p>
                             </div>
                           </div>
                         )}
 
                         <div className="space-y-2">
-                          <Label htmlFor="resolution-note" className="text-[10px] uppercase font-bold text-muted-foreground">Decision Note (Optional)</Label>
+                          <Label htmlFor="resolution-note" className="text-[10px] uppercase font-bold text-muted-foreground">Reviewer Note (Optional)</Label>
                           <Textarea
                             id="resolution-note"
                             placeholder="Audit trail note..."
                             value={resolutionNote}
-                            className="resize-none h-20 text-sm focus:ring-2 focus:ring-primary shadow-inner"
+                            className="resize-none h-20 text-sm focus:ring-2 focus:ring-primary"
                             onChange={(e) => setResolutionNote(e.target.value)}
                           />
                         </div>
@@ -945,9 +1053,9 @@ export default function DataQualityQueue() {
                           <Button
                             onClick={handleResolve}
                             disabled={actionMutation.isPending}
-                            className="flex-1 shadow-md hover:scale-[1.01] active:scale-100 transition-all font-bold"
+                            className="flex-1 font-bold"
                           >
-                            {actionMutation.isPending ? "Applying..." : "Apply Decision"}
+                            {actionMutation.isPending ? "Saving..." : "Save Review"}
                           </Button>
                           <Button
                             variant="ghost"
@@ -955,7 +1063,7 @@ export default function DataQualityQueue() {
                             disabled={actionMutation.isPending}
                             className="flex-1 text-muted-foreground text-xs"
                           >
-                            Dismiss Row
+                            Skip for Now
                           </Button>
                         </div>
                       </div>
@@ -964,84 +1072,93 @@ export default function DataQualityQueue() {
                 </div>
 
                 {/* 2. Evidence Grid */}
-                <Card className="border-none shadow-none bg-muted/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                      Source Evidence
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {sourceRow ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-8">
-                        {Object.entries((sourceRow.raw_payload as any) || {})
-                          .filter(([_, v]) => v !== null && v !== undefined && v !== "")
-                          .map(([key, value]) => (
-                            <div key={key} className="flex flex-col border-b border-muted py-1">
-                              <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                                {String(key).replace(/_/g, " ")}
-                              </span>
-                              <span className="text-sm font-medium">
-                                {String(value)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground italic">No evidence data found for this row.</p>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* 3. Normalized Mapping */}
-                <Card className="border-none shadow-none bg-muted/20">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                      System Mapping
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {sourceFields.length > 0 ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {sourceFields.map((field) => (
-                          <div key={field.id} className="p-3 rounded-lg border bg-background/50">
-                            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">{field.field_name}</p>
-                            <p className="text-sm font-semibold truncate" title={field.normalized_value?.toString()}>
-                              {field.normalized_value ?? <span className="text-destructive">Missing</span>}
-                            </p>
-                            <div className="mt-2 flex items-center justify-between">
-                              <span className="text-[9px] text-muted-foreground">Match Confidence</span>
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${Number(field.mapping_confidence) > 90 ? "bg-green-100 text-green-700" :
-                                Number(field.mapping_confidence) > 70 ? "bg-yellow-100 text-yellow-700" :
-                                  "bg-red-100 text-red-700"
-                                }`}>
-                                {field.mapping_confidence ? `${field.mapping_confidence}%` : "0%"}
-                              </span>
-                            </div>
+                <section className="border-t border-black/20 pt-4">
+                  <h3 className="pb-2 text-sm font-display text-muted-foreground">Source Evidence</h3>
+                  {sourceRow ? (
+                    <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries((sourceRow.raw_payload as any) || {})
+                        .filter(([_, v]) => v !== null && v !== undefined && v !== "")
+                        .map(([key, value]) => (
+                          <div key={key} className="flex flex-col border-b border-black/15 py-1">
+                            <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                              {String(key).replace(/_/g, " ")}
+                            </span>
+                            <span className="text-sm font-medium">{String(value)}</span>
                           </div>
                         ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground italic">No mappings available for this row.</p>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                  ) : (
+                    <p className="text-sm italic text-muted-foreground">No evidence data found for this row.</p>
+                  )}
+                </section>
+
+                {/* 3. Normalized Mapping */}
+                {transaction?.custom_properties && Object.keys(transaction.custom_properties).length > 0 && (
+                  <section className="border-t border-black/20 pt-4">
+                    <h3 className="flex items-center gap-2 pb-2 text-sm font-display text-foreground">
+                      <ClipboardCheck className="h-3 w-3" />
+                      Mapped Custom Data
+                    </h3>
+                    <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries((transaction.custom_properties as any) || {}).map(([key, value]) => (
+                        <div key={key} className="flex flex-col border-b border-black/15 py-1">
+                          <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                            {String(key).replace(/_/g, " ")}
+                          </span>
+                          <span className="text-sm font-medium">{String(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                <section className="border-t border-black/20 pt-4">
+                  <h3 className="pb-2 text-sm font-display text-muted-foreground">System Mapping</h3>
+                  {sourceFields.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      {sourceFields.map((field) => (
+                        <div key={field.id} className="border-t border-black/20 pt-3">
+                          <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">{field.field_name}</p>
+                          <p className="truncate text-sm font-semibold" title={field.normalized_value?.toString()}>
+                            {field.normalized_value ?? <span className="text-destructive">Missing</span>}
+                          </p>
+                          <div className="mt-2 flex items-center justify-between">
+                            <span className="text-[9px] text-muted-foreground">Match Confidence</span>
+                            <span
+                              className={`text-[9px] font-mono ${Number(field.mapping_confidence) > 90
+                                ? "text-foreground"
+                                : Number(field.mapping_confidence) > 70
+                                  ? "text-foreground/80"
+                                  : "text-muted-foreground"
+                                }`}
+                            >
+                              {field.mapping_confidence ? `${field.mapping_confidence}%` : "0%"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm italic text-muted-foreground">No mappings available for this row.</p>
+                  )}
+                </section>
 
                 {/* 4. Technical Details (Collapsible) */}
-                <details className="group rounded-lg border bg-muted/10 p-2">
+                <details className="group border-t border-black/20 pt-3">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                    Technical Specifications (Developer Only)
+                    Technical Details (Advanced)
                   </summary>
                   <div className="mt-4 space-y-4">
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Task Payload</p>
-                        <pre className="p-3 rounded bg-black/5 text-[10px] text-muted-foreground overflow-auto max-h-40">
+                        <pre className="max-h-40 overflow-auto border border-black/15 bg-background p-3 text-[10px] text-muted-foreground">
                           {JSON.stringify(selectedTask.payload, null, 2)}
                         </pre>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Source Raw Evidence</p>
-                        <pre className="p-3 rounded bg-black/5 text-[10px] text-muted-foreground overflow-auto max-h-40">
+                        <pre className="max-h-40 overflow-auto border border-black/15 bg-background p-3 text-[10px] text-muted-foreground">
                           {JSON.stringify(sourceRow?.evidence || sourceRow?.raw_payload, null, 2)}
                         </pre>
                       </div>

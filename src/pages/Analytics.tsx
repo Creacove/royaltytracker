@@ -17,6 +17,7 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  CartesianGrid,
   PieChart,
   Pie,
   Cell,
@@ -58,13 +59,37 @@ type Item = Pick<
 >;
 
 const COLORS = [
-  "hsl(250 65% 55%)",
-  "hsl(142 71% 45%)",
-  "hsl(38 92% 50%)",
-  "hsl(0 72% 51%)",
-  "hsl(200 70% 50%)",
-  "hsl(320 62% 52%)",
+  "hsl(var(--brand-accent))",
+  "hsl(var(--tone-pending))",
+  "hsl(var(--tone-success))",
+  "hsl(var(--tone-info))",
+  "hsl(var(--tone-archived))",
+  "hsl(0 0% 56%)",
 ];
+const CHART_TICK_STYLE = {
+  fontSize: 10,
+  fill: "hsl(0 0% 33%)",
+  fontFamily: '"Courier New", monospace',
+};
+const CHART_AXIS_STYLE = {
+  stroke: "hsl(0 0% 20%)",
+  strokeWidth: 1,
+};
+const CHART_TOOLTIP_CONTENT_STYLE = {
+  backgroundColor: "hsl(44 14% 90%)",
+  border: "1px solid hsl(0 0% 9%)",
+  borderRadius: 0,
+  color: "hsl(0 0% 9%)",
+  fontFamily: '"Courier New", monospace',
+  fontSize: "11px",
+};
+const CHART_TOOLTIP_LABEL_STYLE = {
+  color: "hsl(0 0% 9%)",
+  fontFamily: "Antonio, sans-serif",
+  fontSize: "10px",
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+};
 
 const FIELD_LABELS: Array<keyof Item> = [
   "report_item",
@@ -218,9 +243,9 @@ export default function Analytics() {
 
   if (reports.length === 0) {
     return (
-      <div className="space-y-6">
+      <div className="rhythm-section">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+          <h1 className="font-display text-4xl tracking-[0.03em]">Analytics</h1>
           <p className="text-muted-foreground text-sm">Publisher-facing revenue and extraction analytics</p>
         </div>
         <div className="flex flex-col items-center py-20 text-center">
@@ -234,15 +259,15 @@ export default function Analytics() {
   const totalNet = filteredTx.reduce((sum, tx) => sum + (tx.net_revenue ?? 0), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="rhythm-page">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+        <h1 className="font-display text-4xl tracking-[0.03em]">Analytics</h1>
         <p className="text-muted-foreground text-sm">
           Slice performance by CMO/document and validate field coverage from your extractor.
         </p>
       </div>
 
-      <Card>
+      <Card className="!border-0 border-y border-border bg-transparent">
         <CardHeader className="space-y-3">
           <CardTitle className="text-base">Scope</CardTitle>
           <div className="grid gap-3 md:grid-cols-3">
@@ -272,7 +297,7 @@ export default function Analytics() {
                 ))}
               </SelectContent>
             </Select>
-            <div className="rounded-md border px-3 py-2 text-sm">
+            <div className="px-0 py-2 text-sm">
               <span className="text-muted-foreground">Net in scope: </span>
               <span className="font-mono font-semibold">{toMoney(totalNet)}</span>
             </div>
@@ -281,23 +306,39 @@ export default function Analytics() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader>
             <CardTitle className="text-base">Revenue by Territory</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={byTerritory}>
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => toMoney(v)} />
-                <Bar dataKey="value" fill="hsl(250 65% 55%)" radius={[4, 4, 0, 0]} />
+                <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={CHART_TICK_STYLE}
+                  axisLine={CHART_AXIS_STYLE}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={CHART_TICK_STYLE}
+                  axisLine={CHART_AXIS_STYLE}
+                  tickLine={false}
+                  tickFormatter={(v) => toMoney(Number(v))}
+                />
+                <Tooltip
+                  formatter={(v: number) => toMoney(v)}
+                  contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                  labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                  itemStyle={{ color: "hsl(0 0% 9%)" }}
+                />
+                <Bar dataKey="value" fill="hsl(var(--tone-pending))" radius={[0, 0, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader>
             <CardTitle className="text-base">Revenue by Platform</CardTitle>
           </CardHeader>
@@ -311,14 +352,19 @@ export default function Analytics() {
                         <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => toMoney(v)} />
+                    <Tooltip
+                      formatter={(v: number) => toMoney(v)}
+                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                      itemStyle={{ color: "hsl(0 0% 9%)" }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
                   {byPlatform.map((row, idx) => (
                     <div key={row.name} className="flex items-center gap-2 text-xs">
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
+                        className="h-2.5 w-2.5 border border-border"
                         style={{ backgroundColor: COLORS[idx % COLORS.length] }}
                       />
                       <span className="text-muted-foreground">{row.name}</span>
@@ -335,23 +381,42 @@ export default function Analytics() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader>
             <CardTitle className="text-base">Top Tracks by Net Revenue</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={320}>
               <BarChart data={byTrack} layout="vertical">
-                <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis dataKey="name" type="category" width={160} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: number) => toMoney(v)} />
-                <Bar dataKey="value" fill="hsl(142 71% 45%)" radius={[0, 4, 4, 0]} />
+                <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                <XAxis
+                  type="number"
+                  tick={CHART_TICK_STYLE}
+                  axisLine={CHART_AXIS_STYLE}
+                  tickLine={false}
+                  tickFormatter={(v) => toMoney(Number(v))}
+                />
+                <YAxis
+                  dataKey="name"
+                  type="category"
+                  width={160}
+                  tick={CHART_TICK_STYLE}
+                  axisLine={CHART_AXIS_STYLE}
+                  tickLine={false}
+                />
+                <Tooltip
+                  formatter={(v: number) => toMoney(v)}
+                  contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                  labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                  itemStyle={{ color: "hsl(0 0% 9%)" }}
+                />
+                <Bar dataKey="value" fill="hsl(var(--tone-success))" radius={[0, 0, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="!border-0 border-t border-border bg-transparent">
           <CardHeader>
             <CardTitle className="text-base">Config Type Mix (Extractor Rows)</CardTitle>
           </CardHeader>
@@ -359,10 +424,22 @@ export default function Analytics() {
             {configTypeMix.length > 0 ? (
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={configTypeMix} layout="vertical">
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" width={130} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="hsl(38 92% 50%)" radius={[0, 4, 4, 0]} />
+                  <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                  <XAxis type="number" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    width={130}
+                    tick={CHART_TICK_STYLE}
+                    axisLine={CHART_AXIS_STYLE}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                    labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                    itemStyle={{ color: "hsl(0 0% 9%)" }}
+                  />
+                  <Bar dataKey="value" fill="hsl(var(--tone-warning))" radius={[0, 0, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -374,18 +451,18 @@ export default function Analytics() {
         </Card>
       </div>
 
-      <Card>
+      <Card className="!border-0 border-t border-border bg-transparent">
         <CardHeader>
           <CardTitle className="text-base">Extractor Field Coverage</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {fieldCoverage.length > 0 ? (
             fieldCoverage.map((row) => (
-              <div key={row.field} className="grid grid-cols-12 items-center gap-3 rounded-md border p-2 text-sm">
+              <div key={row.field} className="grid grid-cols-12 items-center gap-3 border-b border-black/20 py-2 text-sm">
                 <span className="col-span-4 font-mono text-xs">{row.field}</span>
-                <div className="col-span-6 h-2 rounded-full bg-muted">
+                <div className="col-span-6 h-2 border border-border bg-muted">
                   <div
-                    className="h-2 rounded-full bg-primary"
+                    className="h-full bg-primary"
                     style={{ width: `${Math.max(2, row.coverage)}%` }}
                   />
                 </div>

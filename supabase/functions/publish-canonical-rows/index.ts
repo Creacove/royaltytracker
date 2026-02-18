@@ -35,6 +35,18 @@ serve(async (req) => {
     const claims = parseJwtClaims(jwt);
     const requesterId = claims?.sub ?? claims?.user_id ?? null;
     const requesterRole = claims?.role ?? null;
+    let effectiveRequesterId = requesterId;
+
+    if (requesterRole !== "service_role") {
+      const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+      if (authErr || !authData?.user?.id) {
+        return new Response(JSON.stringify({ error: "Invalid or expired access token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      effectiveRequesterId = authData.user.id;
+    }
 
     const body = await req.json().catch(() => ({}));
     const reportId = (body as { report_id?: string }).report_id;
@@ -47,7 +59,7 @@ serve(async (req) => {
       .single();
     if (reportErr || !report) throw new Error(`Report not found: ${reportErr?.message ?? "missing"}`);
 
-    if (requesterRole !== "service_role" && requesterId !== report.user_id) {
+    if (requesterRole !== "service_role" && effectiveRequesterId !== report.user_id) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
