@@ -48,3 +48,6 @@ verify_jwt = false
 
 [functions.insights-natural-chat]
 verify_jwt = false
+
+[functions.insights-export-v1]
+verify_jwt = false

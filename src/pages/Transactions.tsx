@@ -3,11 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useSearchParams } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -19,6 +19,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, ArrowRightLeft, AlertTriangle, Info } from "lucide-react";
 import { toMoney } from "@/lib/royalty";
 import { format } from "date-fns";
+import {
+  AppliedFiltersRow,
+  DetailDrawerFrame,
+  EmptyStateBlock,
+  FilterToolbar,
+  KpiStrip,
+  PageHeader,
+} from "@/components/layout";
+import type { TableDensity } from "@/types/ui";
 
 type Transaction = Tables<"royalty_transactions">;
 type ValidationError = Tables<"validation_errors">;
@@ -40,6 +49,7 @@ export default function Transactions() {
   const [selectedTerritory, setSelectedTerritory] = useState("all");
   const [selectedPlatform, setSelectedPlatform] = useState("all");
   const [groupMode, setGroupMode] = useState<GroupMode>("line");
+  const [tableDensity, setTableDensity] = useState<TableDensity>("comfortable");
   const initialViewParam = searchParams.get("view");
   const [activeView, setActiveView] = useState<TransactionView>(
     initialViewParam === "issues" ? "issues" : "transactions"
@@ -253,7 +263,47 @@ export default function Transactions() {
     return { critical, warning, info };
   }, [filteredValidationErrors]);
 
+  const appliedFilters = useMemo(() => {
+    const filters: string[] = [];
+    if (search.trim()) filters.push(`Search: ${search.trim()}`);
+    if (selectedCmo !== "all") filters.push(`CMO: ${selectedCmo}`);
+    if (selectedReportId !== "all") {
+      filters.push(`Document: ${reportById.get(selectedReportId)?.file_name ?? selectedReportId}`);
+    }
+    if (activeView === "transactions") {
+      if (selectedTerritory !== "all") filters.push(`Territory: ${selectedTerritory}`);
+      if (selectedPlatform !== "all") filters.push(`Platform: ${selectedPlatform}`);
+      if (groupMode !== "line") filters.push(`Group: ${groupMode}`);
+      if (tableDensity !== "comfortable") filters.push(`Density: ${tableDensity}`);
+    }
+    return filters;
+  }, [
+    activeView,
+    groupMode,
+    reportById,
+    search,
+    selectedCmo,
+    selectedPlatform,
+    selectedReportId,
+    selectedTerritory,
+    tableDensity,
+  ]);
+
   const selectedReport = selected ? reportById.get(selected.report_id) : null;
+  const denseRowClass = tableDensity === "compact" ? "[&>td]:py-2.5" : "[&>td]:py-3.5";
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedCmo("all");
+    setSelectedReportId("all");
+    setSelectedTerritory("all");
+    setSelectedPlatform("all");
+    setGroupMode("line");
+    setTableDensity("comfortable");
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("q");
+    setSearchParams(nextParams, { replace: true });
+  };
+
   const handleViewChange = (value: string) => {
     const nextView: TransactionView = value === "issues" ? "issues" : "transactions";
     setActiveView(nextView);
@@ -264,13 +314,11 @@ export default function Transactions() {
   };
 
   return (
-    <div className="rhythm-page">
-      <div>
-        <h1 className="font-display text-4xl tracking-[0.03em]">Transactions</h1>
-        <p className="text-muted-foreground text-sm">
-          One workspace for transaction history and validation issues.
-        </p>
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title="Transactions"
+        subtitle="One workspace for transaction history and validation issues."
+      />
 
       <Tabs value={activeView} onValueChange={handleViewChange}>
         <TabsList className="grid w-full max-w-md grid-cols-2">
@@ -280,51 +328,31 @@ export default function Transactions() {
       </Tabs>
 
       {activeView === "transactions" ? (
-        <section className="border-y border-foreground py-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Lines (Filtered)</p>
-              <p className="font-display text-3xl">{filteredTransactions.length.toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Gross</p>
-              <p className="font-display text-3xl">{toMoney(summary.gross)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Net</p>
-              <p className="font-display text-3xl">{toMoney(summary.net)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Unique Tracks</p>
-              <p className="font-display text-3xl">{summary.tracks.toLocaleString()}</p>
-            </div>
-          </div>
-        </section>
+        <KpiStrip
+          items={[
+            { label: "Lines (Filtered)", value: filteredTransactions.length.toLocaleString() },
+            { label: "Gross", value: toMoney(summary.gross) },
+            { label: "Net", value: toMoney(summary.net) },
+            { label: "Unique Tracks", value: summary.tracks.toLocaleString() },
+          ]}
+          columnsClassName="xl:grid-cols-4"
+        />
       ) : (
-        <section className="border-y border-foreground py-4">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-muted-foreground">Critical</p>
-              <p className="font-display text-3xl">{validationMetrics.critical}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Warnings</p>
-              <p className="font-display text-3xl">{validationMetrics.warning}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Info</p>
-              <p className="font-display text-3xl">{validationMetrics.info}</p>
-            </div>
-          </div>
-        </section>
+        <KpiStrip
+          items={[
+            { label: "Critical", value: validationMetrics.critical.toLocaleString(), tone: "critical" },
+            { label: "Warnings", value: validationMetrics.warning.toLocaleString(), tone: "warning" },
+            { label: "Info", value: validationMetrics.info.toLocaleString(), tone: "default" },
+          ]}
+          columnsClassName="sm:grid-cols-3"
+        />
       )}
 
-      <Card className="!border-0 border-t border-border bg-transparent">
-        <CardHeader className="space-y-3">
-          <CardTitle className="text-base">
-            {activeView === "transactions" ? "Transaction View" : "Issue Review"}
-          </CardTitle>
-          <div className="grid gap-3 md:grid-cols-6">
+      <FilterToolbar
+        title={activeView === "transactions" ? "Transaction View" : "Issue Review"}
+        description="Refine scope using CMO, statement, territory, platform, and grouping controls."
+      >
+          <div className="grid gap-3 md:grid-cols-7">
             <div className="relative md:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -405,10 +433,25 @@ export default function Transactions() {
                     <SelectItem value="track">Track</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={tableDensity} onValueChange={(value) => setTableDensity(value as TableDensity)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Table Density" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="comfortable">Comfortable</SelectItem>
+                    <SelectItem value="compact">Compact</SelectItem>
+                  </SelectContent>
+                </Select>
               </>
             ) : null}
           </div>
-        </CardHeader>
+          <AppliedFiltersRow
+            filters={appliedFilters}
+            onClear={clearFilters}
+            updatedLabel={`Updated ${format(new Date(), "MMM d, yyyy HH:mm")}`}
+          />
+      </FilterToolbar>
+      <Card>
 
         <CardContent>
           {activeView === "transactions" ? (
@@ -416,8 +459,8 @@ export default function Transactions() {
               <p className="text-sm text-muted-foreground">Loading...</p>
             ) : groupMode === "line" ? (
               filteredTransactions.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                  <Table className="min-w-[1140px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>CMO</TableHead>
@@ -434,7 +477,22 @@ export default function Transactions() {
                     </TableHeader>
                     <TableBody>
                       {filteredTransactions.map((tx) => (
-                        <TableRow key={tx.id} className="cursor-pointer" onClick={() => setSelected(tx)}>
+                        <TableRow
+                          key={tx.id}
+                          role="button"
+                          tabIndex={0}
+                          className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${denseRowClass}`}
+                          onClick={(event) => {
+                            event.currentTarget.focus();
+                            setSelected(tx);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelected(tx);
+                            }
+                          }}
+                        >
                           <TableCell>{reportById.get(tx.report_id)?.cmo_name ?? "-"}</TableCell>
                           <TableCell className="max-w-[180px] truncate">{tx.track_title ?? "-"}</TableCell>
                           <TableCell>{tx.artist_name ?? "-"}</TableCell>
@@ -453,14 +511,15 @@ export default function Transactions() {
                   </Table>
                 </div>
               ) : (
-                <div className="flex flex-col items-center py-10 text-center">
-                  <ArrowRightLeft className="mb-3 h-10 w-10 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No transactions found for the current filters.</p>
-                </div>
+                <EmptyStateBlock
+                  icon={<ArrowRightLeft className="h-10 w-10" />}
+                  title="No transactions found"
+                  description="No transaction rows match your current filters."
+                />
               )
             ) : grouped && grouped.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>{groupMode.toUpperCase()}</TableHead>
@@ -473,7 +532,7 @@ export default function Transactions() {
                   </TableHeader>
                   <TableBody>
                     {grouped.map((row) => (
-                      <TableRow key={row.key}>
+                      <TableRow key={row.key} className={denseRowClass}>
                         <TableCell className="font-medium">{row.key}</TableCell>
                         <TableCell className="text-right font-mono">{row.distinctReports}</TableCell>
                         <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
@@ -486,16 +545,17 @@ export default function Transactions() {
                 </Table>
               </div>
             ) : (
-              <div className="flex flex-col items-center py-10 text-center">
-                <ArrowRightLeft className="mb-3 h-10 w-10 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">No grouped transaction data available.</p>
-              </div>
+              <EmptyStateBlock
+                icon={<ArrowRightLeft className="h-10 w-10" />}
+                title="No grouped data"
+                description="No grouped transaction rows are available for this scope."
+              />
             )
           ) : isLoadingValidationErrors ? (
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : filteredValidationErrors.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+              <Table className="min-w-[1280px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Severity</TableHead>
@@ -511,7 +571,7 @@ export default function Transactions() {
                 </TableHeader>
                 <TableBody>
                   {filteredValidationErrors.map((err) => (
-                    <TableRow key={err.id}>
+                    <TableRow key={err.id} className={denseRowClass}>
                       <TableCell>
                         <StatusBadge status={err.severity} />
                       </TableCell>
@@ -533,26 +593,24 @@ export default function Transactions() {
               </Table>
             </div>
           ) : (
-            <div className="flex flex-col items-center py-10 text-center">
-              <AlertTriangle className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">No validation issues found for the current filters.</p>
-            </div>
+            <EmptyStateBlock
+              icon={<AlertTriangle className="h-10 w-10" />}
+              title="No validation issues"
+              description="No issues were found for the selected filters."
+            />
           )}
         </CardContent>
       </Card>
 
       <Sheet open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="overflow-y-auto sm:max-w-xl">
-          <SheetHeader>
-            <SheetTitle>Transaction Detail</SheetTitle>
-          </SheetHeader>
-
+        <SheetContent className="w-[min(96vw,760px)] max-w-[min(96vw,760px)] p-0 sm:max-w-[min(90vw,760px)]">
           {selected ? (
-            <div className="mt-6 space-y-4">
-              <section className="border-t border-black/20 pt-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Document Context
-                </p>
+            <DetailDrawerFrame
+              title="Transaction Detail"
+              subtitle={selectedReport?.file_name ? `${selectedReport.file_name}` : "Statement context unavailable"}
+              rightSlot={<StatusBadge status={selected.validation_status ?? "pending"} />}
+            >
+              <section className="grid gap-3 rounded-sm border border-border/45 bg-background/60 p-3 sm:grid-cols-2">
                 <div className="space-y-1 text-sm">
                   <p>
                     <span className="text-muted-foreground">CMO:</span>{" "}
@@ -566,20 +624,24 @@ export default function Transactions() {
                     <span className="text-muted-foreground">Period:</span>{" "}
                     <span className="font-medium">{selectedReport?.report_period ?? "-"}</span>
                   </p>
+                </div>
+                <div className="space-y-1 text-sm">
                   <p>
-                    <span className="text-muted-foreground">Uploaded:</span>{" "}
-                    <span className="font-medium">
-                      {selectedReport?.created_at
-                        ? format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")
-                        : "-"}
-                    </span>
+                    <span className="text-muted-foreground">Artist:</span>{" "}
+                    <span className="font-medium">{selected.artist_name ?? "-"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Track:</span>{" "}
+                    <span className="font-medium">{selected.track_title ?? "-"}</span>
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Usage:</span>{" "}
+                    <span className="font-medium">{selected.usage_type ?? "-"}</span>
                   </p>
                 </div>
               </section>
 
               {[
-                ["Artist", selected.artist_name],
-                ["Track", selected.track_title],
                 ["ISRC", selected.isrc],
                 ["ISWC", selected.iswc],
                 ["Territory", selected.territory],
@@ -603,7 +665,7 @@ export default function Transactions() {
                 </div>
               ))}
 
-              <section className="border-t border-black/20 pt-3 text-sm font-mono">
+              <section className="rounded-sm border border-border/45 bg-background/60 p-3 text-sm font-mono">
                 <p>Source Page: {selected.source_page ?? "-"}</p>
                 <p>Source Row: {selected.source_row ?? "-"}</p>
                 <p>OCR Confidence: {selected.ocr_confidence ?? "-"}</p>
@@ -614,9 +676,7 @@ export default function Transactions() {
                     : "-"}
                 </p>
               </section>
-
-              <StatusBadge status={selected.validation_status ?? "pending"} />
-            </div>
+            </DetailDrawerFrame>
           ) : null}
         </SheetContent>
       </Sheet>

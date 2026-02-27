@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Bot, CircleAlert, Compass, FileDown, LineChart, Send, ShieldAlert, Sparkles } from "lucide-react";
@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +23,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { toCompactMoney, toMoney } from "@/lib/royalty";
+import { FilterToolbar, KpiStrip, PageHeader } from "@/components/layout";
+import { cn } from "@/lib/utils";
 import {
   clampPercent,
   defaultDateRange,
@@ -81,6 +83,54 @@ const CHAT_QUICK_STARTERS = [
   "What data quality blockers could affect payout confidence?",
   "Show anomalies I should review this week.",
 ];
+
+type ChartLegendItem = {
+  label: string;
+  color: string;
+  marker?: "swatch" | "line";
+};
+
+type ChartPanelHeaderProps = {
+  icon?: ReactNode;
+  title: string;
+  subtitle?: string;
+  legend?: ChartLegendItem[];
+};
+
+function ChartPanelHeader({ icon, title, subtitle, legend = [] }: ChartPanelHeaderProps) {
+  return (
+    <header className="mb-4 border-b border-border/25 pb-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="flex items-center gap-2 font-display text-sm uppercase tracking-[0.06em] md:text-base">
+            {icon}
+            {title}
+          </h3>
+          {subtitle ? <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p> : null}
+        </div>
+        {legend.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-3">
+            {legend.map((item) => (
+              <span
+                key={item.label}
+                className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.06em] text-muted-foreground"
+              >
+                <span
+                  className={cn(
+                    "shrink-0 rounded-[1px]",
+                    item.marker === "line" ? "h-[2px] w-4" : "h-2.5 w-2.5 border border-border/25"
+                  )}
+                  style={{ backgroundColor: item.color }}
+                />
+                {item.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </header>
+  );
+}
 
 function toMonthlySnapshotRange(anchorDate: string): { fromDate: string; toDate: string } {
   const parsed = new Date(`${anchorDate}T00:00:00`);
@@ -440,27 +490,23 @@ export default function TrackInsightsDetail() {
   }
 
   return (
-    <div className="rhythm-page">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-4xl tracking-[0.03em] leading-none mb-1">Track Insights</h1>
-          <p className="text-sm text-muted-foreground">
-            Track ID: <span className="font-mono text-xs">{trackKey}</span>
-          </p>
-        </div>
-        <Button asChild variant="outline">
-          <Link to="/insights">
-            <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back to Insights
-          </Link>
-        </Button>
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title="Track Insights"
+        subtitle={`Track ID: ${trackKey}`}
+        actions={
+          <Button asChild variant="outline">
+            <Link to="/insights">
+              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              Back to Insights
+            </Link>
+          </Button>
+        }
+      />
 
-      <div className="grid grid-cols-1 gap-6">
-        <Card className="border-y border-border">
-          <CardHeader className="space-y-3 pb-4">
-            <CardTitle className="text-base">Date Range</CardTitle>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid min-w-0 grid-cols-1 gap-6">
+        <FilterToolbar title="Date Range" description="Adjust the reporting window before running AI analysis." sticky>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
               <div className="space-y-1">
                 <p className="text-xs font-mono uppercase text-muted-foreground">From</p>
                 <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
@@ -469,7 +515,7 @@ export default function TrackInsightsDetail() {
                 <p className="text-xs font-mono uppercase text-muted-foreground">To</p>
                 <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
               </div>
-              <div className="sm:col-span-2 xl:col-span-3 flex items-end justify-start xl:justify-end">
+              <div className="sm:col-span-2 lg:col-span-2 xl:col-span-4 flex items-end justify-start xl:justify-end">
                 <Button size="sm" variant="outline" onClick={() => exportMonthlyMutation.mutate()} disabled={assistantBusy}>
                   <FileDown className="mr-1.5 h-3 w-3" />
                   Monthly Snapshot
@@ -479,8 +525,7 @@ export default function TrackInsightsDetail() {
             <p className="text-xs text-muted-foreground">
               Reporting window: {fromDate} to {toDate}
             </p>
-          </CardHeader>
-        </Card>
+        </FilterToolbar>
 
 
         {isLoading ? (
@@ -503,25 +548,21 @@ export default function TrackInsightsDetail() {
           </Card>
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              {[
-                { label: "Track", val: summary.track_title },
-                { label: "Artist", val: summary.artist_name },
-                { label: "Net Revenue", val: toMoney(summary.net_revenue) },
-                { label: "Units", val: Math.round(summary.quantity ?? 0).toLocaleString() },
-                { label: "Revenue / Unit", val: toMoney(summary.net_per_unit) },
-                { label: "Data Confidence", val: toConfidenceGrade(summary.avg_confidence) },
-              ].map((m, i) => (
-                <div key={i} className="border border-border/35 p-4 bg-background/70">
-                  <p className="text-[10px] font-mono uppercase font-bold text-muted-foreground mb-1">{m.label}</p>
-                  <p className={`font-display ${m.label.includes("Revenue") ? "text-2xl" : "text-sm"} leading-none tracking-tight`}>{m.val}</p>
-                </div>
-              ))}
-            </div>
+            <KpiStrip
+              items={[
+                { label: "Track", value: summary.track_title ?? "-" },
+                { label: "Artist", value: summary.artist_name ?? "-" },
+                { label: "Net Revenue", value: toMoney(summary.net_revenue) },
+                { label: "Units", value: Math.round(summary.quantity ?? 0).toLocaleString() },
+                { label: "Revenue / Unit", value: toMoney(summary.net_per_unit) },
+                { label: "Data Confidence", value: toConfidenceGrade(summary.avg_confidence) },
+              ]}
+              columnsClassName="md:grid-cols-3 xl:grid-cols-6"
+            />
 
             {/* Decision Assistant */}
-            <section className="border border-[hsl(var(--brand-accent))]/30 bg-[hsl(var(--brand-accent-ghost))]/45 p-6">
-              <div className="flex flex-col gap-6">
+            <section className="min-w-0 rounded-sm border border-[hsl(var(--brand-accent))]/30 bg-[hsl(var(--brand-accent-ghost))]/35 p-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center border border-[hsl(var(--brand-accent))]/35 bg-background/70">
@@ -546,7 +587,7 @@ export default function TrackInsightsDetail() {
                   </Button>
                 </div>
 
-                <div className="space-y-3 border border-border/40 bg-background/70 p-4">
+                <div className="space-y-3 rounded-sm border border-border/40 bg-background/70 p-3">
                   <label className="text-xs font-mono uppercase text-muted-foreground">Ask the AI agent about this track</label>
                   <Textarea
                     value={chatInput}
@@ -606,7 +647,7 @@ export default function TrackInsightsDetail() {
                 )}
 
                 {latestAnswer && (
-                  <div className="space-y-4 border border-border/40 bg-background/70 p-4">
+                  <div className="space-y-4 rounded-sm border border-border/40 bg-background/70 p-3">
                     <div className="space-y-2">
                           {lastQuestion && (
                             <p className="text-xs text-muted-foreground">
@@ -707,8 +748,8 @@ export default function TrackInsightsDetail() {
                     {latestAnswer.table && latestTableColumns.length > 0 && (
                       <div className="border border-border/35 bg-background/60 p-3">
                         <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">AI query result preview</p>
-                        <div className="overflow-x-auto">
-                          <Table className="text-[11px]">
+                        <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                          <Table className="min-w-[680px] text-[11px]">
                             <TableHeader className="bg-muted/30">
                               <TableRow>
                                 {latestTableColumns.map((column) => (
@@ -771,7 +812,7 @@ export default function TrackInsightsDetail() {
             </section>
 
             {/* EXPLORER TABS */}
-            <Tabs defaultValue="performance" className="w-full">
+            <Tabs defaultValue="performance" className="w-full min-w-0">
               <TabsList className="w-full">
                 <TabsTrigger value="performance">Performance</TabsTrigger>
                 <TabsTrigger value="opportunity">Opportunities</TabsTrigger>
@@ -779,14 +820,17 @@ export default function TrackInsightsDetail() {
               </TabsList>
 
               <TabsContent value="performance" className="space-y-8">
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                  <div className="xl:col-span-8 bg-background/70 border border-border/35 p-4">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className="font-display text-lg uppercase flex items-center gap-2">
-                        <LineChart className="h-4 w-4" />
-                        Monthly Revenue and Units
-                      </h3>
-                    </div>
+                <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
+                  <div className="min-w-0 xl:col-span-8 bg-background/70 border border-border/35 p-4 md:p-5">
+                    <ChartPanelHeader
+                      icon={<LineChart className="h-4 w-4" />}
+                      title="Monthly Revenue and Units"
+                      subtitle="Reporting-currency net revenue and unit volume across the selected date range."
+                      legend={[
+                        { label: "Net Revenue", color: CHART_COLORS[0], marker: "swatch" },
+                        { label: "Units", color: CHART_COLORS[2], marker: "line" },
+                      ]}
+                    />
                     <ResponsiveContainer width="100%" height={320}>
                       <ComposedChart data={monthlyTrend}>
                         <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
@@ -818,8 +862,8 @@ export default function TrackInsightsDetail() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="xl:col-span-4 flex flex-col gap-6">
-                    <div className="bg-background/70 border border-border/35 p-4 flex-1">
+                  <div className="min-w-0 xl:col-span-4 flex flex-col gap-6">
+                    <div className="min-w-0 bg-background/70 border border-border/35 p-4 flex-1">
                       <h3 className="font-display text-sm uppercase mb-4">Executive Summary</h3>
                       <div className="space-y-4 text-xs">
                         <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
@@ -843,12 +887,12 @@ export default function TrackInsightsDetail() {
                   </div>
                 </div>
 
-                <div className="bg-background/70 border border-border/35 overflow-hidden">
+                <div className="min-w-0 bg-background/70 border border-border/35 overflow-hidden">
                   <div className="bg-secondary/60 p-2 border-b border-border/35">
                     <h3 className="font-display text-xs uppercase text-center">Territory and Platform Breakdown</h3>
                   </div>
-                  <div className="overflow-x-auto">
-                    <Table className="text-[11px]">
+                  <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                    <Table className="min-w-[680px] text-[11px]">
                       <TableHeader className="bg-muted/30 font-mono text-[10px] uppercase">
                         <TableRow>
                           <TableHead className="rounded-none">Territory</TableHead>
@@ -875,12 +919,14 @@ export default function TrackInsightsDetail() {
               </TabsContent>
 
               <TabsContent value="opportunity" className="space-y-8">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                  <div className="bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
-                      <Compass className="h-4 w-4" />
-                      Revenue by Usage Type
-                    </h3>
+                <div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
+                  <div className="min-w-0 bg-background/70 border border-border/35 p-4 md:p-5">
+                    <ChartPanelHeader
+                      icon={<Compass className="h-4 w-4" />}
+                      title="Revenue by Usage Type"
+                      subtitle="Identify which usage classes carry the strongest contribution."
+                      legend={[{ label: "Net Revenue", color: CHART_COLORS[1], marker: "swatch" }]}
+                    />
                     <ResponsiveContainer width="100%" height={320}>
                       <BarChart data={usageMix.slice(0, 12)} layout="vertical">
                         <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
@@ -892,15 +938,15 @@ export default function TrackInsightsDetail() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="bg-background/70 border border-border/35 p-4">
+                  <div className="min-w-0 bg-background/70 border border-border/35 p-4">
                     <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
                       <CircleAlert className="h-4 w-4" />
                       Concentration Risk
                     </h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="border border-border/35 bg-background/60 p-4">
                         <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Territory Share</p>
-                        <p className="font-display text-4xl leading-none">{concentration.territoryShare.toFixed(1)}%</p>
+                        <p className="font-display text-[clamp(1.7rem,3.2vw,2.2rem)] leading-none whitespace-nowrap">{concentration.territoryShare.toFixed(1)}%</p>
                         <div className={`h-1 w-full mt-3 ${concentration.territoryRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
                         <p className="text-[10px] mt-2 text-muted-foreground">
                           {concentration.territoryRisk ? "High concentration" : "Healthy spread"}
@@ -908,7 +954,7 @@ export default function TrackInsightsDetail() {
                       </div>
                       <div className="border border-border/35 bg-background/60 p-4">
                         <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Platform Share</p>
-                        <p className="font-display text-4xl leading-none">{concentration.platformShare.toFixed(1)}%</p>
+                        <p className="font-display text-[clamp(1.7rem,3.2vw,2.2rem)] leading-none whitespace-nowrap">{concentration.platformShare.toFixed(1)}%</p>
                         <div className={`h-1 w-full mt-3 ${concentration.platformRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
                         <p className="text-[10px] mt-2 text-muted-foreground">
                           {concentration.platformRisk ? "High concentration" : "Healthy spread"}
@@ -924,10 +970,10 @@ export default function TrackInsightsDetail() {
                     </div>
                   </div>
 
-                  <div className="xl:col-span-2 bg-background/70 border border-border/35 p-4">
+                  <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35 p-4">
                     <h3 className="font-display text-sm uppercase mb-4">Under-Monetized Territories</h3>
-                    <div className="overflow-x-auto">
-                      <Table className="text-[11px]">
+                    <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                      <Table className="min-w-[760px] text-[11px]">
                         <TableHeader className="bg-muted/30 font-mono text-[10px] uppercase">
                           <TableRow>
                             <TableHead>Territory</TableHead>
@@ -962,13 +1008,13 @@ export default function TrackInsightsDetail() {
               </TabsContent>
 
               <TabsContent value="quality" className="space-y-8">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                  <div className="bg-background/70 border border-border/35 p-4">
+                <div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
+                  <div className="min-w-0 bg-background/70 border border-border/35 p-4">
                     <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
                       <ShieldAlert className="h-4 w-4" />
                       Data Quality Overview
                     </h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {[
                         { label: "Failed Lines", val: quality?.failed_line_count ?? 0 },
                         { label: "Critical Tasks", val: quality?.open_critical_task_count ?? 0 },
@@ -977,14 +1023,18 @@ export default function TrackInsightsDetail() {
                       ].map((m, i) => (
                         <div key={i} className="border border-border/35 bg-background/60 p-4">
                           <p className="text-[9px] font-mono uppercase text-muted-foreground mb-1">{m.label}</p>
-                          <p className="font-display text-3xl leading-none">{m.val}</p>
+                          <p className="font-display text-[clamp(1.45rem,2.7vw,1.95rem)] leading-none whitespace-nowrap">{m.val}</p>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-6">Extraction Coverage by Type</h3>
+                  <div className="min-w-0 bg-background/70 border border-border/35 p-4 md:p-5">
+                    <ChartPanelHeader
+                      title="Extraction Coverage by Type"
+                      subtitle="Row coverage by extractor configuration family."
+                      legend={[{ label: "Rows", color: CHART_COLORS[3], marker: "swatch" }]}
+                    />
                     <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={configMix.slice(0, 10)} layout="vertical">
                         <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
@@ -996,19 +1046,19 @@ export default function TrackInsightsDetail() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="xl:col-span-2 bg-background/70 border border-border/35 p-4">
+                  <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35 p-4">
                     <h3 className="font-display text-sm uppercase mb-6">Field Coverage</h3>
                     <div className="space-y-4">
                       {coverage.map((row) => (
-                        <div key={row.field_name} className="flex items-center gap-4">
-                          <span className="w-40 font-mono text-[10px] uppercase font-bold truncate">{row.field_name}</span>
-                          <div className="flex-1 h-3 border border-border/35 bg-muted overflow-hidden">
+                        <div key={row.field_name} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
+                          <span className="w-full font-mono text-[10px] uppercase font-bold sm:w-40 sm:truncate">{row.field_name}</span>
+                          <div className="h-3 w-full flex-1 border border-border/35 bg-muted overflow-hidden">
                             <div
                               className="h-full bg-[hsl(var(--brand-accent))]"
                               style={{ width: `${clampPercent(row.coverage_pct)}%` }}
                             />
                           </div>
-                          <span className="w-24 text-right font-mono text-[10px] font-bold">
+                          <span className="w-full font-mono text-[10px] font-bold sm:w-24 sm:text-right">
                             {row.populated_rows} / {row.total_rows}
                           </span>
                         </div>
@@ -1016,12 +1066,12 @@ export default function TrackInsightsDetail() {
                     </div>
                   </div>
 
-                  <div className="xl:col-span-2 bg-background/70 border border-border/35">
+                  <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35">
                     <div className="bg-secondary/60 p-2 border-b border-border/35">
                       <h3 className="font-display text-xs uppercase text-center">Data Provenance</h3>
                     </div>
-                    <div className="overflow-x-auto">
-                      <Table className="text-[10px]">
+                    <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                      <Table className="min-w-[840px] text-[10px]">
                         <TableHeader className="bg-muted/30 font-mono text-[9px] uppercase">
                           <TableRow>
                             <TableHead>Date</TableHead>

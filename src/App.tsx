@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import Auth from "@/pages/Auth";
@@ -13,11 +13,13 @@ import DataQualityQueue from "@/pages/DataQualityQueue";
 import Insights from "@/pages/Insights";
 import TrackInsightsDetail from "@/pages/TrackInsightsDetail";
 import NotFound from "./pages/NotFound";
+import { resolveRouteMeta } from "@/lib/route-meta";
 
 const queryClient = new QueryClient();
 
 function AppRoutes() {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -29,8 +31,10 @@ function AppRoutes() {
 
   if (!user) return <Auth />;
 
+  const routeMeta = resolveRouteMeta(location.pathname);
+
   return (
-    <AppLayout>
+    <AppLayout routeMeta={routeMeta}>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/reports" element={<Reports />} />

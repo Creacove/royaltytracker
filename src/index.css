@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Archivo:wght@400;500;600&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Archivo:wght@400;500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -9,10 +9,10 @@
     --background: 44 14% 90%;
     --foreground: 0 0% 9%;
 
-    --card: 44 14% 90%;
+    --card: 44 14% 92%;
     --card-foreground: 0 0% 9%;
 
-    --popover: 44 14% 90%;
+    --popover: 44 14% 92%;
     --popover-foreground: 0 0% 9%;
 
     --primary: 0 0% 9%;
@@ -49,14 +49,20 @@
     --tone-critical: 8 24% 43%;
     --tone-archived: 0 0% 42%;
 
-    --radius: 0rem;
+    --radius: 0.5rem;
+    --radius-sm: 2px;
+    --radius-md: 4px;
+    --radius-lg: 8px;
     --border-weight: 1px;
-    --grain-opacity: 0.08;
-    --font-display: 'Antonio', sans-serif;
-    --font-body: 'Archivo', sans-serif;
-    --space-rhythm-page: clamp(1.75rem, 1.1rem + 1.8vw, 2.75rem);
-    --space-rhythm-section: clamp(1.1rem, 0.9rem + 0.8vw, 1.6rem);
-    --space-rhythm-block: clamp(0.7rem, 0.55rem + 0.45vw, 1rem);
+    --grain-opacity: 0.035;
+    --font-display: "Antonio", sans-serif;
+    --font-body: "Archivo", sans-serif;
+    --space-rhythm-page: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+    --space-rhythm-section: clamp(1rem, 0.85rem + 0.6vw, 1.35rem);
+    --space-rhythm-block: clamp(0.5rem, 0.45rem + 0.3vw, 0.75rem);
+    --motion-standard: 150ms ease-out;
+    --motion-drawer: 220ms ease-out;
+    --motion-stagger: 120ms ease-out;
 
     --sidebar-background: 44 14% 90%;
     --sidebar-foreground: 0 0% 9%;
@@ -72,33 +78,24 @@
     --background: 44 14% 90%;
     --foreground: 0 0% 9%;
 
-    --card: 44 14% 90%;
+    --card: 44 14% 92%;
     --card-foreground: 0 0% 9%;
-
-    --popover: 44 14% 90%;
+    --popover: 44 14% 92%;
     --popover-foreground: 0 0% 9%;
-
     --primary: 0 0% 9%;
     --primary-foreground: 44 14% 90%;
-
     --secondary: 44 12% 85%;
     --secondary-foreground: 0 0% 9%;
-
     --muted: 44 12% 85%;
     --muted-foreground: 0 0% 33%;
-
     --accent: 44 12% 85%;
     --accent-foreground: 0 0% 9%;
-
     --destructive: 0 0% 20%;
     --destructive-foreground: 44 14% 90%;
-
     --success: 0 0% 14%;
     --success-foreground: 44 14% 90%;
-
     --warning: 0 0% 30%;
     --warning-foreground: 44 14% 90%;
-
     --border: 0 0% 9%;
     --input: 0 0% 9%;
     --ring: 271 20% 40%;
@@ -111,7 +108,6 @@
     --tone-warning: 34 28% 44%;
     --tone-critical: 8 24% 43%;
     --tone-archived: 0 0% 42%;
-
     --sidebar-background: 44 14% 90%;
     --sidebar-foreground: 0 0% 9%;
     --sidebar-primary: 0 0% 9%;
@@ -132,6 +128,14 @@
     @apply bg-background text-foreground font-sans antialiased;
     position: relative;
     font-family: var(--font-body);
+    overflow-x: clip;
+  }
+
+  #root {
+    isolation: isolate;
+    min-height: 100vh;
+    max-width: 100%;
+    overflow-x: clip;
   }
 
   body::before {
@@ -139,18 +143,24 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    z-index: 9999;
+    z-index: 0;
     opacity: var(--grain-opacity);
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     letter-spacing: 0.02em;
     text-transform: uppercase;
   }
 
-  code, pre {
+  code,
+  pre {
     font-family: "Courier New", monospace;
   }
 
@@ -165,76 +175,9 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-
-  .noise-overlay {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 9999;
-    opacity: var(--grain-opacity);
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-  }
 }
 
 @layer utilities {
-  .rounded-sm,
-  .rounded,
-  .rounded-md,
-  .rounded-lg,
-  .rounded-xl,
-  .rounded-2xl {
-    border-radius: 0 !important;
-  }
-
-  .shadow,
-  .shadow-sm,
-  .shadow-md,
-  .shadow-lg,
-  .shadow-xl,
-  .shadow-2xl,
-  .shadow-inner {
-    box-shadow: none !important;
-  }
-
-  .drop-shadow,
-  .drop-shadow-sm,
-  .drop-shadow-md,
-  .drop-shadow-lg,
-  .drop-shadow-xl,
-  .drop-shadow-2xl {
-    filter: none !important;
-  }
-
-  .border {
-    border-width: var(--border-weight) !important;
-  }
-
-  .border-x {
-    border-left-width: var(--border-weight) !important;
-    border-right-width: var(--border-weight) !important;
-  }
-
-  .border-y {
-    border-top-width: var(--border-weight) !important;
-    border-bottom-width: var(--border-weight) !important;
-  }
-
-  .border-t {
-    border-top-width: var(--border-weight) !important;
-  }
-
-  .border-r {
-    border-right-width: var(--border-weight) !important;
-  }
-
-  .border-b {
-    border-bottom-width: var(--border-weight) !important;
-  }
-
-  .border-l {
-    border-left-width: var(--border-weight) !important;
-  }
-
   .table-col-id {
     font-family: "Courier New", monospace;
     font-weight: 700;
@@ -257,6 +200,22 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-rhythm-block);
+  }
+
+  .soft-elevation {
+    box-shadow: 0 8px 24px -16px hsl(0 0% 9% / 0.45);
+  }
+
+  .motion-standard {
+    transition: all var(--motion-standard);
+  }
+
+  .motion-drawer {
+    transition: all var(--motion-drawer);
+  }
+
+  .motion-stagger {
+    transition: all var(--motion-stagger);
   }
 
   *::-webkit-scrollbar {

@@ -11,7 +11,7 @@ const PLAN_TOKEN_TTL_MINUTES = 15;
 const SQL_ROW_LIMIT = 200;
 const SQL_TIMEOUT_MS = 3000;
 
-type Action = "plan_query" | "run_query";
+type Action = "plan_query" | "run_query" | "send_turn";
 
 type PlanTokenPayload = {
   plan_id: string;
@@ -48,6 +48,35 @@ type PlanModelResponse = {
 type RunModelResponse = {
   answer_title?: string;
   answer_text?: string;
+  kpis?: Array<{ label?: string; value?: string; change?: string }>;
+  chart?: { type?: "bar" | "line" | "none"; x?: string; y?: string[]; title?: string };
+  follow_up_questions?: string[];
+};
+
+type AssistantSchemaColumn = {
+  field_key?: string;
+  inferred_type?: string;
+  coverage_pct?: number;
+  sample_values?: unknown[];
+};
+
+type AssistantSchemaSummary = {
+  total_rows: number;
+  canonical_columns: AssistantSchemaColumn[];
+  custom_columns: AssistantSchemaColumn[];
+};
+
+type AssistantPlannerResponse = {
+  intent?: string;
+  sql?: string;
+  clarification_prompt?: string;
+  clarification_options?: string[];
+};
+
+type AssistantSynthesisResponse = {
+  answer_title?: string;
+  answer_text?: string;
+  why_this_matters?: string;
   kpis?: Array<{ label?: string; value?: string; change?: string }>;
   chart?: { type?: "bar" | "line" | "none"; x?: string; y?: string[]; title?: string };
   follow_up_questions?: string[];
@@ -255,6 +284,306 @@ function sanitizeColumns(columns: unknown): string[] {
   return asArrayOfStrings(columns);
 }
 
+function sanitizeKpis(
+  input: unknown,
+): Array<{ label: string; value: string; change?: string }> {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((kpi) => {
+      if (!kpi || typeof kpi !== "object" || Array.isArray(kpi)) return null;
+      const record = kpi as Record<string, unknown>;
+      const label = asString(record.label);
+      const value = asString(record.value);
+      if (!label || !value) return null;
+      return {
+        label,
+        value,
+        change: asString(record.change) ?? undefined,
+      };
+    })
+    .filter((kpi): kpi is { label: string; value: string; change?: string } => !!kpi)
+    .slice(0, 6);
+}
+
+function sanitizeSchemaColumn(input: unknown): AssistantSchemaColumn | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const row = input as Record<string, unknown>;
+  const fieldKey = asString(row.field_key);
+  if (!fieldKey) return null;
+  const inferredType = asString(row.inferred_type) ?? "text";
+  const coverageRaw =
+    typeof row.coverage_pct === "number"
+      ? row.coverage_pct
+      : typeof row.coverage_pct === "string"
+        ? Number(row.coverage_pct)
+        : 0;
+  const coveragePct = Number.isFinite(coverageRaw) ? coverageRaw : 0;
+  const sampleValues = Array.isArray(row.sample_values) ? row.sample_values.slice(0, 3) : [];
+  return {
+    field_key: fieldKey,
+    inferred_type: inferredType,
+    coverage_pct: coveragePct,
+    sample_values: sampleValues,
+  };
+}
+
+function parseAssistantSchemaSummary(input: unknown): AssistantSchemaSummary {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { total_rows: 0, canonical_columns: [], custom_columns: [] };
+  }
+  const root = input as Record<string, unknown>;
+  const totalRowsRaw =
+    typeof root.total_rows === "number"
+      ? root.total_rows
+      : typeof root.total_rows === "string"
+        ? Number(root.total_rows)
+        : 0;
+  const totalRows = Number.isFinite(totalRowsRaw) ? totalRowsRaw : 0;
+  const canonicalColumns = Array.isArray(root.canonical_columns)
+    ? root.canonical_columns
+      .map((col) => sanitizeSchemaColumn(col))
+      .filter((col): col is AssistantSchemaColumn => !!col)
+    : [];
+  const customColumns = Array.isArray(root.custom_columns)
+    ? root.custom_columns
+      .map((col) => sanitizeSchemaColumn(col))
+      .filter((col): col is AssistantSchemaColumn => !!col)
+    : [];
+  return {
+    total_rows: totalRows,
+    canonical_columns: canonicalColumns,
+    custom_columns: customColumns,
+  };
+}
+
+function normalizeFieldToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function quoteSqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function topDimensionOptions(schema: AssistantSchemaSummary): string[] {
+  const canonicalPreferred = ["territory", "platform", "usage_type", "event_date"];
+  const options = canonicalPreferred.filter((field) =>
+    schema.canonical_columns.some((col) => col.field_key === field),
+  );
+  const customOptions = schema.custom_columns
+    .slice()
+    .sort((a, b) => (b.coverage_pct ?? 0) - (a.coverage_pct ?? 0))
+    .map((col) => col.field_key ?? "")
+    .filter((name) => name.length > 0)
+    .slice(0, 3);
+  return Array.from(new Set([...options, ...customOptions])).slice(0, 4);
+}
+
+function buildDeterministicSql({
+  question,
+  schema,
+}: {
+  question: string;
+  schema: AssistantSchemaSummary;
+}): { sql: string; intent: string } | null {
+  const n = question.toLowerCase();
+
+  // --- Geography / Territory intent ---
+  // Covers: tour, places, countries, markets, cities, regions, audiences, where, geographic
+  const asksGeography = /\bterrit(ory|ories)\b|\bcountr(y|ies)\b|\bmarket(s)?\b|\bcit(y|ies)\b|\bregion(s)?\b|\bwhere\b|\btour\b|\baudienc(e|es)\b|\bgeograph|\blocal|\binternational|\bplace(s)?\b|\bshow(s)?\b|\bconcert(s)?\b/.test(n);
+  // --- Platform / DSP intent ---
+  const asksPlatform = /\bplatform(s)?\b|\bdsp(s)?\b|\bservice(s)?\b|\bspotify\b|\bapple\b|\btidal\b|\byoutube\b|\bamazon\b|\bsoundcloud\b|\bstreaming service\b/.test(n);
+  // --- Trend / Time intent ---
+  const asksTrend = /\btrend\b|\bmonth(ly|s)?\b|\bover time\b|\bhistor(y|ical)\b|\bquarter(ly)?\b|\bweek(ly|s)?\b|\b90 day\b|\blast \d+ month\b|\btime series\b|\bmomentum\b|\bchanged\b|\bshift\b/.test(n);
+  // --- Quality / Issues intent ---
+  const asksQuality = /\bquality\b|\bblocker(s)?\b|\bwarning(s)?\b|\bfailed\b|\berror(s)?\b|\bissue(s)?\b|\bconfiden(ce|t)\b|\bvalidation\b|\bpayout risk\b/.test(n);
+  // --- Usage type intent ---
+  const asksUsage = /\busage.?type\b|\bstream(s|ing)?\b|\bdownload(s|ed)?\b|\bsync(s)?\b|\bperformance right\b|\blicens(e|ing)\b/.test(n);
+  // --- Totals / Overall intent ---
+  const asksTotal = /\btotal\b|\boverall\b|\bhow much\b|\bsummar(y|ize)\b|\boverall performance\b|\bbig picture\b/.test(n);
+  // --- Anomaly / Drop / Best / Worst intent → territory breakdown ---
+  const asksAnomaly = /\banomal(y|ies)\b|\bdrop(ped)?\b|\bspike(d)?\b|\bbest\b|\bworst\b|\bstrongest\b|\bweakest\b|\btop\b|\bbottom\b/.test(n);
+  // --- Cashflow / Revenue ---
+  const asksCashflow = /\bcashflow\b|\bcash flow\b|\bowe(d|s)?\b|\bunpaid\b|\bhanging\b|\bpayout\b/.test(n);
+
+  if (asksTrend) {
+    return {
+      intent: "monthly_trend",
+      sql: `SELECT date_trunc('month', event_date)::date AS month_start, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity, SUM(gross_revenue)::numeric AS gross_revenue FROM scoped_core GROUP BY 1 ORDER BY 1 ASC`,
+    };
+  }
+
+  if (asksQuality) {
+    return {
+      intent: "quality_status",
+      sql: `SELECT validation_status, COUNT(*)::int AS row_count, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity FROM scoped_core GROUP BY 1 ORDER BY row_count DESC`,
+    };
+  }
+
+  // Geography takes priority over anomaly ("top places to tour" → territory)
+  if (asksGeography || (asksAnomaly && !asksPlatform)) {
+    return {
+      intent: "by_territory",
+      sql: `SELECT territory, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity, CASE WHEN SUM(quantity) = 0 THEN 0 ELSE SUM(net_revenue) / NULLIF(SUM(quantity), 0) END::numeric AS net_per_unit FROM scoped_core GROUP BY 1 ORDER BY net_revenue DESC LIMIT 20`,
+    };
+  }
+
+  if (asksPlatform) {
+    return {
+      intent: "by_platform",
+      sql: `SELECT platform, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity, CASE WHEN SUM(quantity) = 0 THEN 0 ELSE SUM(net_revenue) / NULLIF(SUM(quantity), 0) END::numeric AS net_per_unit FROM scoped_core GROUP BY 1 ORDER BY net_revenue DESC LIMIT 20`,
+    };
+  }
+
+  if (asksUsage) {
+    return {
+      intent: "by_usage_type",
+      sql: `SELECT usage_type, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity FROM scoped_core GROUP BY 1 ORDER BY net_revenue DESC LIMIT 20`,
+    };
+  }
+
+  if (asksCashflow) {
+    return {
+      intent: "cashflow_by_territory_platform",
+      sql: `SELECT territory, platform, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity FROM scoped_core GROUP BY 1, 2 ORDER BY net_revenue DESC LIMIT 20`,
+    };
+  }
+
+  // Custom field match
+  const customMatch = schema.custom_columns
+    .map((col) => col.field_key ?? "")
+    .find((field) => field.length > 0 && n.includes(normalizeFieldToken(field)));
+  if (customMatch) {
+    return {
+      intent: "by_custom_field",
+      sql: `SELECT sc.custom_value, COUNT(*)::int AS row_count, SUM(co.net_revenue)::numeric AS net_revenue, SUM(co.quantity)::numeric AS quantity FROM scoped_custom sc JOIN scoped_core co ON co.report_id = sc.report_id AND co.source_row_id = sc.source_row_id AND co.event_date = sc.event_date WHERE lower(sc.custom_key) = lower(${quoteSqlLiteral(customMatch)}) GROUP BY 1 ORDER BY net_revenue DESC NULLS LAST LIMIT 20`,
+    };
+  }
+
+  if (asksTotal) {
+    return {
+      intent: "totals",
+      sql: `SELECT SUM(net_revenue)::numeric AS net_revenue, SUM(gross_revenue)::numeric AS gross_revenue, SUM(commission)::numeric AS commission, SUM(quantity)::numeric AS quantity, CASE WHEN SUM(quantity) = 0 THEN 0 ELSE SUM(net_revenue) / NULLIF(SUM(quantity), 0) END::numeric AS net_per_unit FROM scoped_core`,
+    };
+  }
+
+  // Fallback: if the question has multiple dimensions, do a combined territory+platform breakdown
+  // This avoids asking clarifying questions unnecessarily
+  return {
+    intent: "top_territories",
+    sql: `SELECT territory, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity, CASE WHEN SUM(quantity) = 0 THEN 0 ELSE SUM(net_revenue) / NULLIF(SUM(quantity), 0) END::numeric AS net_per_unit FROM scoped_core GROUP BY 1 ORDER BY net_revenue DESC LIMIT 20`,
+  };
+}
+
+function followUpTemplates(schema: AssistantSchemaSummary): string[] {
+  const options: string[] = [];
+  if (schema.canonical_columns.some((col) => col.field_key === "territory")) {
+    options.push("Break this down by territory for the same period.");
+  }
+  if (schema.canonical_columns.some((col) => col.field_key === "platform")) {
+    options.push("Break this down by platform for the same period.");
+  }
+  if (schema.canonical_columns.some((col) => col.field_key === "usage_type")) {
+    options.push("Which usage type drives the highest net per unit?");
+  }
+  if (schema.custom_columns.length > 0) {
+    const topCustom = schema.custom_columns
+      .slice()
+      .sort((a, b) => (b.coverage_pct ?? 0) - (a.coverage_pct ?? 0))[0]?.field_key;
+    if (topCustom) options.push(`Can you segment this by ${topCustom}?`);
+  }
+  options.push("Compare this against the previous 90 days.");
+  return Array.from(new Set(options)).slice(0, 3);
+}
+
+function filterFollowUps({
+  proposed,
+  schema,
+}: {
+  proposed: string[];
+  schema: AssistantSchemaSummary;
+}): string[] {
+  const availableFields = [
+    ...schema.canonical_columns.map((col) => col.field_key ?? ""),
+    ...schema.custom_columns.map((col) => col.field_key ?? ""),
+  ]
+    .filter((field) => field.length > 0)
+    .map((field) => normalizeFieldToken(field));
+
+  const cleaned = proposed
+    .map((item) => asString(item))
+    .filter((item): item is string => !!item)
+    .filter((item) => {
+      const lowered = normalizeFieldToken(item);
+      if (/\b90 days\b|\bprevious\b|\bcompare\b/.test(lowered)) return true;
+      return availableFields.some((field) => field.length > 0 && lowered.includes(field));
+    })
+    .slice(0, 3);
+
+  if (cleaned.length > 0) return cleaned;
+  return followUpTemplates(schema);
+}
+
+function buildClarificationResponse({
+  conversationId,
+  fromDate,
+  toDate,
+  prompt,
+  options,
+}: {
+  conversationId: string;
+  fromDate: string;
+  toDate: string;
+  prompt: string;
+  options: string[];
+}) {
+  return {
+    conversation_id: conversationId,
+    answer_title: "Need One Clarification",
+    answer_text: "Choose one option so I can run the right analysis on your reviewed data.",
+    why_this_matters: "This keeps the answer precise and avoids guessing the wrong field.",
+    kpis: [],
+    evidence: {
+      row_count: 0,
+      duration_ms: 0,
+      from_date: fromDate,
+      to_date: toDate,
+      provenance: ["get_track_assistant_schema_v2"],
+    },
+    follow_up_questions: [],
+    clarification: {
+      prompt,
+      options,
+    },
+  };
+}
+
+function buildFallbackKpis({
+  rows,
+  columns,
+  evidence,
+}: {
+  rows: Array<Record<string, string | number | null>>;
+  columns: string[];
+  evidence: ReturnType<typeof toEvidence>;
+}): Array<{ label: string; value: string; change?: string }> {
+  const first = rows[0] ?? {};
+  const values: Array<{ label: string; value: string; change?: string }> = [];
+
+  const pushIfPresent = (label: string, key: string) => {
+    const raw = first[key];
+    if (raw === null || raw === undefined || raw === "") return;
+    values.push({ label, value: String(raw) });
+  };
+
+  if (columns.includes("net_revenue")) pushIfPresent("Net Revenue", "net_revenue");
+  if (columns.includes("gross_revenue")) pushIfPresent("Gross Revenue", "gross_revenue");
+  if (columns.includes("quantity")) pushIfPresent("Quantity", "quantity");
+  if (columns.includes("net_per_unit")) pushIfPresent("Net Per Unit", "net_per_unit");
+
+  values.push({ label: "Rows Returned", value: evidence.row_count.toLocaleString() });
+  return values.slice(0, 5);
+}
+
 function toEvidence(sqlResult: SqlExecutionResponse, fromDate: string, toDate: string) {
   return {
     row_count: Number.isFinite(Number(sqlResult.row_count)) ? Number(sqlResult.row_count) : 0,
@@ -312,7 +641,7 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY") ?? Deno.env.get("SUPABASE_PUBLISHABLE_KEY");
     const openAiKey = Deno.env.get("OPENAI_API_KEY");
     const signingSecret = Deno.env.get("CHAT_SQL_SIGNING_SECRET");
-    const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-4.1-mini";
+    const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o";
 
     if (!supabaseUrl || !serviceRoleKey || !anonKey) throw new Error("Missing Supabase env.");
     if (!openAiKey) throw new Error("Missing OPENAI_API_KEY secret.");
@@ -352,7 +681,7 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const action = asString((body as { action?: unknown }).action) as Action | null;
-    if (action !== "plan_query" && action !== "run_query") {
+    if (action !== "plan_query" && action !== "run_query" && action !== "send_turn") {
       return new Response(JSON.stringify({ error: "Unsupported action" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -366,6 +695,236 @@ serve(async (req) => {
       (body as { from_date?: unknown }).from_date,
       (body as { to_date?: unknown }).to_date,
     );
+
+    if (action === "send_turn") {
+      if (!question) throw new Error("question is required for send_turn.");
+      const conversationId =
+        asString((body as { conversation_id?: unknown }).conversation_id) ?? crypto.randomUUID();
+
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+          },
+        },
+      });
+
+      const { data: schemaData, error: schemaError } = await userClient.rpc(
+        "get_track_assistant_schema_v2",
+        {
+          p_track_key: trackKey,
+          from_date: fromDate,
+          to_date: toDate,
+        },
+      );
+      if (schemaError) throw new Error(`Failed to load assistant schema: ${schemaError.message}`);
+
+      const schema = parseAssistantSchemaSummary(schemaData);
+      if (schema.total_rows <= 0) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: conversationId,
+            answer_title: "No Reviewed Data In Scope",
+            answer_text:
+              "There are no reviewed rows for this track and date range yet. Once review is complete, I can answer with full evidence.",
+            why_this_matters:
+              "Answers are intentionally limited to reviewed statements so publisher decisions stay trustworthy.",
+            kpis: [],
+            evidence: {
+              row_count: 0,
+              duration_ms: 0,
+              from_date: fromDate,
+              to_date: toDate,
+              provenance: ["track_assistant_scope_v2"],
+            },
+            follow_up_questions: followUpTemplates(schema),
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      const deterministic = buildDeterministicSql({ question, schema });
+      let plannedSql = deterministic?.sql ?? null;
+
+      if (!plannedSql) {
+        const defaultClarificationOptions = topDimensionOptions(schema);
+
+        const plannerSystem = [
+          "You are a world-class music industry data analyst building SQL for publisher decision-making.",
+          "Your job is to ALWAYS produce a valid SQL query. Never ask for clarification if you can make a reasonable inference.",
+          "Output JSON with keys: intent, sql.",
+          "CRITICAL RULES:",
+          "- If the question mentions touring, concerts, shows, geography, countries, cities, places, markets, audiences → group by territory.",
+          "- If the question mentions platforms, DSPs, services, Spotify, Apple, Tidal → group by platform.",
+          "- If the question mentions trend, momentum, change, last N months, time → group by month.",
+          "- If the question mentions streaming, downloads, sync, performance rights → group by usage_type.",
+          "- If the question mentions quality, errors, blockers, confidence → group by validation_status.",
+          "- For any other question, default to territory breakdown — it is almost always the most useful answer.",
+          "- NEVER leave sql empty. When uncertain, write a territory + platform revenue breakdown.",
+          "- SQL must start with SELECT or WITH.",
+          "- Use only: scoped_core, scoped_custom, scoped_columns, schema_json.",
+          "- No schema-qualified names, no comments, no semicolons, no quoted identifiers, no DDL/DML.",
+          "- Always LIMIT 20.",
+        ].join("\n");
+
+        const plannerUser = JSON.stringify({
+          question,
+          schema: {
+            total_rows: schema.total_rows,
+            canonical_columns: schema.canonical_columns.slice(0, 24),
+            custom_columns: schema.custom_columns
+              .slice()
+              .sort((a, b) => (b.coverage_pct ?? 0) - (a.coverage_pct ?? 0))
+              .slice(0, 24),
+          },
+        });
+
+        let planner: AssistantPlannerResponse | null = null;
+        try {
+          planner = await callOpenAiJson<AssistantPlannerResponse>({
+            apiKey: openAiKey,
+            model,
+            systemPrompt: plannerSystem,
+            userPrompt: plannerUser,
+          });
+        } catch {
+          planner = null;
+        }
+
+        const proposedSql = asString(planner?.sql);
+        if (proposedSql) {
+          try {
+            plannedSql = validatePlannedSql(proposedSql);
+          } catch {
+            // SQL failed validation — fall through to the default territory SQL
+          }
+        }
+
+        // If AI still couldn't produce valid SQL, use a smart default instead of asking clarification
+        if (!plannedSql) {
+          plannedSql = `SELECT territory, SUM(net_revenue)::numeric AS net_revenue, SUM(quantity)::numeric AS quantity, CASE WHEN SUM(quantity) = 0 THEN 0 ELSE SUM(net_revenue) / NULLIF(SUM(quantity), 0) END::numeric AS net_per_unit FROM scoped_core GROUP BY 1 ORDER BY net_revenue DESC LIMIT 20`;
+        }
+      }
+
+      const cleanedSql = validatePlannedSql(plannedSql);
+      const { data: rpcData, error: rpcError } = await userClient.rpc("run_track_chat_sql_v2", {
+        p_track_key: trackKey,
+        from_date: fromDate,
+        to_date: toDate,
+        p_sql: cleanedSql,
+      });
+      if (rpcError) throw new Error(`SQL execution failed: ${rpcError.message}`);
+
+      const sqlResult = (rpcData ?? {}) as SqlExecutionResponse;
+      const columns = sanitizeColumns(sqlResult.columns);
+      const rows = sanitizeRows(sqlResult.rows);
+      const evidence = toEvidence(sqlResult, fromDate, toDate);
+      const previewRows = rows.slice(0, 25);
+
+      const synthesisSystem = [
+        "You are a senior music industry business analyst advising record labels and publishers on maximizing royalty revenue.",
+        "Your answers are precise, data-driven, and immediately actionable — like a trusted advisor who has seen hundreds of music catalogs.",
+        "Output JSON with keys: answer_title, answer_text, why_this_matters, kpis, chart, follow_up_questions.",
+        "RULES:",
+        "- answer_title: 3-6 words, punchy and specific (e.g. 'US Leads by 3x Margin', 'Spotify Dominates Revenue').",
+        "- answer_text: 2-4 sentences. Name the top performer with real numbers. Identify the gap or opportunity. Be specific.",
+        "- why_this_matters: One sentence. Describe the PUBLISHER ACTION this suggests (e.g. 'Focus promotion budget on US market where returns are highest.').",
+        "- kpis: 3-5 items. Include top territory/platform by revenue, total revenue, % share of leader, and net per unit.",
+        "- chart: type bar if comparing categories, line if time series. x must be a dimension column, y must be numeric columns from the result.",
+        "- follow_up_questions: 2-3 smart follow-up questions SPECIFIC to the data dimension already shown (e.g. 'Which platform drives the most revenue in the US?', 'What changed in US revenue over the last 6 months?').",
+        "- NEVER say 'I need clarification' or ask the user a question in answer_text. Always make a call based on the data.",
+        "- If result has 0 rows: explain in answer_text that no reviewed data matches and give 1 concrete next step.",
+      ].join("\n");
+
+      const synthesisUser = JSON.stringify({
+        question,
+        sql_preview: cleanedSql,
+        schema: {
+          canonical_fields: schema.canonical_columns.map((col) => col.field_key).filter(Boolean),
+          custom_fields: schema.custom_columns.map((col) => col.field_key).filter(Boolean),
+        },
+        result: {
+          columns,
+          rows: previewRows,
+          row_count: evidence.row_count,
+        },
+      });
+
+      let synthesized: AssistantSynthesisResponse | null = null;
+      try {
+        synthesized = await callOpenAiJson<AssistantSynthesisResponse>({
+          apiKey: openAiKey,
+          model,
+          systemPrompt: synthesisSystem,
+          userPrompt: synthesisUser,
+        });
+      } catch {
+        synthesized = null;
+      }
+
+      const fallbackTitle =
+        evidence.row_count === 0 ? "No Matching Records Found" : "Decision View Ready";
+      const fallbackText =
+        evidence.row_count === 0
+          ? "No reviewed rows matched this question in the selected date range."
+          : `Here is the strongest answer for "${question}" using reviewed data for this track.`;
+      const fallbackWhy =
+        evidence.row_count === 0
+          ? "Check date range and reviewed-report coverage to unlock answers."
+          : "Use this to prioritize where publisher attention should go next.";
+
+      const answerTitle = asString(synthesized?.answer_title) ?? fallbackTitle;
+      const answerText = asString(synthesized?.answer_text) ?? fallbackText;
+      const whyThisMatters = asString(synthesized?.why_this_matters) ?? fallbackWhy;
+      const kpis = sanitizeKpis(synthesized?.kpis);
+      const fallbackKpis = buildFallbackKpis({ rows, columns, evidence });
+      const finalKpis = kpis.length > 0 ? kpis : fallbackKpis;
+
+      const chart = (() => {
+        const proposed = synthesized?.chart;
+        const chartType = proposed?.type === "bar" || proposed?.type === "line" || proposed?.type === "none"
+          ? proposed.type
+          : "none";
+        if (chartType === "none") return { type: "none" as const, x: "", y: [], title: undefined };
+        const x = asString(proposed?.x);
+        const y = asArrayOfStrings(proposed?.y);
+        if (!x || y.length === 0 || !columns.includes(x) || y.some((col) => !columns.includes(col))) {
+          return { type: "none" as const, x: "", y: [], title: undefined };
+        }
+        return {
+          type: chartType,
+          x,
+          y,
+          title: asString(proposed?.title) ?? undefined,
+        };
+      })();
+
+      const followUps = filterFollowUps({
+        proposed: asArrayOfStrings(synthesized?.follow_up_questions),
+        schema,
+      });
+
+      return new Response(
+        JSON.stringify({
+          conversation_id: conversationId,
+          answer_title: answerTitle,
+          answer_text: answerText,
+          why_this_matters: whyThisMatters,
+          kpis: finalKpis,
+          table: previewRows.length > 0 ? { columns, rows: previewRows } : undefined,
+          chart,
+          evidence,
+          follow_up_questions: followUps,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
     if (action === "plan_query") {
       if (!question) throw new Error("question is required for plan_query.");
@@ -562,13 +1121,13 @@ serve(async (req) => {
     const kpis =
       Array.isArray(modelRun?.kpis) && modelRun?.kpis.length > 0
         ? modelRun!.kpis!
-            .map((kpi) => ({
-              label: asString(kpi.label) ?? "",
-              value: asString(kpi.value) ?? "",
-              change: asString(kpi.change) ?? undefined,
-            }))
-            .filter((kpi) => kpi.label.length > 0 && kpi.value.length > 0)
-            .slice(0, 6)
+          .map((kpi) => ({
+            label: asString(kpi.label) ?? "",
+            value: asString(kpi.value) ?? "",
+            change: asString(kpi.change) ?? undefined,
+          }))
+          .filter((kpi) => kpi.label.length > 0 && kpi.value.length > 0)
+          .slice(0, 6)
         : fallback.kpis;
 
     const chart = (() => {

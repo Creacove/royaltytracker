@@ -9,10 +9,13 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClipboardCheck, AlertTriangle, CircleCheckBig, Lock } from "lucide-react";
 import { format, isValid } from "date-fns";
+import { KpiStrip, PageHeader } from "@/components/layout";
 
 type ReviewTask = Tables<"review_tasks">;
 type SourceRow = Tables<"source_rows">;
@@ -151,6 +154,7 @@ export default function DataQualityQueue() {
   const queryClient = useQueryClient();
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<ReviewTask | null>(null);
+  const [activeIssueIndex, setActiveIssueIndex] = useState(0);
   const [resolutionNote, setResolutionNote] = useState("");
   const [resolutionForm, setResolutionForm] = useState({
     canonicalField: "",
@@ -178,6 +182,7 @@ export default function DataQualityQueue() {
       customMappingKey: toSnakeCase(String(rawHeader)),
       correctedValue: String(initialValue ?? ""),
     });
+    setActiveIssueIndex(0);
     setResolutionNote("");
     setApplyToReport(false);
   }, [selectedTask?.id]);
@@ -377,7 +382,10 @@ export default function DataQualityQueue() {
       // CO-FOUNDER UX: If the task is partially resolved (in_progress), keep sheet open
       // and update the selectedTask state with the new payload from the server.
       if (data.task?.status === "in_progress") {
+        const nextPayload = toTaskPayload(data.task.payload as ReviewTask["payload"]);
+        const nextErrors = Array.isArray(nextPayload?.errors) ? nextPayload.errors : [];
         setSelectedTask(data.task);
+        setActiveIssueIndex((current) => Math.min(Math.max(0, nextErrors.length - 1), current + 1));
         toast({ title: "Issue resolved", description: "Continuing to next issue for this row." });
       } else {
         setSelectedTask(null);
@@ -393,9 +401,9 @@ export default function DataQualityQueue() {
     if (!selectedTask) return;
 
     const payload = toTaskPayload(selectedTask.payload);
-    // Sequential Multi-Issue Logic: Always target the FIRST unresolved error
+    // Sequential Multi-Issue Logic: target the issue selected in the progression rail.
     const errors = Array.isArray(payload?.errors) ? payload.errors : [];
-    const activeError = errors.length > 0 ? errors[0] : null;
+    const activeError = errors.length > 0 ? errors[Math.min(activeIssueIndex, errors.length - 1)] : null;
     const activeErrorType = activeError?.type || payload?.error_type || selectedTask.task_type;
     const activeField = activeError?.field || payload?.field;
 
@@ -515,8 +523,9 @@ export default function DataQualityQueue() {
     if (!selectedTask) return null;
     const payload = toTaskPayload(selectedTask.payload);
     const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+    const safeIndex = Math.min(activeIssueIndex, Math.max(0, errors.length - 1));
     const activeError = errors.length > 0
-      ? errors[0]
+      ? errors[safeIndex]
       : {
         type: payload?.error_type || selectedTask.task_type || "other",
         field: payload?.field,
@@ -539,65 +548,53 @@ export default function DataQualityQueue() {
       isCurrency: activeError.type === "currency_missing",
       isPeriod: activeError.type === "period_mismatch" || activeError.type === "period_inversion" || activeError.type === "period_year_out_of_range",
       isProvenance: activeError.type === "provenance_missing" || activeError.type === "provenance_missing_page" || activeError.type === "provenance_missing_evidence",
+      activeIssueIndex: safeIndex,
     };
-  }, [selectedTask]);
+  }, [selectedTask, activeIssueIndex]);
 
   return (
-    <div className="rhythm-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            {selectedReportId && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="-ml-2 h-8 text-muted-foreground hover:text-foreground"
-                onClick={() => setSelectedReportId(null)}
-              >
-                {"<"} Reports
-              </Button>
-            )}
-            <h1 className="font-display text-4xl tracking-[0.03em]">
-              {selectedReportId ? "Reviewing Statement" : "Statement Reviews"}
-            </h1>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {selectedReportId
-              ? `Resolving issues for ${selectedReportName}`
-              : "Choose a statement and resolve flagged items."
-            }
-          </p>
-        </div>
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title={selectedReportId ? "Reviewing Statement" : "Statement Reviews"}
+        subtitle={
+          selectedReportId
+            ? `Resolving issues for ${selectedReportName}`
+            : "Choose a statement and resolve flagged items."
+        }
+        actions={
+          selectedReportId ? (
+            <Button variant="outline" size="sm" onClick={() => setSelectedReportId(null)}>
+              Back to Reports
+            </Button>
+          ) : null
+        }
+      />
 
-      <section className="border-y border-foreground py-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
-            <div>
-              <p className="text-xs text-muted-foreground">Open Tasks</p>
-              <p className="font-display text-3xl">{metrics.open}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-[hsl(var(--tone-critical))]" />
-            <div>
-              <p className="text-xs text-muted-foreground">Critical Open</p>
-              <p className="font-display text-3xl">{metrics.critical}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <CircleCheckBig className="h-4 w-4 text-[hsl(var(--tone-success))]" />
-            <div>
-              <p className="text-xs text-muted-foreground">Resolved</p>
-              <p className="font-display text-3xl">{metrics.resolved}</p>
-            </div>
-          </div>
-        </div>
-      </section>
+      <KpiStrip
+        items={[
+          {
+            label: "Open Tasks",
+            value: metrics.open.toLocaleString(),
+            icon: <ClipboardCheck className="h-4 w-4 text-[hsl(var(--brand-accent))]" />,
+          },
+          {
+            label: "Critical Open",
+            value: metrics.critical.toLocaleString(),
+            tone: "critical",
+            icon: <AlertTriangle className="h-4 w-4 text-[hsl(var(--tone-critical))]" />,
+          },
+          {
+            label: "Resolved",
+            value: metrics.resolved.toLocaleString(),
+            tone: "success",
+            icon: <CircleCheckBig className="h-4 w-4 text-[hsl(var(--tone-success))]" />,
+          },
+        ]}
+        columnsClassName="sm:grid-cols-3"
+      />
 
       {!selectedReportId ? (
-        <Card className="!border-0 border-t border-border bg-transparent">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Statements Requiring Review</CardTitle>
           </CardHeader>
@@ -605,7 +602,7 @@ export default function DataQualityQueue() {
             {isLoadingReports ? (
               <p className="text-sm text-muted-foreground">Loading reports...</p>
             ) : reports.length > 0 ? (
-              <Table>
+              <Table className="min-w-[760px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>CMO</TableHead>
@@ -653,7 +650,7 @@ export default function DataQualityQueue() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="!border-0 border-t border-border bg-transparent">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
             <CardTitle className="text-base">Issues in {selectedReportName}</CardTitle>
           </CardHeader>
@@ -661,7 +658,7 @@ export default function DataQualityQueue() {
             {isLoadingTasks ? (
               <p className="text-sm text-muted-foreground">Loading tasks...</p>
             ) : tasks.length > 0 ? (
-              <Table>
+               <Table className="min-w-[940px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Status</TableHead>
@@ -687,7 +684,22 @@ export default function DataQualityQueue() {
                         };
 
                       return (
-                        <TableRow key={task.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedTask(task)}>
+                        <TableRow
+                          key={task.id}
+                          role="button"
+                          tabIndex={0}
+                          className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(event) => {
+                            event.currentTarget.focus();
+                            setSelectedTask(task);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedTask(task);
+                            }
+                          }}
+                        >
                           <TableCell>
                             <StatusBadge status={task.status} />
                           </TableCell>
@@ -713,7 +725,7 @@ export default function DataQualityQueue() {
       )}
 
       <Sheet open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
-        <SheetContent className="w-[96vw] max-w-[96vw] overflow-y-auto sm:max-w-[70vw]">
+        <SheetContent className="w-[min(96vw,1180px)] max-w-[min(96vw,1180px)] overflow-y-auto sm:max-w-[min(92vw,1180px)]">
           {selectedTask && activeDetail ? (
             <>
               <SheetHeader>
@@ -834,10 +846,17 @@ export default function DataQualityQueue() {
                           {/* Progress Indicator */}
                           {activeDetail.errors.length > 1 && (
                             <div className="flex items-center justify-between border-t border-black/20 py-2 text-[10px] font-black uppercase tracking-tighter text-foreground">
-                              <span>Now Resolving: Issue 1 of {activeDetail.errors.length}</span>
+                              <span>
+                                Now Resolving: Issue {activeDetail.activeIssueIndex + 1} of {activeDetail.errors.length}
+                              </span>
                               <div className="flex gap-1">
                                 {activeDetail.errors.map((_: any, i: number) => (
-                                  <div key={i} className={`h-1.5 w-4 border border-border ${i === 0 ? "bg-foreground" : "bg-transparent"}`} />
+                                  <div
+                                    key={i}
+                                    className={`h-1.5 w-4 border border-border ${
+                                      i === activeDetail.activeIssueIndex ? "bg-foreground" : "bg-transparent"
+                                    }`}
+                                  />
                                 ))}
                               </div>
                             </div>
@@ -857,49 +876,52 @@ export default function DataQualityQueue() {
                                 <p className="text-sm text-foreground">
                                   {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
-                                <select
-                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                  value={resolutionForm.canonicalField}
-                                  onChange={(e) => setResolutionForm({ ...resolutionForm, canonicalField: e.target.value })}
+                                <Select
+                                  value={resolutionForm.canonicalField || "__none__"}
+                                  onValueChange={(value) =>
+                                    setResolutionForm({
+                                      ...resolutionForm,
+                                      canonicalField: value === "__none__" ? "" : value,
+                                    })
+                                  }
                                 >
-                                  <option value="">Select Target...</option>
-                                  <optgroup label="Standard Fields">
-                                    <option value="track_title">Track Title</option>
-                                    <option value="artist_name">Artist Name</option>
-                                    <option value="isrc">ISRC</option>
-                                    <option value="iswc">ISWC</option>
-                                    <option value="territory">Territory</option>
-                                    <option value="platform">Platform</option>
-                                    <option value="quantity">Quantity</option>
-                                    <option value="gross_revenue">Gross Revenue</option>
-                                    <option value="net_revenue">Net Revenue</option>
-                                    <option value="commission">Commission</option>
-                                    <option value="label_name">Label Name</option>
-                                    <option value="rights_type">Rights Type</option>
-                                  </optgroup>
-                                  {knownCustomFields.length > 0 && (
-                                    <optgroup label="Saved Custom Fields">
-                                      {knownCustomFields.map((fieldKey) => (
-                                        <option key={fieldKey} value={`custom:${fieldKey}`}>
-                                          {toCustomFieldLabel(fieldKey)}
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  )}
-                                  <optgroup label="Custom Data">
-                                    <option value="custom_property">Save as custom property...</option>
-                                  </optgroup>
-                                </select>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select target..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">Select Target...</SelectItem>
+                                    <SelectItem value="track_title">Track Title</SelectItem>
+                                    <SelectItem value="artist_name">Artist Name</SelectItem>
+                                    <SelectItem value="isrc">ISRC</SelectItem>
+                                    <SelectItem value="iswc">ISWC</SelectItem>
+                                    <SelectItem value="territory">Territory</SelectItem>
+                                    <SelectItem value="platform">Platform</SelectItem>
+                                    <SelectItem value="quantity">Quantity</SelectItem>
+                                    <SelectItem value="gross_revenue">Gross Revenue</SelectItem>
+                                    <SelectItem value="net_revenue">Net Revenue</SelectItem>
+                                    <SelectItem value="commission">Commission</SelectItem>
+                                    <SelectItem value="label_name">Label Name</SelectItem>
+                                    <SelectItem value="rights_type">Rights Type</SelectItem>
+                                    {knownCustomFields.map((fieldKey) => (
+                                      <SelectItem key={fieldKey} value={`custom:${fieldKey}`}>
+                                        Saved: {toCustomFieldLabel(fieldKey)}
+                                      </SelectItem>
+                                    ))}
+                                    <SelectItem value="custom_property">Save as custom property...</SelectItem>
+                                  </SelectContent>
+                                </Select>
 
                                 {resolutionForm.canonicalField === "custom_property" && (
                                   <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
                                     <Label className="text-[10px] uppercase font-bold text-muted-foreground">Property Name (System ID)</Label>
-                                    <input
+                                    <Input
                                       type="text"
-                                      className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                                      className="font-mono"
                                       placeholder="e.g. label_code"
                                       value={resolutionForm.customMappingKey}
-                                      onChange={(e) => setResolutionForm({ ...resolutionForm, customMappingKey: toSnakeCase(e.target.value) })}
+                                      onChange={(e) =>
+                                        setResolutionForm({ ...resolutionForm, customMappingKey: toSnakeCase(e.target.value) })
+                                      }
                                     />
                                     <p className="text-[10px] text-muted-foreground italic">
                                       This will be saved as <span className="font-bold text-primary">{resolutionForm.customMappingKey || "..."}</span>
@@ -914,9 +936,8 @@ export default function DataQualityQueue() {
                                 <p className="text-sm text-foreground">
                                   {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
-                                <input
+                                <Input
                                   type="text"
-                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                   placeholder="Enter correct value"
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -929,9 +950,9 @@ export default function DataQualityQueue() {
                                 <p className="text-sm text-foreground">
                                   {toPublisherIssueMessage(activeDetail.activeError)}
                                 </p>
-                                <input
+                                <Input
                                   type="text"
-                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                                  className="font-mono"
                                   placeholder={`Enter corrected ${toReadableField(activeDetail.activeError.field || "value")}`}
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -942,17 +963,26 @@ export default function DataQualityQueue() {
                             {activeDetail.isCurrency && (
                               <div className="space-y-3">
                                 <p className="text-sm text-foreground">Currency is missing.</p>
-                                <select
-                                  className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                                  value={resolutionForm.correctedValue}
-                                  onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
+                                <Select
+                                  value={resolutionForm.correctedValue || "__none__"}
+                                  onValueChange={(value) =>
+                                    setResolutionForm({
+                                      ...resolutionForm,
+                                      correctedValue: value === "__none__" ? "" : value,
+                                    })
+                                  }
                                 >
-                                  <option value="">Select...</option>
-                                  <option value="USD">USD - Dollar</option>
-                                  <option value="EUR">EUR - Euro</option>
-                                  <option value="GBP">GBP - Pound</option>
-                                  <option value="NGN">NGN - Naira</option>
-                                </select>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select currency" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">Select...</SelectItem>
+                                    <SelectItem value="USD">USD - Dollar</SelectItem>
+                                    <SelectItem value="EUR">EUR - Euro</SelectItem>
+                                    <SelectItem value="GBP">GBP - Pound</SelectItem>
+                                    <SelectItem value="NGN">NGN - Naira</SelectItem>
+                                  </SelectContent>
+                                </Select>
                               </div>
                             )}
 
@@ -960,7 +990,7 @@ export default function DataQualityQueue() {
                               <div className="space-y-2">
                                 <p className="text-xs text-muted-foreground">{toPublisherIssueMessage(activeDetail.activeError)}</p>
                                 <div className="grid grid-cols-2 gap-2">
-                                  <input type="date" className="h-9 border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring" onChange={(e) => {
+                                  <Input type="date" className="h-9 px-2 text-xs" onChange={(e) => {
                                     try {
                                       const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
                                         ? JSON.parse(resolutionForm.correctedValue)
@@ -971,7 +1001,7 @@ export default function DataQualityQueue() {
                                       setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify({ start: e.target.value }) });
                                     }
                                   }} />
-                                  <input type="date" className="h-9 border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring" onChange={(e) => {
+                                  <Input type="date" className="h-9 px-2 text-xs" onChange={(e) => {
                                     try {
                                       const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
                                         ? JSON.parse(resolutionForm.correctedValue)
@@ -990,9 +1020,8 @@ export default function DataQualityQueue() {
                               <div className="space-y-2">
                                 <p className="text-sm">{toPublisherIssueMessage(activeDetail.activeError)}</p>
                                 {activeDetail.activeError.field === "source_page" && (
-                                  <input
+                                  <Input
                                     type="number"
-                                    className="h-10 w-full border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                                     placeholder="Page #"
                                     value={resolutionForm.correctedValue}
                                     onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
@@ -1005,13 +1034,43 @@ export default function DataQualityQueue() {
                           {/* Remaining Issues List (Read Only) */}
                           {activeDetail.errors.length > 1 && (
                             <div className="space-y-2">
-                              <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">Pending Fixes ({activeDetail.errors.length - 1})</span>
-                              {activeDetail.errors.slice(1).map((err: any, i: number) => (
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">
+                                  Remaining Fixes ({Math.max(0, activeDetail.errors.length - 1)})
+                                </span>
+                                <div className="flex gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={activeDetail.activeIssueIndex === 0}
+                                    onClick={() => setActiveIssueIndex((current) => Math.max(0, current - 1))}
+                                  >
+                                    Previous
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={activeDetail.activeIssueIndex >= activeDetail.errors.length - 1}
+                                    onClick={() =>
+                                      setActiveIssueIndex((current) =>
+                                        Math.min(activeDetail.errors.length - 1, current + 1)
+                                      )
+                                    }
+                                  >
+                                    Next
+                                  </Button>
+                                </div>
+                              </div>
+                              {activeDetail.errors
+                                .filter((_: any, idx: number) => idx !== activeDetail.activeIssueIndex)
+                                .map((err: any, i: number) => (
                                 <div key={i} className="flex items-center gap-2 border-b border-black/15 py-1.5 text-[10px] text-muted-foreground">
                                   <div className="h-1.5 w-1.5 bg-muted-foreground" />
                                   <span className="font-bold">{toPublisherIssueLabel(err?.type)}</span>: {toPublisherIssueMessage(err)}
                                 </div>
-                              ))}
+                                ))}
                             </div>
                           )}
                         </div>

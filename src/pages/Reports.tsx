@@ -19,9 +19,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toMoney } from "@/lib/royalty";
+import {
+  AppliedFiltersRow,
+  DetailDrawerFrame,
+  EmptyStateBlock,
+  FilterToolbar,
+  KpiStrip,
+  PageHeader,
+} from "@/components/layout";
 
 type Report = Tables<"cmo_reports">;
 type Tx = Tables<"royalty_transactions">;
@@ -186,6 +194,20 @@ export default function Reports() {
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filteredReports]);
 
+  const appliedFilters = useMemo(() => {
+    const filters: string[] = [];
+    if (selectedCmo !== "all") filters.push(`CMO: ${selectedCmo}`);
+    if (selectedStatus !== "all") filters.push(`Status: ${selectedStatus}`);
+    if (search.trim()) filters.push(`Search: ${search.trim()}`);
+    return filters;
+  }, [search, selectedCmo, selectedStatus]);
+
+  const clearFilters = useCallback(() => {
+    setSearch("");
+    setSelectedCmo("all");
+    setSelectedStatus("all");
+  }, []);
+
   const stats = useMemo(() => {
     const completed = filteredReports.filter((r) =>
       ["completed", "completed_passed", "completed_with_warnings"].includes(r.status)
@@ -195,6 +217,8 @@ export default function Reports() {
     const revenue = filteredReports.reduce((sum, r) => sum + (r.total_revenue ?? 0), 0);
     return { completed, processing, lines, revenue };
   }, [filteredReports]);
+
+  const uploadStep = !file ? 1 : cmoName.trim() || reportPeriod.trim() || notes.trim() ? 3 : 2;
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
@@ -294,7 +318,22 @@ export default function Reports() {
 
   const renderReportRows = (rows: Report[]) =>
     rows.map((r) => (
-      <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelectedReport(r)}>
+      <TableRow
+        key={r.id}
+        role="button"
+        tabIndex={0}
+        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={(event) => {
+          event.currentTarget.focus();
+          setSelectedReport(r);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setSelectedReport(r);
+          }
+        }}
+      >
         <TableCell className="font-medium">{r.file_name}</TableCell>
         <TableCell>{r.report_period ?? "-"}</TableCell>
         <TableCell>
@@ -305,8 +344,10 @@ export default function Reports() {
         <TableCell className="text-muted-foreground">{format(new Date(r.created_at), "MMM d, yyyy")}</TableCell>
         <TableCell className="text-right">
           <Button
+            type="button"
             variant="ghost"
             size="icon"
+            aria-label={`Delete report ${r.file_name}`}
             onClick={(e) => {
               e.stopPropagation();
               deleteMutation.mutate({ id: r.id, file_path: r.file_path });
@@ -319,40 +360,52 @@ export default function Reports() {
     ));
 
   return (
-    <div className="rhythm-page">
-      <div>
-        <h1 className="font-display text-4xl tracking-[0.03em]">Reports & Statements</h1>
-        <p className="text-sm text-muted-foreground">
-          Upload CMO statements, monitor processing, and drill into each document's extracted payload.
-        </p>
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title="Reports & Statements"
+        subtitle="Upload CMO statements, monitor processing, and inspect normalized payloads."
+      />
 
-      <section className="border-y border-foreground py-4">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Visible Reports</p>
-            <p className="font-display text-3xl">{filteredReports.length}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Completed</p>
-            <p className="font-display text-3xl">{stats.completed}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Total Line Items</p>
-            <p className="font-display text-3xl">{stats.lines.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Total Revenue</p>
-            <p className="font-display text-3xl">{toMoney(stats.revenue)}</p>
-          </div>
-        </div>
-      </section>
+      <KpiStrip
+        items={[
+          { label: "Visible Reports", value: filteredReports.length.toLocaleString() },
+          { label: "Completed", value: stats.completed.toLocaleString(), tone: "success" },
+          {
+            label: "In Processing",
+            value: stats.processing.toLocaleString(),
+            tone: stats.processing > 0 ? "accent" : "default",
+          },
+          { label: "Total Line Items", value: stats.lines.toLocaleString() },
+          { label: "Total Revenue", value: toMoney(stats.revenue) },
+        ]}
+      />
 
-      <Card className="!border-0 border-t border-border bg-transparent">
+      <Card>
         <CardHeader>
           <CardTitle className="text-base">Upload New Statement</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-2 border-b border-border/40 pb-4 md:grid-cols-3">
+            {[
+              { id: 1, label: "Select file" },
+              { id: 2, label: "Add metadata" },
+              { id: 3, label: "Confirm upload" },
+            ].map((step) => (
+              <div
+                key={step.id}
+                className={`rounded-sm border px-3 py-2 text-xs uppercase tracking-[0.08em] ${
+                  uploadStep === step.id
+                    ? "border-[hsl(var(--brand-accent))]/45 bg-[hsl(var(--brand-accent-ghost))]/40 text-foreground"
+                    : uploadStep > step.id
+                      ? "border-[hsl(var(--tone-success))]/35 bg-[hsl(var(--tone-success))]/8 text-foreground"
+                      : "border-border/45 text-muted-foreground"
+                }`}
+              >
+                {step.id}. {step.label}
+              </div>
+            ))}
+          </div>
+
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -360,8 +413,9 @@ export default function Reports() {
             }}
             onDragLeave={() => setDragActive(false)}
             onDrop={handleDrop}
-            className={`cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors ${dragActive ? "border-primary bg-accent/30" : "border-border hover:border-primary/40"
-              }`}
+            className={`cursor-pointer rounded-sm border-2 border-dashed p-8 text-center transition-colors ${
+              dragActive ? "border-primary bg-accent/30" : "border-border hover:border-primary/40"
+            }`}
             onClick={() => document.getElementById("pdf-upload")?.click()}
           >
             <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
@@ -429,10 +483,11 @@ export default function Reports() {
         </CardContent>
       </Card>
 
-      <Card className="!border-0 border-t border-border bg-transparent">
-        <CardHeader className="space-y-3">
-          <CardTitle className="text-base">Portfolio Documents</CardTitle>
-          <div className="grid gap-3 md:grid-cols-4">
+      <FilterToolbar
+        title="Portfolio Documents"
+        description="Search and filter statements, then inspect extraction and normalized transaction output."
+      >
+        <div className="grid gap-3 md:grid-cols-4">
             <div className="relative md:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -469,7 +524,13 @@ export default function Reports() {
               </SelectContent>
             </Select>
           </div>
-        </CardHeader>
+          <AppliedFiltersRow
+            filters={appliedFilters}
+            onClear={clearFilters}
+            updatedLabel={`Updated ${format(new Date(), "MMM d, yyyy HH:mm")}`}
+          />
+      </FilterToolbar>
+      <Card>
         <CardContent>
           <Tabs value={layout} onValueChange={(v) => setLayout(v as "grouped" | "flat")} className="space-y-4">
             <TabsList>
@@ -495,8 +556,8 @@ export default function Reports() {
                         {rows.length} docs | {rows.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0)} lines
                       </span>
                     </div>
-                    <div className="overflow-x-auto">
-                      <Table>
+                    <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                      <Table className="min-w-[860px]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>File</TableHead>
@@ -514,10 +575,11 @@ export default function Reports() {
                   </section>
                 ))
               ) : (
-                <div className="flex flex-col items-center py-12 text-center">
-                  <FileText className="mb-3 h-10 w-10 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No documents match your filters.</p>
-                </div>
+                <EmptyStateBlock
+                  icon={<FileText className="h-10 w-10" />}
+                  title="No documents found"
+                  description="No statements match your current filters."
+                />
               )}
             </TabsContent>
 
@@ -525,8 +587,8 @@ export default function Reports() {
               {isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : filteredReports.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table>
+                <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                  <Table className="min-w-[980px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>CMO</TableHead>
@@ -541,7 +603,22 @@ export default function Reports() {
                     </TableHeader>
                     <TableBody>
                       {filteredReports.map((r) => (
-                        <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelectedReport(r)}>
+                        <TableRow
+                          key={r.id}
+                          role="button"
+                          tabIndex={0}
+                          className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(event) => {
+                            event.currentTarget.focus();
+                            setSelectedReport(r);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedReport(r);
+                            }
+                          }}
+                        >
                           <TableCell className="font-medium">{r.cmo_name}</TableCell>
                           <TableCell>{r.file_name}</TableCell>
                           <TableCell>{r.report_period ?? "-"}</TableCell>
@@ -556,14 +633,16 @@ export default function Reports() {
                             {format(new Date(r.created_at), "MMM d, yyyy")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteMutation.mutate({ id: r.id, file_path: r.file_path });
-                              }}
-                            >
+                             <Button
+                               type="button"
+                               variant="ghost"
+                               size="icon"
+                               aria-label={`Delete report ${r.file_name}`}
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 deleteMutation.mutate({ id: r.id, file_path: r.file_path });
+                               }}
+                             >
                               <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
                             </Button>
                           </TableCell>
@@ -573,10 +652,11 @@ export default function Reports() {
                   </Table>
                 </div>
               ) : (
-                <div className="flex flex-col items-center py-12 text-center">
-                  <FileText className="mb-3 h-10 w-10 text-muted-foreground/50" />
-                  <p className="text-sm text-muted-foreground">No documents match your filters.</p>
-                </div>
+                <EmptyStateBlock
+                  icon={<FileText className="h-10 w-10" />}
+                  title="No documents found"
+                  description="No statements match your current filters."
+                />
               )}
             </TabsContent>
           </Tabs>
@@ -584,20 +664,14 @@ export default function Reports() {
       </Card>
 
       <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-        <SheetContent className="w-[96vw] max-w-[96vw] overflow-y-auto sm:max-w-[92vw]">
+        <SheetContent className="w-[min(96vw,1100px)] max-w-[min(96vw,1100px)] p-0 sm:max-w-[min(92vw,1100px)]">
           {selectedReport ? (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selectedReport.cmo_name} | {selectedReport.file_name}</SheetTitle>
-              </SheetHeader>
-
-              <div className="mt-4 grid gap-3 border-y border-black/20 py-3 sm:grid-cols-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Status</p>
-                  <div className="mt-1">
-                    <StatusBadge status={selectedReport.status} />
-                  </div>
-                </div>
+            <DetailDrawerFrame
+              title={`${selectedReport.cmo_name} | ${selectedReport.file_name}`}
+              subtitle={`Uploaded ${format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")}`}
+              rightSlot={<StatusBadge status={selectedReport.status} />}
+            >
+              <div className="grid gap-3 rounded-sm border border-border/45 bg-background/60 p-3 sm:grid-cols-3">
                 <div>
                   <p className="text-xs text-muted-foreground">Normalized Lines</p>
                   <p className="text-xl font-bold">{reportTransactions.length.toLocaleString()}</p>
@@ -624,7 +698,12 @@ export default function Reports() {
                     ["File", selectedReport.file_name],
                     ["Report Period", selectedReport.report_period],
                     ["Uploaded", format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")],
-                    ["Processed", selectedReport.processed_at ? format(new Date(selectedReport.processed_at), "MMM d, yyyy HH:mm") : null],
+                    [
+                      "Processed",
+                      selectedReport.processed_at
+                        ? format(new Date(selectedReport.processed_at), "MMM d, yyyy HH:mm")
+                        : null,
+                    ],
                     ["Status", selectedReport.status],
                     ["Accuracy", selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null],
                     ["Error Count", selectedReport.error_count?.toLocaleString()],
@@ -639,8 +718,8 @@ export default function Reports() {
 
                 <TabsContent value="transactions" className="mt-4">
                   {reportTransactions.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <Table className="min-w-max">
+                    <div className="min-w-0 overflow-x-auto rounded-sm border border-border/45 overscroll-x-contain">
+                      <Table className="min-w-[1480px]">
                         <TableHeader>
                           <TableRow>
                             <TableHead>Track</TableHead>
@@ -700,7 +779,7 @@ export default function Reports() {
                   )}
                 </TabsContent>
               </Tabs>
-            </>
+            </DetailDrawerFrame>
           ) : null}
         </SheetContent>
       </Sheet>

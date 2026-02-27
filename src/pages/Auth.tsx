@@ -88,64 +88,115 @@ export default function Auth() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md !border-0 border-y border-border bg-transparent py-3">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-16 w-16 overflow-hidden border border-border bg-background p-1">
-            <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
+    <div className="min-h-screen bg-background p-4 md:p-6">
+      <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-[1200px] overflow-hidden rounded-md border border-border/50 md:grid-cols-2">
+        <section className="relative hidden border-r border-border/45 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost))/70,transparent_60%)] p-8 md:flex md:flex-col md:justify-between">
+          <div className="space-y-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-sm border border-border bg-background p-1">
+              <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
+            </div>
+            <div className="space-y-2">
+              <h1 className="font-display text-4xl leading-none tracking-[0.04em]">OrderSounds</h1>
+              <p className="text-sm text-muted-foreground">
+                Forensic royalty intelligence for statement normalization, issue resolution, and payout confidence.
+              </p>
+            </div>
           </div>
-          <CardTitle className="text-3xl">OrderSounds</CardTitle>
-          <CardDescription>Forensic Royalty Platform</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="you@example.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="********"
-                minLength={6}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
-            </Button>
+          <div className="space-y-2 border-t border-border/45 pt-5">
+            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Access model</p>
+            <p className="text-sm">
+              Secure workspace access for publisher teams. Session and audit controls are managed through Supabase Auth.
+            </p>
+          </div>
+        </section>
 
-            {pendingEmailConfirmation && (
-              <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={handleResend}>
-                Resend confirmation email
-              </Button>
-            )}
-          </form>
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-            <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setPendingEmailConfirmation(false);
-              }}
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              {isLogin ? "Sign Up" : "Sign In"}
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+        <section className="flex items-center justify-center bg-background p-4 md:p-8">
+          <Card className="w-full max-w-md border-0 bg-transparent shadow-none">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-sm border border-border bg-background p-1 md:hidden">
+                <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
+              </div>
+              <CardTitle className="text-3xl">Workspace Access</CardTitle>
+              <CardDescription>Use your organization credentials to continue.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 grid grid-cols-2 rounded-sm border border-border/45 p-1">
+                <Button
+                  type="button"
+                  variant={isLogin ? "default" : "ghost"}
+                  className="h-8"
+                  onClick={() => {
+                    setIsLogin(true);
+                    setPendingEmailConfirmation(false);
+                  }}
+                >
+                  Sign In
+                </Button>
+                <Button
+                  type="button"
+                  variant={!isLogin ? "default" : "ghost"}
+                  className="h-8"
+                  onClick={() => {
+                    setIsLogin(false);
+                    setPendingEmailConfirmation(false);
+                  }}
+                >
+                  Sign Up
+                </Button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    placeholder="********"
+                    minLength={6}
+                  />
+                </div>
+
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Loading..." : isLogin ? "Sign In" : "Create Account"}
+                </Button>
+
+                {pendingEmailConfirmation && (
+                  <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={handleResend}>
+                    Resend confirmation email
+                  </Button>
+                )}
+              </form>
+
+              <p className="mt-4 text-center text-sm text-muted-foreground">
+                {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
+                <button
+                  onClick={() => {
+                    setIsLogin(!isLogin);
+                    setPendingEmailConfirmation(false);
+                  }}
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  {isLogin ? "Sign Up" : "Sign In"}
+                </button>
+              </p>
+            </CardContent>
+          </Card>
+        </section>
+      </div>
     </div>
   );
 }

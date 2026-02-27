@@ -1,5 +1,7 @@
 import type { Json } from "@/integrations/supabase/types";
 import type {
+  AssistantExportResponseV1,
+  AssistantTurnResponseV2,
   TrackAssistantResult,
   TrackInsightDetail,
   TrackInsightListRow,
@@ -190,5 +192,118 @@ export function parseNaturalChatRunResponse(input: unknown): TrackNaturalChatRun
       provenance: toStringArray(evidence.provenance),
     },
     follow_up_questions: toStringArray(root.follow_up_questions),
+  };
+}
+
+export function parseAssistantTurnResponseV2(input: unknown): AssistantTurnResponseV2 | null {
+  const root = toObject(input);
+  if (!root) return null;
+
+  const conversationId = toString(root.conversation_id);
+  const answerTitle = toString(root.answer_title);
+  const answerText = toString(root.answer_text);
+  const evidence = toObject(root.evidence);
+  if (!conversationId || !answerTitle || !answerText || !evidence) return null;
+
+  const rowCount = toNumber(evidence.row_count);
+  const durationMs = toNumber(evidence.duration_ms);
+  const fromDate = toString(evidence.from_date);
+  const toDate = toString(evidence.to_date);
+  if (rowCount == null || durationMs == null || !fromDate || !toDate) return null;
+
+  const kpis = Array.isArray(root.kpis)
+    ? root.kpis
+        .map((item) => {
+          const obj = toObject(item);
+          if (!obj) return null;
+          const label = toString(obj.label);
+          const value = toString(obj.value);
+          if (!label || !value) return null;
+          return {
+            label,
+            value,
+            change: toString(obj.change) ?? undefined,
+          };
+        })
+        .filter((item): item is { label: string; value: string; change?: string } => !!item)
+    : [];
+
+  const tableObj = toObject(root.table);
+  const table =
+    tableObj && Array.isArray(tableObj.rows)
+      ? {
+          columns: toStringArray(tableObj.columns),
+          rows: tableObj.rows
+            .map((row) => toObject(row))
+            .filter((row): row is Record<string, unknown> => !!row)
+            .map((row) => {
+              const output: Record<string, string | number | null> = {};
+              for (const [key, value] of Object.entries(row)) {
+                if (value == null || typeof value === "string" || typeof value === "number") {
+                  output[key] = value as string | number | null;
+                } else if (typeof value === "boolean") {
+                  output[key] = value ? "true" : "false";
+                } else {
+                  output[key] = String(value);
+                }
+              }
+              return output;
+            }),
+        }
+      : undefined;
+
+  const chartObj = toObject(root.chart);
+  const chart = chartObj
+    ? {
+        type: toChartType(chartObj.type),
+        x: toString(chartObj.x) ?? "",
+        y: toStringArray(chartObj.y),
+        title: toString(chartObj.title) ?? undefined,
+      }
+    : undefined;
+
+  const clarificationObj = toObject(root.clarification);
+  const clarification = clarificationObj
+    ? {
+        prompt: toString(clarificationObj.prompt) ?? "Please choose one option.",
+        options: toStringArray(clarificationObj.options),
+      }
+    : undefined;
+
+  return {
+    conversation_id: conversationId,
+    answer_title: answerTitle,
+    answer_text: answerText,
+    why_this_matters: toString(root.why_this_matters) ?? undefined,
+    kpis,
+    table,
+    chart,
+    evidence: {
+      row_count: rowCount,
+      duration_ms: durationMs,
+      from_date: fromDate,
+      to_date: toDate,
+      provenance: toStringArray(evidence.provenance),
+    },
+    follow_up_questions: toStringArray(root.follow_up_questions),
+    clarification,
+  };
+}
+
+export function parseAssistantExportResponseV1(input: unknown): AssistantExportResponseV1 | null {
+  const root = toObject(input);
+  if (!root) return null;
+
+  const pdfUrl = toString(root.pdf_url) ?? undefined;
+  const xlsxUrl = toString(root.xlsx_url) ?? undefined;
+  const jobId = toString(root.job_id) ?? undefined;
+  const status = toString(root.status) ?? undefined;
+
+  if (!pdfUrl && !xlsxUrl && !jobId && !status) return null;
+  return {
+    pdf_url: pdfUrl,
+    xlsx_url: xlsxUrl,
+    job_id: jobId,
+    status,
   };
 }

@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { Search, ArrowUpRight, Copy, ArrowRightLeft, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { toMoney } from "@/lib/royalty";
 import { defaultDateRange } from "@/lib/insights";
 import type { TrackInsightListRow } from "@/types/insights";
+import { AppliedFiltersRow, EmptyStateBlock, FilterToolbar, KpiStrip, PageHeader } from "@/components/layout";
 
 type Report = Pick<Tables<"cmo_reports">, "id" | "cmo_name" | "status">;
 type Tx = Pick<Tables<"royalty_transactions">, "territory" | "platform" | "usage_type">;
@@ -128,6 +129,39 @@ export default function Insights() {
     };
   }, [rows]);
 
+  const appliedFilters = useMemo(() => {
+    const tokens: string[] = [];
+    if (fromDate !== defaults.fromDate || toDate !== defaults.toDate) {
+      tokens.push(`Date: ${fromDate} to ${toDate}`);
+    }
+    if (selectedCmo !== "all") tokens.push(`CMO: ${selectedCmo}`);
+    if (selectedTerritory !== "all") tokens.push(`Territory: ${selectedTerritory}`);
+    if (selectedPlatform !== "all") tokens.push(`Platform: ${selectedPlatform}`);
+    if (selectedUsageType !== "all") tokens.push(`Usage: ${selectedUsageType}`);
+    if (search.trim()) tokens.push(`Search: ${search.trim()}`);
+    return tokens;
+  }, [
+    defaults.fromDate,
+    defaults.toDate,
+    fromDate,
+    search,
+    selectedCmo,
+    selectedPlatform,
+    selectedTerritory,
+    selectedUsageType,
+    toDate,
+  ]);
+
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedCmo("all");
+    setSelectedTerritory("all");
+    setSelectedPlatform("all");
+    setSelectedUsageType("all");
+    setFromDate(defaults.fromDate);
+    setToDate(defaults.toDate);
+  };
+
   const copyShareLink = async (trackKey: string) => {
     const url = `${window.location.origin}/insights/${encodeURIComponent(trackKey)}`;
     try {
@@ -143,46 +177,33 @@ export default function Insights() {
   };
 
   return (
-    <div className="rhythm-page">
-      <div>
-        <h1 className="font-display text-4xl tracking-[0.03em]">Track Insights</h1>
-        <p className="text-sm text-muted-foreground">
-          Review track-level performance, risk signals, and opportunity before opening the Track AI Agent.
-        </p>
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title="Track Insights"
+        subtitle="Review track-level performance, risk signals, and opportunity before opening the Track AI Agent."
+      />
 
-      <section className="border-y border-foreground py-4">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <div>
-            <p className="text-xs text-muted-foreground">Tracks in scope</p>
-            <p className="font-display text-3xl">{aggregate.tracks.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Net Revenue</p>
-            <p className="font-display text-3xl">{toMoney(aggregate.totalNet)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Units</p>
-            <p className="font-display text-3xl">{Math.round(aggregate.totalQty).toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">High data risk tracks</p>
-            <p className="font-display text-3xl">{aggregate.highRisk.toLocaleString()}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Top track by opportunity</p>
-            <p className="text-sm font-semibold">
-              {aggregate.topTrack ? `${aggregate.topTrack.track_title} (${aggregate.topTrack.opportunity_score.toFixed(1)})` : "-"}
-            </p>
-          </div>
-        </div>
-      </section>
+      <KpiStrip
+        items={[
+          { label: "Tracks in scope", value: aggregate.tracks.toLocaleString() },
+          { label: "Net Revenue", value: toMoney(aggregate.totalNet) },
+          { label: "Units", value: Math.round(aggregate.totalQty).toLocaleString() },
+          { label: "High data risk tracks", value: aggregate.highRisk.toLocaleString(), tone: aggregate.highRisk > 0 ? "warning" : "default" },
+          {
+            label: "Top track by opportunity",
+            value: aggregate.topTrack ? `${aggregate.topTrack.track_title}` : "-",
+            hint: aggregate.topTrack ? `Score ${aggregate.topTrack.opportunity_score.toFixed(1)}` : undefined,
+          },
+        ]}
+      />
 
-      <Card className="!border-0 border-t border-border bg-transparent">
-        <CardHeader className="space-y-3">
-          <CardTitle className="text-base">Filters</CardTitle>
-          <div className="grid gap-3 md:grid-cols-7">
-            <div className="relative md:col-span-2">
+      <FilterToolbar
+        title="Filters"
+        description="Default: last 12 months, reporting-currency metrics, failed reports excluded."
+        sticky
+      >
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="relative sm:col-span-2 lg:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
@@ -193,77 +214,89 @@ export default function Insights() {
             </div>
             <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-            <Select value={selectedCmo} onValueChange={setSelectedCmo}>
-              <SelectTrigger>
-                <SelectValue placeholder="CMO" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All CMOs</SelectItem>
-                {cmoOptions.map((cmo) => (
-                  <SelectItem key={cmo} value={cmo}>
-                    {cmo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
-              <SelectTrigger>
-                <SelectValue placeholder="Territory" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Territories</SelectItem>
-                {territoryOptions.map((territory) => (
-                  <SelectItem key={territory} value={territory}>
-                    {territory}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-              <SelectTrigger>
-                <SelectValue placeholder="Platform" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Platforms</SelectItem>
-                {platformOptions.map((platform) => (
-                  <SelectItem key={platform} value={platform}>
-                    {platform}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedUsageType} onValueChange={setSelectedUsageType}>
-              <SelectTrigger className="md:col-span-2">
-                <SelectValue placeholder="Usage Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Usage Types</SelectItem>
-                {usageTypeOptions.map((usageType) => (
-                  <SelectItem key={usageType} value={usageType}>
-                    {usageType}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div>
+              <Select value={selectedCmo} onValueChange={setSelectedCmo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="CMO" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All CMOs</SelectItem>
+                  {cmoOptions.map((cmo) => (
+                    <SelectItem key={cmo} value={cmo}>
+                      {cmo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Territory" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Territories</SelectItem>
+                  {territoryOptions.map((territory) => (
+                    <SelectItem key={territory} value={territory}>
+                      {territory}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Platform" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Platforms</SelectItem>
+                  {platformOptions.map((platform) => (
+                    <SelectItem key={platform} value={platform}>
+                      {platform}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-2">
+              <Select value={selectedUsageType} onValueChange={setSelectedUsageType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Usage Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Usage Types</SelectItem>
+                  {usageTypeOptions.map((usageType) => (
+                    <SelectItem key={usageType} value={usageType}>
+                      {usageType}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Default: last 12 months, reporting-currency metrics, failed reports excluded. Updated{" "}
-            {format(new Date(), "MMM d, yyyy HH:mm")}
-          </p>
-        </CardHeader>
+          <AppliedFiltersRow
+            filters={appliedFilters}
+            onClear={clearFilters}
+            updatedLabel={`Updated ${format(new Date(), "MMM d, yyyy HH:mm")}`}
+          />
+      </FilterToolbar>
+
+      <Card className="min-w-0">
         <CardContent>
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading track insights...</p>
           ) : isError ? (
             <p className="text-sm text-destructive">Failed to load insights: {(error as Error).message}</p>
           ) : rows.length === 0 ? (
-            <div className="flex flex-col items-center py-12 text-center">
-              <Sparkles className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">No tracks found for the selected filters.</p>
-            </div>
+            <EmptyStateBlock
+              icon={<Sparkles className="h-10 w-10" />}
+              title="No tracks found"
+              description="No tracks match the selected filter scope."
+            />
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+              <Table className="min-w-[1320px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Track</TableHead>
@@ -284,8 +317,19 @@ export default function Insights() {
                   {rows.map((row) => (
                     <TableRow
                       key={row.track_key}
-                      className="cursor-pointer"
-                      onClick={() => openTrack(row.track_key)}
+                      role="button"
+                      tabIndex={0}
+                      className="group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={(event) => {
+                        event.currentTarget.focus();
+                        openTrack(row.track_key);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openTrack(row.track_key);
+                        }
+                      }}
                     >
                       <TableCell className="max-w-[220px] truncate font-medium underline-offset-2 hover:underline">
                         {row.track_title}
@@ -309,39 +353,44 @@ export default function Insights() {
                       </TableCell>
                       <TableCell className="text-right font-mono">{row.opportunity_score.toFixed(1)}</TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex justify-end gap-1.5 opacity-85 transition-opacity group-hover:opacity-100">
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="default"
+                            className="h-8 min-w-[76px] px-2.5"
                             onClick={(event) => {
                               event.stopPropagation();
                               openTrack(row.track_key);
                             }}
                           >
                             <ArrowUpRight className="h-3.5 w-3.5" />
-                            Open Insights
+                            Open
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
+                            className="h-8 w-8 border border-border/35 bg-background/80 p-0 text-muted-foreground hover:text-foreground"
                             onClick={(event) => {
                               event.stopPropagation();
                               copyShareLink(row.track_key);
                             }}
+                            title="Copy track link"
+                            aria-label={`Copy link for ${row.track_title}`}
                           >
                             <Copy className="h-3.5 w-3.5" />
-                            Copy Link
                           </Button>
                           <Button
                             size="sm"
-                            variant="outline"
+                            variant="ghost"
+                            className="h-8 w-8 border border-border/35 bg-background/80 p-0 text-muted-foreground hover:text-foreground"
                             onClick={(event) => {
                               event.stopPropagation();
                               navigate(`/transactions?q=${encodeURIComponent(row.isrc ?? row.track_title)}`);
                             }}
+                            title="Open related transactions"
+                            aria-label={`Open transactions for ${row.track_title}`}
                           >
                             <ArrowRightLeft className="h-3.5 w-3.5" />
-                            Tx
                           </Button>
                         </div>
                       </TableCell>

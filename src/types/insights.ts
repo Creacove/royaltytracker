@@ -204,3 +204,45 @@ export type TrackChatMessage = {
   plan?: TrackNaturalChatPlanResponse;
   error?: string;
 };
+
+export type AssistantClarificationV2 = {
+  prompt: string;
+  options: string[];
+};
+
+export type AssistantTurnRequestV2 = {
+  action: "send_turn";
+  track_key: string;
+  from_date: string;
+  to_date: string;
+  question: string;
+  conversation_id?: string;
+};
+
+export type AssistantTurnResponseV2 = {
+  conversation_id: string;
+  answer_title: string;
+  answer_text: string;
+  why_this_matters?: string;
+  kpis: TrackChatKpi[];
+  table?: TrackChatTable;
+  chart?: TrackChatChart;
+  evidence: TrackChatEvidence;
+  follow_up_questions: string[];
+  clarification?: AssistantClarificationV2;
+};
+
+export type AssistantExportRequestV1 = {
+  action: "export_answer" | "export_monthly_snapshot";
+  track_key: string;
+  from_date: string;
+  to_date: string;
+  answer_payload?: AssistantTurnResponseV2;
+};
+
+export type AssistantExportResponseV1 = {
+  pdf_url?: string;
+  xlsx_url?: string;
+  job_id?: string;
+  status?: string;
+};

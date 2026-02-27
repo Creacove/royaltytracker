@@ -29,6 +29,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
+import { KpiStrip, PageHeader } from "@/components/layout";
 
 type Report = Pick<
   Tables<"cmo_reports">,
@@ -530,23 +531,21 @@ export default function Dashboard() {
   const criticalError = reportsError || txError || extractorError;
 
   return (
-    <div className="rhythm-page">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-4xl tracking-[0.03em]">Overview</h1>
-          <p className="text-sm text-muted-foreground">
-            Revenue pulse, report progress, and CMO performance at a glance.
-          </p>
-        </div>
-        {topCmo ? (
-          <p className="font-mono text-xs text-muted-foreground">
-            Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
-          </p>
-        ) : null}
-      </div>
+    <div className="rhythm-page min-w-0 overflow-x-hidden">
+      <PageHeader
+        title="Overview"
+        subtitle="Revenue pulse, report progress, and CMO performance at a glance."
+        actions={
+          topCmo ? (
+            <p className="rounded-sm border border-border/45 px-3 py-2 font-mono text-xs text-muted-foreground">
+              Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
+            </p>
+          ) : null
+        }
+      />
 
       {!extractorAvailable ? (
-        <div className="border-l border-foreground pl-3 text-sm">
+        <div className="rounded-sm border border-border/45 bg-background/80 px-3 py-2 text-sm">
           <div className="flex items-start gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-foreground" />
             <p>
@@ -558,7 +557,7 @@ export default function Dashboard() {
       ) : null}
 
       {criticalError ? (
-        <div className="border-l border-foreground pl-3 text-sm">
+        <div className="rounded-sm border border-[hsl(var(--tone-critical))]/35 bg-[hsl(var(--tone-critical))]/10 px-3 py-2 text-sm">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 text-foreground" />
             <p>
@@ -568,85 +567,60 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <section className="border-y border-foreground py-6">
-        <div className="grid gap-8 xl:grid-cols-5">
-          <div className="rhythm-section xl:col-span-3">
-            <div>
-              <p className="font-display text-xs text-muted-foreground">Publisher Snapshot</p>
-              <div className="mt-4 grid gap-6 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Net Revenue</p>
-                  <p className="font-display text-3xl">{toMoney(metrics.net)}</p>
-                  <p className="text-xs text-muted-foreground">Gross {toMoney(metrics.gross)}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Statements</p>
-                  <p className="font-display text-3xl">{metrics.totalReports.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {metrics.completedReports} completed | {metrics.processingReports} in-flight
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Commission</p>
-                  <p className="font-display text-3xl">{toMoney(metrics.commission)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Effective rate {safePercent(metrics.commissionRate)}
-                  </p>
-                </div>
-              </div>
-            </div>
+      <KpiStrip
+        items={[
+          {
+            label: "Net Revenue",
+            value: toMoney(metrics.net),
+            hint: `Gross ${toMoney(metrics.gross)}`,
+            tone: "default",
+          },
+          {
+            label: "Statements",
+            value: metrics.totalReports.toLocaleString(),
+            hint: `${metrics.completedReports} completed | ${metrics.processingReports} in-flight`,
+            tone: "default",
+          },
+          {
+            label: "Commission",
+            value: toMoney(metrics.commission),
+            hint: `Effective rate ${safePercent(metrics.commissionRate)}`,
+            tone: "default",
+          },
+          {
+            label: "Reports In Progress",
+            value: metrics.processingReports.toLocaleString(),
+            hint: "Currently being processed",
+            tone: metrics.processingReports > 0 ? "accent" : "default",
+          },
+          {
+            label: "Reports Needing Attention",
+            value: metrics.failedReports.toLocaleString(),
+            hint: "Require review or reprocessing",
+            tone: metrics.failedReports > 0 ? "critical" : "success",
+          },
+        ]}
+      />
 
-            <div className="grid gap-6 border-t border-black/20 pt-4 sm:grid-cols-2">
-              <div>
-                <p className="font-display text-xs text-muted-foreground">Processing Success</p>
-                <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
-                <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
-              </div>
-              <div>
-                <p className="font-display text-xs text-muted-foreground">Avg Extraction Accuracy</p>
-                <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
-                <Progress
-                  value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
-                  className="mt-2 h-2"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 xl:col-span-2 xl:border-l xl:border-black/20 xl:pl-6">
-            <p className="font-display text-xs text-muted-foreground">Publishing Priorities</p>
-            <div className="divide-y divide-black/20 border-t border-black/20">
-              <div className="py-3">
-                <p className="text-xs text-muted-foreground">Reports In Progress</p>
-                <p className="font-display text-2xl">{metrics.processingReports}</p>
-                <p className="text-xs text-muted-foreground">Currently being processed</p>
-              </div>
-              <div className="py-3">
-                <p className="text-xs text-muted-foreground">Reports Needing Attention</p>
-                <p className="font-display text-2xl">{metrics.failedReports}</p>
-                <p className="text-xs text-muted-foreground">Require review or reprocessing</p>
-              </div>
-              <div className="py-3">
-                <p className="text-xs text-muted-foreground">Active CMOs</p>
-                <p className="font-display text-2xl">{metrics.activeCmos}</p>
-                <p className="text-xs text-muted-foreground">Publishing partners this period</p>
-              </div>
-            </div>
-            {metrics.totalReports === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Upload your first CMO report to start tracking performance.
-              </p>
-            ) : null}
-          </div>
+      <section className="grid gap-4 rounded-sm border border-border/45 bg-card px-4 py-4 md:grid-cols-2 md:px-5">
+        <div>
+          <p className="font-display text-xs text-muted-foreground">Processing Success</p>
+          <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
+          <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
+        </div>
+        <div>
+          <p className="font-display text-xs text-muted-foreground">Avg Extraction Accuracy</p>
+          <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
+          <Progress value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))} className="mt-2 h-2" />
         </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
-          <CardHeader className="px-0 pb-3 pt-4">
+        <Card className="xl:col-span-3">
+          <CardHeader className="pb-3 pt-4">
             <CardTitle className="text-base">Revenue Trend (12 Months)</CardTitle>
           </CardHeader>
-          <CardContent className="px-0">
+          <CardContent>
             {monthlyTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <ComposedChart data={monthlyTrend}>
@@ -700,11 +674,11 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
-          <CardHeader className="px-0 pb-3 pt-4">
+        <Card className="xl:col-span-2">
+          <CardHeader className="pb-3 pt-4">
             <CardTitle className="text-base">Platform Revenue Mix</CardTitle>
           </CardHeader>
-          <CardContent className="px-0">
+          <CardContent>
             {platformData.length > 0 ? (
               <div className="flex items-center gap-3">
                 <ResponsiveContainer width="55%" height={300}>
@@ -753,14 +727,14 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
-          <CardHeader className="px-0 pb-3 pt-4">
+        <Card className="xl:col-span-2">
+          <CardHeader className="pb-3 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <Globe2 className="h-4 w-4" />
               Top Territories
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 px-0">
+          <CardContent className="space-y-4">
             {territoryData.length > 0 ? (
               <div className="space-y-4">
                 <ResponsiveContainer width="100%" height={190}>
@@ -852,17 +826,17 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
-          <CardHeader className="px-0 pb-3 pt-4">
+        <Card className="xl:col-span-3">
+          <CardHeader className="pb-3 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <RadioTower className="h-4 w-4" />
               CMO Performance Scorecard
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-0">
+          <CardContent>
             {cmoScorecard.length > 0 ? (
-              <div className="overflow-x-auto">
-                <Table>
+              <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                <Table className="min-w-[860px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>CMO</TableHead>

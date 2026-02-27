@@ -1,6 +1,94 @@
 # OrderSounds Phase 1 MVP - CTO Handoff
 ## Production-Ready Forensic Royalty Engine
 
+
+
+
+Smart Ingestion Implementation Plan (Safe Rollout)
+Goal
+Evolve the ingestion engine to handle "Data Chaos" (multi-language, messy headers) without disrupting the current stable pipeline.
+
+User Review Required
+NOTE
+
+This plan uses a "Hybrid Fallback" strategy. The existing hardcoded logic remains the primary source of truth. The database is checked only if the hardcoded logic fails. This guarantees zero regressions for currently supported formats.
+
+Proposed Changes
+1. Database Schema (Additive Only)
+We will add tables to store knowledge, not replace code.
+
+[NEW] column_mappings
+Stores learned rules (e.g., "Pays" -> "territory").
+scope: 'system' (global) or 'user' (custom).
+2. Edge Function Logic (Hybrid Strategy)
+The process-report function will be updated with this prioritization:
+
+Hardcoded Dictionary (Current): Always check this first. Keeps existing files working 100%.
+Database Lookups (New): If not found in dictionary, check column_mappings.
+Fuzzy/AI Fallback (Future): "Best guess" logic.
+Preserve Original: If all fail, keep the raw header (prevents crashing).
+Technical Workflow: "The Funnel of Certainty"
+We will process data through layers of increasing intelligence but decreasing speed. This ensures 90% of rows are processed in milliseconds, while the messy 10% get the "Smart" treatment.
+
+Smart Column Mapping (Tiered Intelligence)
+Yes
+No/Weird
+Match
+No
+Match
+No
+High Confidence
+Low Confidence
+Upload PDF/CSV
+Document AI Extraction
+Got Headers?
+Standard Normalization
+Smart Column Mapping
+1. Hardcoded Dict?
+Mapped!
+2. DB Rules?
+3. AI/LLM Analysis?
+Auto-Map & Learn
+Flag for Manual Review
+Save New Rule to DB
+Ingest Row
+User Notification
+The Role of AI (CTO Perspective)
+Should we use AI for everything? No.
+
+Latency: AI takes 2-10 seconds. Code takes 0.001 seconds.
+Cost: AI costs money per call. Code is free.
+Reliability: AI can hallucinate. Code is deterministic.
+The Strategy: "Tiered Intelligence"
+
+Tier 1 (Code - Milliseconds): If the column is "ISRC" or "Revenue", map it instantly. (Handles 80% of data).
+Tier 2 (Database Memory - Milliseconds): If we've seen "Montant Net" before and a user mapped it to "Net Revenue", remember that rule. (Handles 15% of data).
+Tier 3 (AI/LLM - Seconds): If we see "Obunigwe Share" (totally unknown), ONLY THEN do we ask an LLM: "Based on the other columns like 'Artist' and 'Stream Count', what is 'Obunigwe Share' likely to be?" The LLM might say "It looks like a publisher share column." We then save check this as a rule so next time it hits Tier 2.
+This gives you the speed of hardcoding with the flexibility of AI.
+
+Implementation Steps
+Phase 1: The Brain (Database)
+Create column_mappings table.
+Seed with common languages (FR, ES, DE) so it's smart on Day 1.
+Phase 2: The Logic (Edge Function)
+Modify 
+mapColumnName
+ to check the DB if the hardcoded list fails.
+Phase 3: The AI Assistant (Optional/Later)
+When a column is totally unknown, call text-generation model to guess its meaning and suggest it to the user.
+Verification Steps
+To verify the "Smart Ingestion" without breaking anything:
+
+Regression Test (English): Upload a standard English CSV/PDF.
+Result: Should process 100% normally (using Tier 1 hardcoded logic).
+Smart Test (French): Create a CSV with headers: Titre,Artiste,Pays,Montant.
+Result: The system should automatically map these to track_title, track_artist, territory, net_revenue using the new Tier 2 database rules.
+Verify: Check the "Field Mapping" in the review screen or the source_fields table in Supabase.
+
+Comment
+Ctrl+Alt+M
+
+
 **Date:** February 9, 2026  
 **Status:** ✅ Ready to Deploy  
 **Target Accuracy:** 99%+  
