@@ -185,7 +185,7 @@ export default function DataQualityQueue() {
     setActiveIssueIndex(0);
     setResolutionNote("");
     setApplyToReport(false);
-  }, [selectedTask?.id]);
+  }, [selectedTask]);
 
   const { data: reports = [], isLoading: isLoadingReports } = useQuery({
     queryKey: ["reports_with_tasks"],
