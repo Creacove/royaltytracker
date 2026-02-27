@@ -7,7 +7,7 @@ import { useEffect } from "react";
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
   { to: "/reports", icon: Upload, label: "Statements" },
-  { to: "/insights", icon: BarChart3, label: "Insights" },
+  { to: "/insights", icon: BarChart3, label: "Track Insights" },
   { to: "/review-queue", icon: ShieldAlert, label: "Review Statements" },
   { to: "/transactions", icon: ArrowRightLeft, label: "Transactions" },
 ];

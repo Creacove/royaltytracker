@@ -132,7 +132,7 @@ export default function Insights() {
     const url = `${window.location.origin}/insights/${encodeURIComponent(trackKey)}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast({ title: "Link copied", description: "Track insight URL copied to clipboard." });
+      toast({ title: "Link copied", description: "Track Insights link copied to clipboard." });
     } catch {
       toast({ title: "Copy failed", description: url, variant: "destructive" });
     }
@@ -145,16 +145,16 @@ export default function Insights() {
   return (
     <div className="rhythm-page">
       <div>
-        <h1 className="font-display text-4xl tracking-[0.03em]">Insights</h1>
+        <h1 className="font-display text-4xl tracking-[0.03em]">Track Insights</h1>
         <p className="text-sm text-muted-foreground">
-          One row per track, ranked by decision opportunity for publishers.
+          Review track-level performance, risk signals, and opportunity before opening the Track AI Agent.
         </p>
       </div>
 
       <section className="border-y border-foreground py-4">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <div>
-            <p className="text-xs text-muted-foreground">Tracks In Scope</p>
+            <p className="text-xs text-muted-foreground">Tracks in scope</p>
             <p className="font-display text-3xl">{aggregate.tracks.toLocaleString()}</p>
           </div>
           <div>
@@ -162,15 +162,15 @@ export default function Insights() {
             <p className="font-display text-3xl">{toMoney(aggregate.totalNet)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Quantity</p>
+            <p className="text-xs text-muted-foreground">Units</p>
             <p className="font-display text-3xl">{Math.round(aggregate.totalQty).toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">High Risk Tracks</p>
+            <p className="text-xs text-muted-foreground">High data risk tracks</p>
             <p className="font-display text-3xl">{aggregate.highRisk.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Top Opportunity</p>
+            <p className="text-xs text-muted-foreground">Top track by opportunity</p>
             <p className="text-sm font-semibold">
               {aggregate.topTrack ? `${aggregate.topTrack.track_title} (${aggregate.topTrack.opportunity_score.toFixed(1)})` : "-"}
             </p>
@@ -180,7 +180,7 @@ export default function Insights() {
 
       <Card className="!border-0 border-t border-border bg-transparent">
         <CardHeader className="space-y-3">
-          <CardTitle className="text-base">Scope</CardTitle>
+          <CardTitle className="text-base">Filters</CardTitle>
           <div className="grid gap-3 md:grid-cols-7">
             <div className="relative md:col-span-2">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -259,7 +259,7 @@ export default function Insights() {
           ) : rows.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-center">
               <Sparkles className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">No track insights found for this scope.</p>
+              <p className="text-sm text-muted-foreground">No tracks found for the selected filters.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -269,14 +269,14 @@ export default function Insights() {
                     <TableHead>Track</TableHead>
                     <TableHead>Artist</TableHead>
                     <TableHead>ISRC / Key</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead className="text-right">Net/Unit</TableHead>
-                    <TableHead className="text-right">3M Trend</TableHead>
+                    <TableHead className="text-right">Net Revenue</TableHead>
+                    <TableHead className="text-right">Units</TableHead>
+                    <TableHead className="text-right">Revenue/Unit</TableHead>
+                    <TableHead className="text-right">3-Month Trend</TableHead>
                     <TableHead>Top Territory</TableHead>
                     <TableHead>Top Platform</TableHead>
-                    <TableHead>Quality</TableHead>
-                    <TableHead className="text-right">Opportunity</TableHead>
+                    <TableHead>Data Quality</TableHead>
+                    <TableHead className="text-right">Opportunity Score</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -319,7 +319,7 @@ export default function Insights() {
                             }}
                           >
                             <ArrowUpRight className="h-3.5 w-3.5" />
-                            Open
+                            Open Insights
                           </Button>
                           <Button
                             size="sm"
@@ -330,7 +330,7 @@ export default function Insights() {
                             }}
                           >
                             <Copy className="h-3.5 w-3.5" />
-                            Copy
+                            Copy Link
                           </Button>
                           <Button
                             size="sm"

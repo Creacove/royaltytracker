@@ -1,16 +1,13 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bot, CircleAlert, Compass, LineChart, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { ArrowLeft, Bot, CircleAlert, Compass, FileDown, LineChart, Send, ShieldAlert, Sparkles } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -24,22 +21,22 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
 import { toCompactMoney, toMoney } from "@/lib/royalty";
 import {
   clampPercent,
   defaultDateRange,
-  parseAssistantResult,
-  parseDetail,
+  parseAssistantExportResponseV1,
+  parseAssistantTurnResponseV2,
   parseNaturalChatPlanResponse,
   parseNaturalChatRunResponse,
+  parseDetail,
   toConfidenceGrade,
 } from "@/lib/insights";
 import type {
-  TrackAssistantResult,
-  TrackChatMessage,
+  AssistantTurnResponseV2,
   TrackChatUiBlock,
   TrackInsightDetail,
-  TrackNaturalChatPlanResponse,
 } from "@/types/insights";
 
 const CHART_COLORS = [
@@ -71,35 +68,30 @@ const CHART_TOOLTIP_CONTENT_STYLE = {
   fontSize: "11px",
 };
 
-const ASSISTANT_PROMPTS: Array<{ id: string; label: string; summary: string }> = [
-  {
-    id: "growth_fastest",
-    label: "Fastest Growth Areas",
-    summary: "Which markets are growing fastest for this track?",
-  },
-  {
-    id: "usage_high_payout_low",
-    label: "Usage vs Payout Gaps",
-    summary: "Where is usage high but payout still low?",
-  },
-  {
-    id: "change_last_90d",
-    label: "Last 90 Days Change",
-    summary: "How have revenue and quantity shifted recently?",
-  },
-  {
-    id: "quality_risks",
-    label: "Quality Risk Overview",
-    summary: "What data-quality risks can impact this track?",
-  },
-];
+const CHART_GRID_STYLE = {
+  stroke: "hsl(0 0% 20%)",
+  strokeDasharray: "2 4",
+  strokeOpacity: 0.14,
+};
 
 const CHAT_QUICK_STARTERS = [
-  "Who owes me money, and where is payout still hanging?",
-  "What changed most in the last 90 days?",
-  "Which platform is driving the highest net per unit?",
-  "Show concentration risk by territory and platform.",
+  "Where is revenue strongest and weakest for this track?",
+  "What changed most over the last 90 days?",
+  "Which platform has the best and worst revenue per unit?",
+  "What data quality blockers could affect payout confidence?",
+  "Show anomalies I should review this week.",
 ];
+
+function toMonthlySnapshotRange(anchorDate: string): { fromDate: string; toDate: string } {
+  const parsed = new Date(`${anchorDate}T00:00:00`);
+  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  const monthStart = new Date(base.getFullYear(), base.getMonth(), 1);
+  const monthEnd = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+  return {
+    fromDate: monthStart.toISOString().slice(0, 10),
+    toDate: monthEnd.toISOString().slice(0, 10),
+  };
+}
 
 function toDateLabel(monthStart: string): string {
   const date = new Date(`${monthStart}T00:00:00`);
@@ -147,13 +139,6 @@ function toSafeRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function toSafeRows(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((row) => toSafeRecord(row))
-    .filter((row): row is Record<string, unknown> => !!row);
-}
-
 function buildChatChartData(
   uiBlock: TrackChatUiBlock | undefined
 ): Array<Record<string, string | number | null>> {
@@ -182,21 +167,9 @@ function toEvidenceSourceLabel(source: string): string {
   if (source === "track_chat_fact_v1") return "Track performance data";
   if (source === "track_quality_v1") return "Quality checks";
   if (source === "track_extractor_coverage_v1") return "Extraction coverage";
+  if (source === "track_assistant_scope_v2") return "Reviewed track performance data";
+  if (source === "royalty_transactions.custom_properties") return "Custom statement fields";
   return source;
-}
-
-function toChatMessage(role: "user" | "assistant", text: string, uiBlock?: TrackChatUiBlock): TrackChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    text,
-    created_at: new Date().toISOString(),
-    ui_block: uiBlock,
-  };
-}
-
-function isTechnicalKpiLabel(label: string): boolean {
-  return /(row|rows|runtime|duration|ms|query|provenance|source|sql|token)/i.test(label);
 }
 
 async function resolveEdgeFunctionError(error: unknown, data: unknown): Promise<string> {
@@ -229,13 +202,14 @@ export default function TrackInsightsDetail() {
   const params = useParams<{ trackKey: string }>();
   const trackKey = decodeURIComponent(params.trackKey ?? "");
   const defaults = defaultDateRange();
+  const { toast } = useToast();
 
   const [fromDate, setFromDate] = useState(defaults.fromDate);
   const [toDate, setToDate] = useState(defaults.toDate);
-  const [assistantResult, setAssistantResult] = useState<TrackAssistantResult | null>(null);
-  const [activePrompt, setActivePrompt] = useState<string | null>(null);
   const [chatInput, setChatInput] = useState("");
-  const [chatMessages, setChatMessages] = useState<TrackChatMessage[]>([]);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [latestAnswer, setLatestAnswer] = useState<AssistantTurnResponseV2 | null>(null);
+  const [lastQuestion, setLastQuestion] = useState<string>("");
 
   const { data: detailData, isLoading, isError, error } = useQuery({
     queryKey: ["track-insight-detail", trackKey, fromDate, toDate],
@@ -251,80 +225,150 @@ export default function TrackInsightsDetail() {
       return parseDetail(data as Json | null);
     },
   });
-
-  const assistantMutation = useMutation({
-    mutationFn: async (promptId: string): Promise<TrackAssistantResult | null> => {
-      const { data, error } = await supabase.rpc("run_track_assistant_prompt_v1", {
-        p_track_key: trackKey,
-        p_prompt_id: promptId,
-        from_date: fromDate,
-        to_date: toDate,
-        filters_json: {},
-      });
-      if (error) throw error;
-      return parseAssistantResult(data as Json | null);
-    },
-    onSuccess: (result, promptId) => {
-      setActivePrompt(promptId);
-      setAssistantResult(result);
-    },
-  });
-
-  const chatPlanMutation = useMutation({
-    mutationFn: async (question: string): Promise<TrackNaturalChatPlanResponse> => {
-      const payload = {
-        action: "plan_query",
+  const assistantTurnMutation = useMutation({
+    mutationFn: async (question: string): Promise<AssistantTurnResponseV2> => {
+      const v2Payload = {
+        action: "send_turn",
         track_key: trackKey,
         question,
         from_date: fromDate,
         to_date: toDate,
+        conversation_id: conversationId,
       };
       const { data, error } = await supabase.functions.invoke("insights-natural-chat", {
-        body: payload,
+        body: v2Payload,
       });
 
-      if (error) {
-        const message = await resolveEdgeFunctionError(error, data);
+      if (!error) {
+        const parsed = parseAssistantTurnResponseV2(data);
+        if (parsed) return parsed;
+        throw new Error("Assistant returned an invalid response.");
+      }
+
+      const message = await resolveEdgeFunctionError(error, data);
+      if (!/unsupported action/i.test(message)) {
         throw new Error(message);
       }
 
-      const parsed = parseNaturalChatPlanResponse(data);
-      if (!parsed) throw new Error("Assistant returned an invalid plan response.");
-      return parsed;
+      const { data: planData, error: planError } = await supabase.functions.invoke("insights-natural-chat", {
+        body: {
+          action: "plan_query",
+          track_key: trackKey,
+          question,
+          from_date: fromDate,
+          to_date: toDate,
+        },
+      });
+      if (planError) {
+        const planMessage = await resolveEdgeFunctionError(planError, planData);
+        throw new Error(planMessage);
+      }
+      const plan = parseNaturalChatPlanResponse(planData);
+      if (!plan) throw new Error("Assistant planning returned an invalid response.");
+
+      const { data: runData, error: runError } = await supabase.functions.invoke("insights-natural-chat", {
+        body: {
+          action: "run_query",
+          track_key: trackKey,
+          from_date: fromDate,
+          to_date: toDate,
+          plan_id: plan.plan_id,
+          sql_preview: plan.sql_preview,
+          execution_token: plan.execution_token,
+        },
+      });
+      if (runError) {
+        const runMessage = await resolveEdgeFunctionError(runError, runData);
+        throw new Error(runMessage);
+      }
+
+      const legacy = parseNaturalChatRunResponse(runData);
+      if (!legacy) throw new Error("Assistant run response was invalid.");
+
+      return {
+        conversation_id: conversationId ?? crypto.randomUUID(),
+        answer_title: legacy.answer_title,
+        answer_text: legacy.answer_text,
+        why_this_matters: "Use this output to choose the next best action for this track.",
+        kpis: legacy.kpis,
+        table: legacy.table,
+        chart: legacy.chart,
+        evidence: legacy.evidence,
+        follow_up_questions: legacy.follow_up_questions,
+      };
     },
-    onSuccess: (plan, question) => {
-      setChatMessages((prev) => [...prev, toChatMessage("user", question)]);
+    onSuccess: (result, question) => {
+      setLastQuestion(question);
+      setConversationId(result.conversation_id);
+      setLatestAnswer(result);
       setChatInput("");
-      chatRunMutation.mutate(plan);
     },
   });
 
-  const chatRunMutation = useMutation({
-    mutationFn: async (plan: TrackNaturalChatPlanResponse): Promise<TrackChatUiBlock> => {
+  const exportAnswerMutation = useMutation({
+    mutationFn: async (): Promise<{ pdfUrl?: string; xlsxUrl?: string; status?: string; jobId?: string }> => {
+      if (!latestAnswer) throw new Error("Ask the AI agent a question before exporting.");
       const payload = {
-        action: "run_query",
+        action: "export_answer",
         track_key: trackKey,
         from_date: fromDate,
         to_date: toDate,
-        plan_id: plan.plan_id,
-        sql_preview: plan.sql_preview,
-        execution_token: plan.execution_token,
+        answer_payload: latestAnswer,
       };
-      const { data, error } = await supabase.functions.invoke("insights-natural-chat", {
-        body: payload,
-      });
-
+      const { data, error } = await supabase.functions.invoke("insights-export-v1", { body: payload });
       if (error) {
         const message = await resolveEdgeFunctionError(error, data);
         throw new Error(message);
       }
-
-      const parsed = parseNaturalChatRunResponse(data);
-      if (!parsed) throw new Error("Assistant returned an invalid run response.");
-      return parsed;
+      const parsed = parseAssistantExportResponseV1(data);
+      if (!parsed) throw new Error("Export service returned an invalid response.");
+      return {
+        pdfUrl: parsed.pdf_url,
+        xlsxUrl: parsed.xlsx_url,
+        status: parsed.status,
+        jobId: parsed.job_id,
+      };
     },
     onSuccess: (result) => {
-      setChatMessages((prev) => [...prev, toChatMessage("assistant", result.answer_text, result)]);
+      if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
+      if (result.xlsxUrl) window.open(result.xlsxUrl, "_blank", "noopener,noreferrer");
+      toast({
+        title: "Export Ready",
+        description: result.pdfUrl || result.xlsxUrl ? "PDF and XLSX export generated." : result.status ?? "Export queued.",
+      });
+    },
+  });
+
+  const exportMonthlyMutation = useMutation({
+    mutationFn: async (): Promise<{ pdfUrl?: string; xlsxUrl?: string; status?: string; jobId?: string }> => {
+      const monthlyRange = toMonthlySnapshotRange(toDate);
+      const payload = {
+        action: "export_monthly_snapshot",
+        track_key: trackKey,
+        from_date: monthlyRange.fromDate,
+        to_date: monthlyRange.toDate,
+      };
+      const { data, error } = await supabase.functions.invoke("insights-export-v1", { body: payload });
+      if (error) {
+        const message = await resolveEdgeFunctionError(error, data);
+        throw new Error(message);
+      }
+      const parsed = parseAssistantExportResponseV1(data);
+      if (!parsed) throw new Error("Monthly export service returned an invalid response.");
+      return {
+        pdfUrl: parsed.pdf_url,
+        xlsxUrl: parsed.xlsx_url,
+        status: parsed.status,
+        jobId: parsed.job_id,
+      };
+    },
+    onSuccess: (result) => {
+      if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
+      if (result.xlsxUrl) window.open(result.xlsxUrl, "_blank", "noopener,noreferrer");
+      toast({
+        title: "Monthly Snapshot Ready",
+        description: result.pdfUrl || result.xlsxUrl ? "Monthly PDF and XLSX generated." : result.status ?? "Export queued.",
+      });
     },
   });
 
@@ -370,73 +414,22 @@ export default function TrackInsightsDetail() {
       platformRisk: platformShare > 60,
     };
   }, [platformMix, territoryMix, topPlatform, topTerritory]);
-
-  const assistantMetrics = useMemo(
-    () => toSafeRecord(assistantResult?.metrics),
-    [assistantResult?.metrics]
-  );
-  const assistantRows = useMemo(
-    () => toSafeRows(assistantResult?.rows),
-    [assistantResult?.rows]
-  );
-  const assistantColumns = useMemo(
-    () => Array.from(new Set(assistantRows.flatMap((row) => Object.keys(row)))),
-    [assistantRows]
-  );
-
-  const assistantTakeaway = useMemo(() => {
-    if (!assistantResult || assistantResult.error) return null;
-
-    if (activePrompt === "growth_fastest" && assistantRows[0]) {
-      const territory = String(assistantRows[0].territory ?? "Unknown");
-      const growth = formatAssistantValue("growth_pct", assistantRows[0].growth_pct);
-      return `Top growth market is ${territory} at ${growth} in the latest window.`;
-    }
-
-    if (activePrompt === "usage_high_payout_low" && assistantRows[0]) {
-      const territory = String(assistantRows[0].territory ?? "Unknown");
-      const usageShare = formatAssistantValue("usage_share", assistantRows[0].usage_share);
-      const payoutShare = formatAssistantValue("payout_share", assistantRows[0].payout_share);
-      return `${territory} shows strong usage (${usageShare}) but weaker payout (${payoutShare}).`;
-    }
-
-    if (activePrompt === "change_last_90d" && assistantMetrics) {
-      const recentNet = asNumber(assistantMetrics.recent_net);
-      const priorNet = asNumber(assistantMetrics.prior_net);
-      const recentQty = asNumber(assistantMetrics.recent_qty);
-      const priorQty = asNumber(assistantMetrics.prior_qty);
-      if (recentNet != null && priorNet != null) {
-        const netPct = priorNet === 0 ? (recentNet > 0 ? 100 : 0) : ((recentNet - priorNet) / Math.abs(priorNet)) * 100;
-        const qtyPct =
-          recentQty != null && priorQty != null
-            ? priorQty === 0
-              ? recentQty > 0
-                ? 100
-                : 0
-              : ((recentQty - priorQty) / Math.abs(priorQty)) * 100
-            : null;
-        return `Last 90 days net changed by ${netPct.toFixed(1)}%${qtyPct != null ? ` and quantity changed by ${qtyPct.toFixed(1)}%.` : "."}`;
-      }
-    }
-
-    if (activePrompt === "quality_risks" && assistantMetrics) {
-      const criticalTasks = asNumber(assistantMetrics.open_critical_task_count) ?? 0;
-      const failedLines = asNumber(assistantMetrics.failed_line_count) ?? 0;
-      const avgConfidence = asNumber(assistantMetrics.avg_confidence);
-      return `Quality view shows ${Math.round(criticalTasks)} open critical task(s), ${Math.round(failedLines)} failed line(s)${avgConfidence != null ? `, and average confidence of ${avgConfidence.toFixed(1)}%.` : "."}`;
-    }
-
-    return assistantResult.summary ?? "Assistant results are ready.";
-  }, [activePrompt, assistantMetrics, assistantResult, assistantRows]);
-
   const activeChatError =
-    (chatPlanMutation.error as Error | null)?.message ?? (chatRunMutation.error as Error | null)?.message ?? null;
+    (assistantTurnMutation.error as Error | null)?.message ??
+    (exportAnswerMutation.error as Error | null)?.message ??
+    (exportMonthlyMutation.error as Error | null)?.message ??
+    null;
 
   const handleSubmitChatQuestion = (question: string) => {
     const trimmed = question.trim();
-    if (!trimmed || chatPlanMutation.isPending || chatRunMutation.isPending) return;
-    chatPlanMutation.mutate(trimmed);
+    if (!trimmed || assistantTurnMutation.isPending) return;
+    assistantTurnMutation.mutate(trimmed);
   };
+
+  const assistantBusy =
+    assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending;
+  const latestChartData = buildChatChartData(latestAnswer ?? undefined);
+  const latestTableColumns = latestAnswer?.table?.columns.slice(0, 6) ?? [];
 
   if (!trackKey) {
     return (
@@ -448,735 +441,620 @@ export default function TrackInsightsDetail() {
 
   return (
     <div className="rhythm-page">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="font-display text-4xl tracking-[0.03em]">Track Command Center</h1>
+          <h1 className="font-display text-4xl tracking-[0.03em] leading-none mb-1">Track Insights</h1>
           <p className="text-sm text-muted-foreground">
-            Performance, opportunity, quality evidence, and guided analysis for one track.
+            Track ID: <span className="font-mono text-xs">{trackKey}</span>
           </p>
         </div>
         <Button asChild variant="outline">
           <Link to="/insights">
             <ArrowLeft className="mr-1.5 h-4 w-4" />
-            Back To Insights
+            Back to Insights
           </Link>
         </Button>
       </div>
 
-      <Card className="!border-0 border-t border-border bg-transparent">
-        <CardHeader className="space-y-3">
-          <CardTitle className="text-base">Scope</CardTitle>
-          <div className="grid gap-3 md:grid-cols-4">
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-            <Input value={trackKey} readOnly className="font-mono text-xs md:col-span-2" />
-          </div>
-        </CardHeader>
-      </Card>
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading track details...</p>
-      ) : isError ? (
-        <p className="text-sm text-destructive">Failed to load: {(error as Error).message}</p>
-      ) : !summary ? (
-        <p className="text-sm text-muted-foreground">No data for this track in the selected range.</p>
-      ) : (
-        <>
-          <section className="border-y border-foreground py-4">
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-              <div>
-                <p className="text-xs text-muted-foreground">Track</p>
-                <p className="text-sm font-semibold truncate">{summary.track_title}</p>
+      <div className="grid grid-cols-1 gap-6">
+        <Card className="border-y border-border">
+          <CardHeader className="space-y-3 pb-4">
+            <CardTitle className="text-base">Date Range</CardTitle>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="space-y-1">
+                <p className="text-xs font-mono uppercase text-muted-foreground">From</p>
+                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Artist</p>
-                <p className="text-sm font-semibold truncate">{summary.artist_name}</p>
+              <div className="space-y-1">
+                <p className="text-xs font-mono uppercase text-muted-foreground">To</p>
+                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Net Revenue</p>
-                <p className="font-display text-2xl">{toMoney(summary.net_revenue)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Quantity</p>
-                <p className="font-display text-2xl">{Math.round(summary.quantity ?? 0).toLocaleString()}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Net / Unit</p>
-                <p className="font-display text-2xl">{toMoney(summary.net_per_unit)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Confidence Grade</p>
-                <p className="font-display text-2xl">{toConfidenceGrade(summary.avg_confidence)}</p>
+              <div className="sm:col-span-2 xl:col-span-3 flex items-end justify-start xl:justify-end">
+                <Button size="sm" variant="outline" onClick={() => exportMonthlyMutation.mutate()} disabled={assistantBusy}>
+                  <FileDown className="mr-1.5 h-3 w-3" />
+                  Monthly Snapshot
+                </Button>
               </div>
             </div>
-          </section>
+            <p className="text-xs text-muted-foreground">
+              Reporting window: {fromDate} to {toDate}
+            </p>
+          </CardHeader>
+        </Card>
 
-          <Card className="!border-0 border-t border-border bg-transparent">
-            <CardHeader>
-              <CardTitle className="text-base">What Matters Now</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <p>
-                Highest earning territory/platform:{" "}
-                <span className="font-medium">
-                  {topTerritory ? `${topTerritory.territory} (${toMoney(topTerritory.net_revenue)})` : "N/A"}
-                </span>{" "}
-                /{" "}
-                <span className="font-medium">
-                  {topPlatform ? `${topPlatform.platform} (${toMoney(topPlatform.net_revenue)})` : "N/A"}
-                </span>
-              </p>
-              <p>
-                Recent momentum (last 3M vs prior 3M):{" "}
-                <span className={trendPct >= 0 ? "font-medium text-foreground" : "font-medium text-destructive"}>
-                  {trendPct.toFixed(1)}%
-                </span>
-              </p>
-              <p>
-                Under-monetized area:{" "}
-                <span className="font-medium">
-                  {underMonetized
-                    ? `${underMonetized.territory} (usage ${(underMonetized.usage_share * 100).toFixed(1)}%, payout ${(underMonetized.payout_share * 100).toFixed(1)}%)`
-                    : "No territory currently flags high-usage/low-payout in this period."}
-                </span>
-              </p>
-              <p>
-                Quality risk:{" "}
-                <span className="font-medium">
-                  {quality && (quality.open_critical_task_count > 0 || quality.failed_line_count > 0)
-                    ? `${quality.open_critical_task_count} open critical task(s), ${quality.failed_line_count} failed line(s).`
-                    : "No critical quality blockers currently in scope."}
-                </span>
-              </p>
+
+        {isLoading ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-sm text-muted-foreground">Loading track details...</p>
             </CardContent>
           </Card>
+        ) : isError ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-sm text-destructive">Failed to load: {(error as Error).message}</p>
+            </CardContent>
+          </Card>
+        ) : !summary ? (
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-sm text-muted-foreground">No data for this track in the selected range.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+              {[
+                { label: "Track", val: summary.track_title },
+                { label: "Artist", val: summary.artist_name },
+                { label: "Net Revenue", val: toMoney(summary.net_revenue) },
+                { label: "Units", val: Math.round(summary.quantity ?? 0).toLocaleString() },
+                { label: "Revenue / Unit", val: toMoney(summary.net_per_unit) },
+                { label: "Data Confidence", val: toConfidenceGrade(summary.avg_confidence) },
+              ].map((m, i) => (
+                <div key={i} className="border border-border/35 p-4 bg-background/70">
+                  <p className="text-[10px] font-mono uppercase font-bold text-muted-foreground mb-1">{m.label}</p>
+                  <p className={`font-display ${m.label.includes("Revenue") ? "text-2xl" : "text-sm"} leading-none tracking-tight`}>{m.val}</p>
+                </div>
+              ))}
+            </div>
 
-          <Card className="!border-0 border-t border-border bg-transparent">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Bot className="h-4 w-4" />
-                Insights Assistant
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid gap-6 xl:grid-cols-2">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm font-medium">Guided Prompts</p>
-                    <p className="text-xs text-muted-foreground">
-                      One-click analyses for core publisher decisions.
-                    </p>
+            {/* Decision Assistant */}
+            <section className="border border-[hsl(var(--brand-accent))]/30 bg-[hsl(var(--brand-accent-ghost))]/45 p-6">
+              <div className="flex flex-col gap-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center border border-[hsl(var(--brand-accent))]/35 bg-background/70">
+                      <Bot className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
+                    </div>
+                    <div>
+                      <h2 className="font-display text-lg leading-none">Track AI Agent</h2>
+                      <p className="text-xs text-muted-foreground">
+                        Chat with the AI agent about this track for the selected date range.
+                      </p>
+                    </div>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {ASSISTANT_PROMPTS.map((prompt) => (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => exportAnswerMutation.mutate()}
+                    disabled={!latestAnswer || assistantBusy}
+                    className="border-[hsl(var(--brand-accent))]/30 bg-background/80"
+                  >
+                    <FileDown className="mr-1.5 h-3 w-3" />
+                    Export AI Response
+                  </Button>
+                </div>
+
+                <div className="space-y-3 border border-border/40 bg-background/70 p-4">
+                  <label className="text-xs font-mono uppercase text-muted-foreground">Ask the AI agent about this track</label>
+                  <Textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Ask about revenue trends, payout risk, market opportunity, or data quality for this track."
+                    className="min-h-[110px] bg-background"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {CHAT_QUICK_STARTERS.map((s) => (
                       <Button
-                        key={prompt.id}
-                        variant={activePrompt === prompt.id ? "default" : "outline"}
-                        className="justify-start text-left normal-case"
-                        onClick={() => assistantMutation.mutate(prompt.id)}
-                        disabled={assistantMutation.isPending}
+                        key={s}
+                        size="sm"
+                        variant="ghost"
+                        className="h-auto border border-border/40 bg-background/70 px-2 py-1 text-left text-[11px] normal-case tracking-normal whitespace-normal"
+                        onClick={() => handleSubmitChatQuestion(s)}
+                        disabled={assistantBusy}
                       >
-                        <div>
-                          <p className="font-medium">{prompt.label}</p>
-                          <p className="text-[11px] opacity-80">{prompt.summary}</p>
-                        </div>
+                        {s}
                       </Button>
                     ))}
                   </div>
+                  <div className="flex items-center justify-end">
+                    <Button
+                      onClick={() => handleSubmitChatQuestion(chatInput)}
+                      disabled={!chatInput.trim() || assistantBusy}
+                    >
+                      <Send className="mr-2 h-4 w-4" />
+                      Ask AI Agent
+                    </Button>
+                  </div>
+                </div>
 
-                  {assistantMutation.isPending ? (
-                    <p className="text-sm text-muted-foreground">Running guided query...</p>
-                  ) : assistantResult ? (
-                    <div className="space-y-3 border-t border-black/20 pt-3">
-                      <p className="font-display text-lg">{assistantResult.title ?? "Assistant Result"}</p>
-                      {assistantResult.summary ? <p className="text-sm">{assistantResult.summary}</p> : null}
-                      {assistantTakeaway ? <p className="text-sm font-medium">{assistantTakeaway}</p> : null}
-                      {assistantResult.error ? (
-                        <p className="text-sm text-destructive">{assistantResult.error}</p>
-                      ) : null}
-                      {assistantMetrics ? (
-                        <div className="grid gap-3 border border-black/20 p-3 sm:grid-cols-2 lg:grid-cols-4">
-                          {Object.entries(assistantMetrics).map(([key, value]) => (
-                            <div key={key}>
-                              <p className="text-[11px] text-muted-foreground">{toAssistantLabel(key)}</p>
-                              <p className="font-mono text-sm">{formatAssistantValue(key, value)}</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      {assistantRows.length > 0 ? (
+                {activeChatError && (
+                  <div className="flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 text-destructive" />
+                    <p className="text-xs text-destructive">{activeChatError}</p>
+                  </div>
+                )}
+
+                {!latestAnswer && !assistantTurnMutation.isPending && (
+                  <div className="flex flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
+                    <Sparkles className="h-7 w-7 text-[hsl(var(--brand-accent))]" />
+                    <p className="font-display text-sm">Start a conversation with the AI agent</p>
+                    <p className="max-w-lg text-xs text-muted-foreground">
+                      Responses, charts, and data evidence will appear below.
+                    </p>
+                  </div>
+                )}
+
+                {assistantTurnMutation.isPending && (
+                  <div className="flex flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
+                    <p className="font-display text-sm">AI agent is analyzing...</p>
+                    <p className="text-xs text-muted-foreground">
+                      Reviewing performance, market, and quality data.
+                    </p>
+                  </div>
+                )}
+
+                {latestAnswer && (
+                  <div className="space-y-4 border border-border/40 bg-background/70 p-4">
+                    <div className="space-y-2">
+                          {lastQuestion && (
+                            <p className="text-xs text-muted-foreground">
+                              <span className="font-mono uppercase">Your question:</span> {lastQuestion}
+                            </p>
+                          )}
+                      <h3 className="font-display text-2xl leading-tight">{latestAnswer.answer_title}</h3>
+                      <p className="text-sm leading-relaxed">{latestAnswer.answer_text}</p>
+                    </div>
+
+                    {latestAnswer.kpis.length > 0 && (
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {latestAnswer.kpis.map((kpi, idx) => (
+                          <div key={idx} className="border border-border/35 bg-background/60 p-3">
+                            <p className="text-[10px] font-mono uppercase text-muted-foreground">{kpi.label}</p>
+                            <p className="font-display text-lg leading-tight">{kpi.value}</p>
+                            {kpi.change && <p className="text-[10px] text-muted-foreground">{kpi.change}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {latestAnswer.why_this_matters && (
+                      <div className="border border-border/35 bg-background/60 p-3">
+                        <p className="mb-1 text-[10px] font-mono uppercase text-muted-foreground">Business impact</p>
+                        <p className="text-xs leading-relaxed">{latestAnswer.why_this_matters}</p>
+                      </div>
+                    )}
+
+                    {latestAnswer.chart && latestAnswer.chart.type !== "none" && latestChartData.length > 0 && (
+                      <div className="border border-border/35 bg-background/60 p-3">
+                        <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">
+                          {latestAnswer.chart.title ?? "AI response chart"}
+                        </p>
+                        <ResponsiveContainer width="100%" height={220}>
+                          {latestAnswer.chart.type === "line" ? (
+                            <ComposedChart data={latestChartData}>
+                              <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
+                              <XAxis
+                                dataKey={latestAnswer.chart.x}
+                                tick={CHART_TICK_STYLE}
+                                axisLine={CHART_AXIS_STYLE}
+                                tickLine={false}
+                              />
+                              <YAxis tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
+                              <Tooltip
+                                contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                                formatter={(value: number | string, name: string) => [
+                                  formatAssistantValue(name, value),
+                                  toAssistantLabel(name),
+                                ]}
+                              />
+                              {latestAnswer.chart.y.map((column, idx) => (
+                                <Line
+                                  key={column}
+                                  type="monotone"
+                                  dataKey={column}
+                                  name={toAssistantLabel(column)}
+                                  stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                                  strokeWidth={2}
+                                  dot={{ r: 2 }}
+                                  activeDot={{ r: 3 }}
+                                />
+                              ))}
+                            </ComposedChart>
+                          ) : (
+                            <BarChart data={latestChartData}>
+                              <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
+                              <XAxis
+                                dataKey={latestAnswer.chart.x}
+                                tick={CHART_TICK_STYLE}
+                                axisLine={CHART_AXIS_STYLE}
+                                tickLine={false}
+                              />
+                              <YAxis tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
+                              <Tooltip
+                                contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
+                                formatter={(value: number | string, name: string) => [
+                                  formatAssistantValue(name, value),
+                                  toAssistantLabel(name),
+                                ]}
+                              />
+                              {latestAnswer.chart.y.map((column, idx) => (
+                                <Bar
+                                  key={column}
+                                  dataKey={column}
+                                  name={toAssistantLabel(column)}
+                                  fill={CHART_COLORS[idx % CHART_COLORS.length]}
+                                  fillOpacity={0.7}
+                                />
+                              ))}
+                            </BarChart>
+                          )}
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    {latestAnswer.table && latestTableColumns.length > 0 && (
+                      <div className="border border-border/35 bg-background/60 p-3">
+                        <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">AI query result preview</p>
                         <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
+                          <Table className="text-[11px]">
+                            <TableHeader className="bg-muted/30">
                               <TableRow>
-                                {assistantColumns.map((column) => (
+                                {latestTableColumns.map((column) => (
                                   <TableHead key={column}>{toAssistantLabel(column)}</TableHead>
                                 ))}
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {assistantRows.map((row, index) => (
-                                <TableRow key={index}>
-                                  {assistantColumns.map((column) => (
-                                    <TableCell key={`${index}-${column}`} className="font-mono">
-                                      {formatAssistantValue(column, row[column])}
-                                    </TableCell>
+                              {latestAnswer.table.rows.slice(0, 6).map((row, rowIdx) => (
+                                <TableRow key={rowIdx}>
+                                  {latestTableColumns.map((column) => (
+                                    <TableCell key={column}>{formatAssistantValue(column, row[column])}</TableCell>
                                   ))}
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
                         </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      Choose a guided prompt to run a safe template query against this track.
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    <div>
-                      <p className="text-sm font-medium">Ask Assistant</p>
-                      <p className="text-xs text-muted-foreground">
-                        Natural language analysis with charts and supporting evidence.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {CHAT_QUICK_STARTERS.map((starter) => (
-                      <Button
-                        key={starter}
-                        size="sm"
-                        variant="outline"
-                        className="text-xs normal-case"
-                        onClick={() => handleSubmitChatQuestion(starter)}
-                        disabled={chatPlanMutation.isPending || chatRunMutation.isPending}
-                      >
-                        {starter}
-                      </Button>
-                    ))}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Textarea
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Ask a track question, for example: Who owes me money, and where is payout still hanging?"
-                      className="min-h-[96px]"
-                    />
-                    <div className="flex justify-end">
-                      <Button
-                        onClick={() => handleSubmitChatQuestion(chatInput)}
-                        disabled={!chatInput.trim() || chatPlanMutation.isPending || chatRunMutation.isPending}
-                      >
-                        <Send className="mr-2 h-4 w-4" />
-                        Ask Assistant
-                      </Button>
-                    </div>
-                  </div>
-
-                  {chatPlanMutation.isPending ? (
-                    <p className="text-sm text-muted-foreground">Understanding your question...</p>
-                  ) : null}
-                  {chatRunMutation.isPending ? (
-                    <p className="text-sm text-muted-foreground">Analyzing track data...</p>
-                  ) : null}
-                  {activeChatError ? <p className="text-sm text-destructive">{activeChatError}</p> : null}
-                </div>
-              </div>
-
-              {chatMessages.length > 0 ? (
-                <div className="space-y-4 border-t border-black/20 pt-4">
-                  {chatMessages.map((message) => {
-                    const ui = message.ui_block;
-                    const visibleKpis = (ui?.kpis ?? []).filter((kpi) => !isTechnicalKpiLabel(kpi.label));
-                    const chartData = buildChatChartData(ui);
-                    return (
-                      <div
-                        key={message.id}
-                        className={message.role === "user" ? "ml-auto max-w-[90%]" : "mr-auto max-w-full"}
-                      >
-                        <div
-                          className={
-                            message.role === "user"
-                              ? "border border-black/20 bg-primary/10 p-3 text-sm"
-                              : "border border-black/20 bg-background p-3 text-sm"
-                          }
-                        >
-                          <p className="mb-1 text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                            {message.role === "user" ? "You" : "Assistant"}
-                          </p>
-                          <p>{message.text}</p>
-
-                          {ui ? (
-                            <div className="mt-3 space-y-3 border-t border-black/20 pt-3">
-                              <p className="font-display text-lg">{ui.answer_title}</p>
-                              {visibleKpis.length > 0 ? (
-                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                                  {visibleKpis.map((kpi, idx) => (
-                                    <div key={`${kpi.label}-${idx}`} className="border border-black/20 p-2">
-                                      <p className="text-[11px] text-muted-foreground">{kpi.label}</p>
-                                      <p className="font-mono text-sm">{kpi.value}</p>
-                                      {kpi.change ? <p className="text-[11px] text-muted-foreground">{kpi.change}</p> : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-
-                              {ui.table ? (
-                                <div className="overflow-x-auto">
-                                  <Table>
-                                    <TableHeader>
-                                      <TableRow>
-                                        {ui.table.columns.map((col) => (
-                                          <TableHead key={col}>{toAssistantLabel(col)}</TableHead>
-                                        ))}
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {ui.table.rows.map((row, idx) => (
-                                        <TableRow key={idx}>
-                                          {ui.table!.columns.map((col) => (
-                                            <TableCell key={`${idx}-${col}`} className="font-mono">
-                                              {formatAssistantValue(col, row[col])}
-                                            </TableCell>
-                                          ))}
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                              ) : null}
-
-                              {ui.chart && ui.chart.type !== "none" && chartData.length > 0 ? (
-                                <Card className="!border-0 border-t border-border bg-transparent">
-                                  <CardHeader>
-                                    <CardTitle className="text-sm">
-                                      {ui.chart.title ?? `${toAssistantLabel(ui.chart.y[0])} by ${toAssistantLabel(ui.chart.x)}`}
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <ResponsiveContainer width="100%" height={220}>
-                                      {ui.chart.type === "line" ? (
-                                        <ComposedChart data={chartData}>
-                                          <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
-                                          <XAxis dataKey={ui.chart.x} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                                          <YAxis tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                                          <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                                          {ui.chart.y.map((yCol, idx) => (
-                                            <Line
-                                              key={yCol}
-                                              type="monotone"
-                                              dataKey={yCol}
-                                              stroke={CHART_COLORS[idx % CHART_COLORS.length]}
-                                              strokeWidth={2.2}
-                                              dot={{
-                                                r: 2.5,
-                                                strokeWidth: 1,
-                                                fill: CHART_COLORS[idx % CHART_COLORS.length],
-                                                stroke: "hsl(var(--background))",
-                                              }}
-                                              activeDot={{ r: 4 }}
-                                              connectNulls
-                                            />
-                                          ))}
-                                        </ComposedChart>
-                                      ) : (
-                                        <BarChart data={chartData}>
-                                          <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
-                                          <XAxis dataKey={ui.chart.x} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                                          <YAxis tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                                          <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                                          {ui.chart.y.map((yCol, idx) => (
-                                            <Bar key={yCol} dataKey={yCol} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
-                                          ))}
-                                        </BarChart>
-                                      )}
-                                    </ResponsiveContainer>
-                                  </CardContent>
-                                </Card>
-                              ) : null}
-
-                              <p className="text-xs text-muted-foreground">
-                                Based on {ui.evidence.row_count.toLocaleString()} matched record(s) from{" "}
-                                {ui.evidence.from_date} to {ui.evidence.to_date}.
-                                {ui.evidence.provenance.length > 0
-                                  ? ` Data sources: ${ui.evidence.provenance.map(toEvidenceSourceLabel).join(", ")}.`
-                                  : ""}
-                              </p>
-
-                              {ui.follow_up_questions.length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                  {ui.follow_up_questions.map((followUp) => (
-                                    <Button
-                                      key={followUp}
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-xs normal-case"
-                                      onClick={() => handleSubmitChatQuestion(followUp)}
-                                      disabled={chatPlanMutation.isPending || chatRunMutation.isPending}
-                                    >
-                                      {followUp}
-                                    </Button>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+                    )}
 
-          <Tabs defaultValue="performance">
-            <TabsList className="grid w-full max-w-xl grid-cols-3">
-              <TabsTrigger value="performance">Performance</TabsTrigger>
-              <TabsTrigger value="opportunity">Opportunity</TabsTrigger>
-              <TabsTrigger value="quality">Quality & Evidence</TabsTrigger>
-            </TabsList>
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-mono uppercase text-muted-foreground">
+                        Data evidence - {latestAnswer.evidence.row_count.toLocaleString()} rows -{" "}
+                        {latestAnswer.evidence.duration_ms.toLocaleString()}ms
+                      </p>
+                      {latestAnswer.evidence.provenance.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {latestAnswer.evidence.provenance.slice(0, 6).map((source, idx) => (
+                            <span
+                              key={`${source}-${idx}`}
+                              className="inline-flex items-center border border-border/35 bg-background/60 px-2 py-1 text-[10px] text-muted-foreground"
+                            >
+                              {toEvidenceSourceLabel(source)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
-            <TabsContent value="performance" className="space-y-6 pt-2">
-              <div className="grid gap-6 xl:grid-cols-3">
-                <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <LineChart className="h-4 w-4" />
-                      Monthly Trend (Net + Quantity)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={280}>
+                    {latestAnswer.follow_up_questions.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {latestAnswer.follow_up_questions.map((q) => (
+                          <Button
+                            key={q}
+                            size="sm"
+                            variant="ghost"
+                            className="h-auto border border-border/40 bg-background/70 px-2 py-1 text-[11px] normal-case tracking-normal whitespace-normal"
+                            onClick={() => handleSubmitChatQuestion(q)}
+                            disabled={assistantBusy}
+                          >
+                            {q}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* EXPLORER TABS */}
+            <Tabs defaultValue="performance" className="w-full">
+              <TabsList className="w-full">
+                <TabsTrigger value="performance">Performance</TabsTrigger>
+                <TabsTrigger value="opportunity">Opportunities</TabsTrigger>
+                <TabsTrigger value="quality">Data Quality</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="performance" className="space-y-8">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  <div className="xl:col-span-8 bg-background/70 border border-border/35 p-4">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="font-display text-lg uppercase flex items-center gap-2">
+                        <LineChart className="h-4 w-4" />
+                        Monthly Revenue and Units
+                      </h3>
+                    </div>
+                    <ResponsiveContainer width="100%" height={320}>
                       <ComposedChart data={monthlyTrend}>
-                        <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                        <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
                         <XAxis dataKey="label" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                        <YAxis
-                          yAxisId="net"
-                          tick={CHART_TICK_STYLE}
-                          axisLine={CHART_AXIS_STYLE}
-                          tickLine={false}
-                          tickFormatter={(value: number) => toCompactMoney(value)}
-                        />
-                        <YAxis
-                          yAxisId="qty"
-                          orientation="right"
-                          tick={CHART_TICK_STYLE}
-                          axisLine={CHART_AXIS_STYLE}
-                          tickLine={false}
-                          tickFormatter={(value: number) => Math.round(value).toLocaleString()}
-                          allowDecimals={false}
-                        />
+                        <YAxis yAxisId="net" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} tickFormatter={(v) => toCompactMoney(v)} />
+                        <YAxis yAxisId="qty" orientation="right" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} tickFormatter={(v) => Math.round(v).toLocaleString()} allowDecimals={false} />
                         <Tooltip
                           contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
-                          formatter={(value: number, name: string) =>
-                            name === "quantity"
-                              ? [Math.round(value).toLocaleString(), "Quantity"]
-                              : [toMoney(value), "Net Revenue"]
-                          }
+                          formatter={(v: number, n: string) => n === "quantity" ? [Math.round(v).toLocaleString(), "Units"] : [toMoney(v), "Net Revenue"]}
                         />
                         <Bar
                           yAxisId="net"
                           dataKey="net_revenue"
                           name="Net Revenue"
-                          fill="hsl(var(--brand-accent))"
-                          fillOpacity={0.42}
-                          maxBarSize={28}
-                          radius={[2, 2, 0, 0]}
+                          fill={CHART_COLORS[0]}
+                          fillOpacity={0.45}
+                          maxBarSize={32}
                         />
                         <Line
                           yAxisId="qty"
-                          type="monotone"
+                          type="stepAfter"
                           dataKey="quantity"
-                          name="Quantity"
-                          stroke="hsl(var(--tone-pending))"
-                          strokeWidth={2.4}
-                          dot={{ r: 2.5, strokeWidth: 1, fill: "hsl(var(--tone-pending))", stroke: "hsl(var(--background))" }}
-                          activeDot={{ r: 4 }}
+                          name="Units"
+                          stroke={CHART_COLORS[2]}
+                          strokeWidth={2}
+                          dot={{ r: 1.5, fill: CHART_COLORS[2] }}
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="text-base">Revenue by Territory</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={territoryMix.slice(0, 8)} layout="vertical">
-                        <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                  <div className="xl:col-span-4 flex flex-col gap-6">
+                    <div className="bg-background/70 border border-border/35 p-4 flex-1">
+                      <h3 className="font-display text-sm uppercase mb-4">Executive Summary</h3>
+                      <div className="space-y-4 text-xs">
+                        <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
+                          <span className="text-muted-foreground uppercase font-mono text-[10px]">90-day momentum</span>
+                          <span className={`font-bold ${trendPct >= 0 ? "text-[hsl(var(--tone-success))]" : "text-destructive"}`}>{trendPct.toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
+                          <span className="text-muted-foreground uppercase font-mono text-[10px]">Top territory</span>
+                          <span className="font-bold">{topTerritory?.territory ?? 'N/A'}</span>
+                        </div>
+                        <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
+                          <span className="text-muted-foreground uppercase font-mono text-[10px]">Top platform</span>
+                          <span className="font-bold">{topPlatform?.platform ?? 'N/A'}</span>
+                        </div>
+                        <p className="text-[10px] leading-relaxed opacity-70 mt-4">
+                          {summary.track_title} is {trendPct >= 0 ? "growing" : "softening"} across key markets.
+                          Data confidence is {toConfidenceGrade(summary.avg_confidence)}.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-background/70 border border-border/35 overflow-hidden">
+                  <div className="bg-secondary/60 p-2 border-b border-border/35">
+                    <h3 className="font-display text-xs uppercase text-center">Territory and Platform Breakdown</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <Table className="text-[11px]">
+                      <TableHeader className="bg-muted/30 font-mono text-[10px] uppercase">
+                        <TableRow>
+                          <TableHead className="rounded-none">Territory</TableHead>
+                          <TableHead>Platform</TableHead>
+                          <TableHead className="text-right">Net Revenue</TableHead>
+                          <TableHead className="text-right">Units</TableHead>
+                          <TableHead className="text-right bg-muted/20">Revenue/Unit</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {matrix.slice(0, 15).map((row, index) => (
+                          <TableRow key={index} className="hover:bg-muted/20">
+                            <TableCell className="font-medium">{row.territory}</TableCell>
+                            <TableCell>{row.platform}</TableCell>
+                            <TableCell className="text-right font-mono">{toMoney(row.net_revenue)}</TableCell>
+                            <TableCell className="text-right font-mono">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-right font-mono">{toMoney(row.net_per_unit)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="opportunity" className="space-y-8">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                  <div className="bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
+                      <Compass className="h-4 w-4" />
+                      Revenue by Usage Type
+                    </h3>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={usageMix.slice(0, 12)} layout="vertical">
+                        <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
                         <XAxis type="number" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                        <YAxis dataKey="territory" type="category" width={90} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
+                        <YAxis dataKey="usage_type" type="category" width={110} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
                         <Tooltip formatter={(v: number) => toMoney(v)} contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                        <Bar dataKey="net_revenue" fill="hsl(var(--tone-pending))" />
+                        <Bar dataKey="net_revenue" fill={CHART_COLORS[1]} fillOpacity={0.75} />
                       </BarChart>
                     </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="text-base">Revenue by Platform</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={260}>
-                      <PieChart>
-                        <Pie data={platformMix.slice(0, 8)} dataKey="net_revenue" nameKey="platform" innerRadius={52} outerRadius={90}>
-                          {platformMix.slice(0, 8).map((row, index) => (
-                            <Cell key={row.platform} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(v: number) => toMoney(v)} contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                  <div className="bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
+                      <CircleAlert className="h-4 w-4" />
+                      Concentration Risk
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="border border-border/35 bg-background/60 p-4">
+                        <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Territory Share</p>
+                        <p className="font-display text-4xl leading-none">{concentration.territoryShare.toFixed(1)}%</p>
+                        <div className={`h-1 w-full mt-3 ${concentration.territoryRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
+                        <p className="text-[10px] mt-2 text-muted-foreground">
+                          {concentration.territoryRisk ? "High concentration" : "Healthy spread"}
+                        </p>
+                      </div>
+                      <div className="border border-border/35 bg-background/60 p-4">
+                        <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Platform Share</p>
+                        <p className="font-display text-4xl leading-none">{concentration.platformShare.toFixed(1)}%</p>
+                        <div className={`h-1 w-full mt-3 ${concentration.platformRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
+                        <p className="text-[10px] mt-2 text-muted-foreground">
+                          {concentration.platformRisk ? "High concentration" : "Healthy spread"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-6 space-y-3">
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        <span className="font-semibold">Monetization alert:</span> {underMonetized
+                          ? `The market in ${underMonetized.territory} accounts for ${(underMonetized.usage_share * 100).toFixed(1)}% of total usage but only yields ${(underMonetized.payout_share * 100).toFixed(1)}% of payout.`
+                          : "Monetization is currently aligned with usage volume across all primary territories."}
+                      </p>
+                    </div>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent xl:col-span-3">
-                  <CardHeader>
-                    <CardTitle className="text-base">Top Territory x Platform</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                  <div className="xl:col-span-2 bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-4">Under-Monetized Territories</h3>
                     <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
+                      <Table className="text-[11px]">
+                        <TableHeader className="bg-muted/30 font-mono text-[10px] uppercase">
                           <TableRow>
                             <TableHead>Territory</TableHead>
-                            <TableHead>Platform</TableHead>
-                            <TableHead className="text-right">Net</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Net/Unit</TableHead>
+                            <TableHead className="text-right">Usage Share</TableHead>
+                            <TableHead className="text-right">Payout Share</TableHead>
+                            <TableHead className="text-right">Yield Gap</TableHead>
+                            <TableHead className="text-right">Units</TableHead>
+                            <TableHead className="text-right">Net Revenue</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {matrix.slice(0, 12).map((row, index) => (
-                            <TableRow key={`${row.territory}-${row.platform}-${index}`}>
-                              <TableCell>{row.territory}</TableCell>
-                              <TableCell>{row.platform}</TableCell>
+                          {(detail?.high_usage_low_payout ?? []).map((row, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-medium">{row.territory}</TableCell>
+                              <TableCell className="text-right font-mono">{(row.usage_share * 100).toFixed(1)}%</TableCell>
+                              <TableCell className="text-right font-mono">{(row.payout_share * 100).toFixed(1)}%</TableCell>
+                              <TableCell className="text-right font-mono text-destructive">-{((row.usage_share - row.payout_share) * 100).toFixed(1)}%</TableCell>
+                              <TableCell className="text-right font-mono text-muted-foreground">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
                               <TableCell className="text-right font-mono">{toMoney(row.net_revenue)}</TableCell>
-                              <TableCell className="text-right font-mono">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-mono">{toMoney(row.net_per_unit)}</TableCell>
                             </TableRow>
                           ))}
+                          {(!detail?.high_usage_low_payout || detail.high_usage_low_payout.length === 0) && (
+                            <TableRow>
+                              <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">No yield gaps currently identified.</TableCell>
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
+                  </div>
+                </div>
+              </TabsContent>
 
-            <TabsContent value="opportunity" className="space-y-6 pt-2">
-              <div className="grid gap-6 xl:grid-cols-2">
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Compass className="h-4 w-4" />
-                      Usage Type Mix
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={usageMix.slice(0, 12)} layout="vertical">
-                        <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
-                        <XAxis type="number" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                        <YAxis dataKey="usage_type" type="category" width={120} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
-                        <Tooltip formatter={(v: number) => toMoney(v)} contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                        <Bar dataKey="net_revenue" fill="hsl(var(--tone-success))" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <CircleAlert className="h-4 w-4" />
-                      Concentration Risk
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Top Territory Share</p>
-                      <p className="font-display text-3xl">{concentration.territoryShare.toFixed(1)}%</p>
-                      <p className="text-xs text-muted-foreground">
-                        {concentration.territoryRisk ? "Above 45% threshold." : "Within acceptable spread."}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Top Platform Share</p>
-                      <p className="font-display text-3xl">{concentration.platformShare.toFixed(1)}%</p>
-                      <p className="text-xs text-muted-foreground">
-                        {concentration.platformRisk ? "Above 60% threshold." : "Within acceptable spread."}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
-                  <CardHeader>
-                    <CardTitle className="text-base">High Usage / Low Payout</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {detail?.high_usage_low_payout?.length ? (
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Territory</TableHead>
-                              <TableHead className="text-right">Usage Share</TableHead>
-                              <TableHead className="text-right">Payout Share</TableHead>
-                              <TableHead className="text-right">Quantity</TableHead>
-                              <TableHead className="text-right">Net</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {detail.high_usage_low_payout.map((row) => (
-                              <TableRow key={row.territory}>
-                                <TableCell>{row.territory}</TableCell>
-                                <TableCell className="text-right font-mono">{(row.usage_share * 100).toFixed(1)}%</TableCell>
-                                <TableCell className="text-right font-mono">{(row.payout_share * 100).toFixed(1)}%</TableCell>
-                                <TableCell className="text-right font-mono">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
-                                <TableCell className="text-right font-mono">{toMoney(row.net_revenue)}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No high-usage/low-payout territories in this range.</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="quality" className="space-y-6 pt-2">
-              <div className="grid gap-6 xl:grid-cols-2">
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
+              <TabsContent value="quality" className="space-y-8">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                  <div className="bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
                       <ShieldAlert className="h-4 w-4" />
-                      Quality Metrics
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Failed Lines</p>
-                      <p className="font-display text-3xl">{quality?.failed_line_count ?? 0}</p>
+                      Data Quality Overview
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {[
+                        { label: "Failed Lines", val: quality?.failed_line_count ?? 0 },
+                        { label: "Critical Tasks", val: quality?.open_critical_task_count ?? 0 },
+                        { label: "Validation Errors", val: quality?.validation_critical_count ?? 0 },
+                        { label: "Data Confidence", val: `${(quality?.avg_confidence ?? 0).toFixed(1)}%` }
+                      ].map((m, i) => (
+                        <div key={i} className="border border-border/35 bg-background/60 p-4">
+                          <p className="text-[9px] font-mono uppercase text-muted-foreground mb-1">{m.label}</p>
+                          <p className="font-display text-3xl leading-none">{m.val}</p>
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Open Critical Tasks</p>
-                      <p className="font-display text-3xl">{quality?.open_critical_task_count ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Validation (Critical)</p>
-                      <p className="font-display text-3xl">{quality?.validation_critical_count ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Avg Confidence</p>
-                      <p className="font-display text-3xl">{(quality?.avg_confidence ?? 0).toFixed(1)}%</p>
-                    </div>
-                  </CardContent>
-                </Card>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent">
-                  <CardHeader>
-                    <CardTitle className="text-base">Config / Usage Extraction Mix</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
+                  <div className="bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-6">Extraction Coverage by Type</h3>
+                    <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={configMix.slice(0, 10)} layout="vertical">
-                        <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
+                        <CartesianGrid {...CHART_GRID_STYLE} vertical={false} />
                         <XAxis type="number" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
                         <YAxis dataKey="config_type" type="category" width={140} tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
                         <Tooltip contentStyle={CHART_TOOLTIP_CONTENT_STYLE} />
-                        <Bar dataKey="row_count" fill="hsl(var(--tone-warning))" />
+                        <Bar dataKey="row_count" fill={CHART_COLORS[3]} fillOpacity={0.75} />
                       </BarChart>
                     </ResponsiveContainer>
-                  </CardContent>
-                </Card>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
-                  <CardHeader>
-                    <CardTitle className="text-base">Extractor Field Coverage</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {coverage.length > 0 ? (
-                      coverage.map((row) => (
-                        <div key={row.field_name} className="grid grid-cols-12 items-center gap-3 border-b border-black/20 py-2 text-sm">
-                          <span className="col-span-4 font-mono text-xs">{row.field_name}</span>
-                          <div className="col-span-6 h-2 border border-border bg-muted">
+                  <div className="xl:col-span-2 bg-background/70 border border-border/35 p-4">
+                    <h3 className="font-display text-sm uppercase mb-6">Field Coverage</h3>
+                    <div className="space-y-4">
+                      {coverage.map((row) => (
+                        <div key={row.field_name} className="flex items-center gap-4">
+                          <span className="w-40 font-mono text-[10px] uppercase font-bold truncate">{row.field_name}</span>
+                          <div className="flex-1 h-3 border border-border/35 bg-muted overflow-hidden">
                             <div
-                              className="h-full bg-primary"
-                              style={{ width: `${Math.max(2, clampPercent(row.coverage_pct))}%` }}
+                              className="h-full bg-[hsl(var(--brand-accent))]"
+                              style={{ width: `${clampPercent(row.coverage_pct)}%` }}
                             />
                           </div>
-                          <span className="col-span-2 text-right font-mono text-xs">
-                            {row.populated_rows}/{row.total_rows}
+                          <span className="w-24 text-right font-mono text-[10px] font-bold">
+                            {row.populated_rows} / {row.total_rows}
                           </span>
                         </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No extractor coverage data for this track.</p>
-                    )}
-                  </CardContent>
-                </Card>
+                      ))}
+                    </div>
+                  </div>
 
-                <Card className="!border-0 border-t border-border bg-transparent xl:col-span-2">
-                  <CardHeader>
-                    <CardTitle className="text-base">Provenance (Latest Rows)</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                  <div className="xl:col-span-2 bg-background/70 border border-border/35">
+                    <div className="bg-secondary/60 p-2 border-b border-border/35">
+                      <h3 className="font-display text-xs uppercase text-center">Data Provenance</h3>
+                    </div>
                     <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
+                      <Table className="text-[10px]">
+                        <TableHeader className="bg-muted/30 font-mono text-[9px] uppercase">
                           <TableRow>
                             <TableHead>Date</TableHead>
-                            <TableHead>CMO</TableHead>
-                            <TableHead>File</TableHead>
+                            <TableHead>CMO Source</TableHead>
+                            <TableHead>File Signature</TableHead>
                             <TableHead>Territory</TableHead>
                             <TableHead>Platform</TableHead>
-                            <TableHead className="text-right">Net</TableHead>
-                            <TableHead className="text-right">Qty</TableHead>
-                            <TableHead className="text-right">Page/Row</TableHead>
+                            <TableHead className="text-right">Revenue</TableHead>
+                            <TableHead className="text-right">Ref</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {provenance.slice(0, 20).map((row, index) => (
-                            <TableRow key={`${row.report_id}-${row.source_row_id ?? index}`}>
-                              <TableCell>{row.event_date}</TableCell>
+                          {provenance.slice(0, 20).map((row, i) => (
+                            <TableRow key={i} className="hover:bg-muted/20">
+                              <TableCell className="font-bold whitespace-nowrap">{row.event_date}</TableCell>
                               <TableCell>{row.cmo_name}</TableCell>
-                              <TableCell className="max-w-[220px] truncate">{row.file_name}</TableCell>
+                              <TableCell className="max-w-[180px] truncate opacity-60">{row.file_name}</TableCell>
                               <TableCell>{row.territory}</TableCell>
                               <TableCell>{row.platform}</TableCell>
                               <TableCell className="text-right font-mono">{toMoney(row.net_revenue)}</TableCell>
-                              <TableCell className="text-right font-mono">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
-                              <TableCell className="text-right font-mono">
-                                {row.source_page ?? "-"} / {row.source_row ?? "-"}
-                              </TableCell>
+                              <TableCell className="text-right text-muted-foreground">{row.source_page}/{row.source_row}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </TabsContent>
-
-          </Tabs>
-        </>
-      )}
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
+      </div>
     </div>
   );
 }
