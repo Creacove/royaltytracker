@@ -606,12 +606,18 @@ export default function Dashboard() {
         <div>
           <p className="type-nav text-xs text-muted-foreground">Processing Success</p>
           <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
-          <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
+          <Progress
+            value={Math.max(0, Math.min(100, metrics.processingRate))}
+            className="mt-2 h-2 [&>div]:bg-[hsl(var(--brand-accent))]"
+          />
         </div>
         <div>
           <p className="type-nav text-xs text-muted-foreground">Avg Extraction Accuracy</p>
           <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
-          <Progress value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))} className="mt-2 h-2" />
+          <Progress
+            value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
+            className="mt-2 h-2 [&>div]:bg-[hsl(var(--brand-accent))]"
+          />
         </div>
       </section>
 
