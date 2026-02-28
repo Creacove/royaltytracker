@@ -105,6 +105,13 @@ type ChartLegendItem = {
   marker?: "swatch" | "line";
 };
 
+type ExportResult = {
+  pdfUrl?: string;
+  xlsxUrl?: string;
+  status?: string;
+  jobId?: string;
+};
+
 type ChartPanelHeaderProps = {
   icon?: ReactNode;
   title: string;
@@ -235,6 +242,44 @@ function toEvidenceSourceLabel(source: string): string {
   if (source === "track_assistant_scope_v2") return "Reviewed track performance data";
   if (source === "royalty_transactions.custom_properties") return "Custom statement fields";
   return source;
+}
+
+function openExportPlaceholder(message: string): Window | null {
+  const popup = window.open("", "_blank");
+  if (!popup) return null;
+  try {
+    popup.document.title = "Preparing export...";
+    popup.document.body.style.fontFamily = "Arial, sans-serif";
+    popup.document.body.style.padding = "16px";
+    popup.document.body.innerHTML = `<p>${message}</p>`;
+  } catch {
+    // Ignore cross-window write failures.
+  }
+  return popup;
+}
+
+function openExportUrl(url: string, pendingWindow: Window | null): void {
+  if (pendingWindow && !pendingWindow.closed) {
+    pendingWindow.location.href = url;
+    return;
+  }
+
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (isMobile) {
+    window.location.assign(url);
+    return;
+  }
+
+  const popup = window.open(url, "_blank", "noopener,noreferrer");
+  if (popup) return;
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 async function resolveEdgeFunctionError(error: unknown, data: unknown): Promise<string> {
@@ -387,7 +432,7 @@ export default function TrackInsightsDetail() {
   });
 
   const exportAnswerMutation = useMutation({
-    mutationFn: async (): Promise<{ pdfUrl?: string; xlsxUrl?: string; status?: string; jobId?: string }> => {
+    mutationFn: async (): Promise<ExportResult> => {
       if (!latestAnswer) throw new Error("Ask the AI agent a question before exporting.");
       const payload = {
         action: "export_answer",
@@ -410,18 +455,10 @@ export default function TrackInsightsDetail() {
         jobId: parsed.job_id,
       };
     },
-    onSuccess: (result) => {
-      if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
-      if (result.xlsxUrl) window.open(result.xlsxUrl, "_blank", "noopener,noreferrer");
-      toast({
-        title: "Export Ready",
-        description: result.pdfUrl || result.xlsxUrl ? "PDF and XLSX export generated." : result.status ?? "Export queued.",
-      });
-    },
   });
 
   const exportMonthlyMutation = useMutation({
-    mutationFn: async (): Promise<{ pdfUrl?: string; xlsxUrl?: string; status?: string; jobId?: string }> => {
+    mutationFn: async (): Promise<ExportResult> => {
       const monthlyRange = toMonthlySnapshotRange(toDate);
       const payload = {
         action: "export_monthly_snapshot",
@@ -442,14 +479,6 @@ export default function TrackInsightsDetail() {
         status: parsed.status,
         jobId: parsed.job_id,
       };
-    },
-    onSuccess: (result) => {
-      if (result.pdfUrl) window.open(result.pdfUrl, "_blank", "noopener,noreferrer");
-      if (result.xlsxUrl) window.open(result.xlsxUrl, "_blank", "noopener,noreferrer");
-      toast({
-        title: "Monthly Snapshot Ready",
-        description: result.pdfUrl || result.xlsxUrl ? "Monthly PDF and XLSX generated." : result.status ?? "Export queued.",
-      });
     },
   });
 
@@ -571,6 +600,68 @@ export default function TrackInsightsDetail() {
     assistantTurnMutation.mutate(trimmed);
   };
 
+  const handleExportAiResponse = async () => {
+    if (!latestAnswer || assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending) {
+      return;
+    }
+
+    const pendingWindow = openExportPlaceholder("Preparing your AI export...");
+    try {
+      const result = await exportAnswerMutation.mutateAsync();
+      const preferredUrl = result.pdfUrl ?? result.xlsxUrl;
+      if (preferredUrl) {
+        openExportUrl(preferredUrl, pendingWindow);
+      } else if (pendingWindow && !pendingWindow.closed) {
+        pendingWindow.close();
+      }
+
+      toast({
+        title: "Export Ready",
+        description:
+          result.pdfUrl || result.xlsxUrl
+            ? "Your AI export is ready."
+            : result.status ?? "Export queued.",
+      });
+    } catch (error) {
+      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unable to generate AI export.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportMonthlySnapshot = async () => {
+    if (assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending) return;
+
+    const pendingWindow = openExportPlaceholder("Preparing your monthly snapshot export...");
+    try {
+      const result = await exportMonthlyMutation.mutateAsync();
+      const preferredUrl = result.pdfUrl ?? result.xlsxUrl;
+      if (preferredUrl) {
+        openExportUrl(preferredUrl, pendingWindow);
+      } else if (pendingWindow && !pendingWindow.closed) {
+        pendingWindow.close();
+      }
+
+      toast({
+        title: "Monthly Snapshot Ready",
+        description:
+          result.pdfUrl || result.xlsxUrl
+            ? "Your monthly snapshot is ready."
+            : result.status ?? "Export queued.",
+      });
+    } catch (error) {
+      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unable to generate monthly snapshot.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const assistantBusy =
     assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending;
   const latestChartData = buildChatChartData(latestAnswer ?? undefined);
@@ -655,7 +746,7 @@ export default function TrackInsightsDetail() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => exportMonthlyMutation.mutate()}
+                onClick={handleExportMonthlySnapshot}
                 disabled={assistantBusy}
                 className="w-full sm:w-auto"
               >
@@ -728,7 +819,7 @@ export default function TrackInsightsDetail() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => exportAnswerMutation.mutate()}
+                    onClick={handleExportAiResponse}
                     disabled={!latestAnswer || assistantBusy}
                     className="border-[hsl(var(--brand-accent))]/30 bg-background/80"
                   >
