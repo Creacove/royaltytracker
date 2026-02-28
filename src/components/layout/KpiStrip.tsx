@@ -74,16 +74,16 @@ export function KpiStrip({ items, columnsClassName, className }: KpiStripProps) 
                   toneClassMap[item.tone ?? "default"]
                 )}
               >
-            <div className="mb-1 flex min-w-0 items-center gap-2 text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+            <div className="type-micro mb-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
               {item.icon}
               <span className="truncate">{item.label}</span>
             </div>
             <div className="min-w-0">
               <div
                 className={cn(
-                  "min-w-0 font-display leading-[0.92]",
+                  "type-display-section min-w-0",
                   numericValue
-                    ? "whitespace-nowrap tracking-[0.03em]"
+                    ? "whitespace-nowrap"
                     : "text-[clamp(1.15rem,1.6vw,1.95rem)] [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden break-words [overflow-wrap:anywhere]"
                 )}
                 style={valueStyle}
@@ -93,7 +93,7 @@ export function KpiStrip({ items, columnsClassName, className }: KpiStripProps) 
               </div>
             </div>
             {item.hint ? (
-              <p className="mt-1 min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
+              <p className="font-ui mt-1 min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 {item.hint}
               </p>
             ) : null}

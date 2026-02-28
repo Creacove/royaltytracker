@@ -18,9 +18,9 @@ export function PageHeader({ title, subtitle, actions, className }: PageHeaderPr
       )}
     >
       <div className="min-w-0 space-y-1.5">
-        <h1 className="font-display text-[2.5rem] leading-none tracking-[0.03em]">{title}</h1>
+        <h1 className="type-display-hero text-[clamp(2rem,2.2vw+1.25rem,2.7rem)] text-[hsl(var(--brand-accent))]">{title}</h1>
         {subtitle ? (
-          <p className="max-w-3xl break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
+          <p className="font-ui max-w-3xl break-words text-sm text-muted-foreground [overflow-wrap:anywhere]">
             {subtitle}
           </p>
         ) : null}

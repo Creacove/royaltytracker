@@ -8,7 +8,7 @@ const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableE
       <table
         ref={ref}
         className={cn(
-          "w-full border-collapse caption-bottom text-sm [&_td]:border-x-0 [&_th]:border-x-0",
+          "type-table w-full border-collapse caption-bottom text-sm [&_td]:border-x-0 [&_th]:border-x-0",
           className,
         )}
         {...props}
@@ -58,7 +58,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        "sticky top-0 z-10 h-11 whitespace-nowrap border-b border-b-foreground bg-background px-4 text-left align-middle font-display text-[11px] leading-[14px] tracking-[0.08em] text-foreground [&:has([role=checkbox])]:pr-0",
+        "type-table-head sticky top-0 z-10 h-11 whitespace-nowrap border-b border-b-foreground bg-background px-4 text-left align-middle text-[11px] leading-[14px] text-[hsl(var(--brand-accent))] [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}

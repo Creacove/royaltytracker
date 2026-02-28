@@ -78,31 +78,33 @@ function AppLayoutContent({
             <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-sm border border-border/50 bg-background">
               <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain p-0.5" />
             </div>
-            <span className="font-display text-lg leading-none text-foreground">OrderSounds</span>
+            <span className="brand-wordmark text-base leading-none text-foreground">OrderSounds</span>
           </Link>
-          <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+          <p className="type-micro text-[10px] text-muted-foreground">
             Forensic Royalty Workspace
           </p>
           <Link
             to="/workspace"
             className={cn(
-              "group rounded-sm border bg-background/70 p-2 text-xs transition-colors",
+              "group rounded-sm border border-l-2 border-l-[hsl(var(--brand-accent))]/55 bg-background/70 p-2 text-xs transition-colors",
               workspaceActive
                 ? "border-[hsl(var(--brand-accent))]/40 bg-[hsl(var(--brand-accent-ghost))]/70"
-                : "border-border/50 hover:border-border hover:bg-background",
+                : "border-border/50 hover:border-[hsl(var(--brand-accent))]/35 hover:bg-background",
             )}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate font-display text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                <p className="type-micro truncate text-[10px] text-[hsl(var(--brand-accent))]">
                   Workspace
                 </p>
-                <p className="truncate font-medium">{companyName ?? "Workspace pending"}</p>
-                <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                <p className={cn("truncate font-medium", workspaceActive && "text-[hsl(var(--brand-accent))]")}>
+                  {companyName ?? "Workspace pending"}
+                </p>
+                <p className="type-micro mt-0.5 text-[10px] text-[hsl(var(--brand-accent-soft))]">
                   {isPlatformAdmin ? "Platform Admin" : formatRole(companyRole)}
                 </p>
               </div>
-              <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--brand-accent-soft))] transition-transform group-hover:translate-x-0.5 group-hover:text-[hsl(var(--brand-accent))]" />
             </div>
           </Link>
         </SidebarHeader>
@@ -121,7 +123,7 @@ function AppLayoutContent({
                     isActive={active}
                     tooltip={label}
                     className={cn(
-                      "h-9 rounded-sm border border-transparent px-2.5 text-xs font-display uppercase tracking-[0.08em]",
+                      "type-nav h-9 rounded-sm border border-transparent px-2.5 text-[11px]",
                       active
                         ? "border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground"
                         : "text-sidebar-foreground hover:border-border/35 hover:bg-muted/40",
@@ -144,7 +146,7 @@ function AppLayoutContent({
             asChild
             variant="ghost"
             className={cn(
-              "mb-1 h-9 w-full justify-start rounded-sm px-2.5 text-xs text-sidebar-foreground",
+              "type-nav mb-1 h-9 w-full justify-start rounded-sm px-2.5 text-[11px] text-sidebar-foreground",
               settingsActive && "border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground",
             )}
           >
@@ -155,7 +157,7 @@ function AppLayoutContent({
           </Button>
           <Button
             variant="ghost"
-            className="h-9 w-full justify-start rounded-sm px-2.5 text-xs text-sidebar-foreground"
+            className="type-nav h-9 w-full justify-start rounded-sm px-2.5 text-[11px] text-sidebar-foreground"
             onClick={signOut}
           >
             <LogOut className="h-4 w-4" />
@@ -175,7 +177,7 @@ function AppLayoutContent({
           <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-4">
             <SidebarTrigger className="h-8 w-8" />
             <div className="min-w-0">
-              <p className="truncate font-display text-base leading-none tracking-[0.05em]">{routeMeta.title}</p>
+              <p className="type-display-section truncate text-base leading-none text-[hsl(var(--brand-accent))]">{routeMeta.title}</p>
               <p className="truncate text-[11px] text-muted-foreground">{routeMeta.subtitle}</p>
             </div>
           </div>

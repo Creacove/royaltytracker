@@ -53,7 +53,7 @@ const CHART_COLORS = [
 const CHART_TICK_STYLE = {
   fontSize: 10,
   fill: "hsl(0 0% 33%)",
-  fontFamily: '"Courier New", monospace',
+  fontFamily: "var(--font-mono)",
 };
 
 const CHART_AXIS_STYLE = {
@@ -66,7 +66,7 @@ const CHART_TOOLTIP_CONTENT_STYLE = {
   border: "1px solid hsl(0 0% 9%)",
   borderRadius: 0,
   color: "hsl(0 0% 9%)",
-  fontFamily: '"Courier New", monospace',
+  fontFamily: "var(--font-mono)",
   fontSize: "11px",
 };
 
@@ -124,7 +124,7 @@ function ChartPanelHeader({ icon, title, subtitle, legend = [] }: ChartPanelHead
     <header className="mb-4 border-b border-border/25 pb-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="flex items-center gap-2 font-display text-sm uppercase tracking-[0.06em] md:text-base">
+          <h3 className="type-display-section flex items-center gap-2 text-sm md:text-base">
             {icon}
             {title}
           </h3>
@@ -135,7 +135,7 @@ function ChartPanelHeader({ icon, title, subtitle, legend = [] }: ChartPanelHead
             {legend.map((item) => (
               <span
                 key={item.label}
-                className="inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.06em] text-muted-foreground"
+                className="type-micro inline-flex items-center gap-1.5 text-[10px] text-muted-foreground"
               >
                 <span
                   className={cn(
@@ -709,15 +709,15 @@ export default function TrackInsightsDetail() {
         >
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
             <div className="space-y-1 xl:col-span-2">
-              <p className="text-xs font-mono uppercase text-muted-foreground">From</p>
+              <p className="type-nav text-xs text-muted-foreground">From</p>
               <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
             </div>
             <div className="space-y-1 xl:col-span-2">
-              <p className="text-xs font-mono uppercase text-muted-foreground">To</p>
+              <p className="type-nav text-xs text-muted-foreground">To</p>
               <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </div>
             <div className="space-y-1 md:col-span-2 xl:col-span-5">
-              <p className="text-xs font-mono uppercase text-muted-foreground">Active Scope</p>
+              <p className="type-nav text-xs text-muted-foreground">Active Scope</p>
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex items-center border border-border/40 bg-background/75 px-2 py-1 text-[11px] text-muted-foreground">
                   {fromDate} to {toDate}
@@ -810,7 +810,7 @@ export default function TrackInsightsDetail() {
                       <Bot className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
                     </div>
                     <div>
-                      <h2 className="font-display text-lg leading-none md:text-xl">Track AI Agent</h2>
+                      <h2 className="type-display-section text-lg md:text-xl">Track AI Agent</h2>
                       <p className="text-xs text-muted-foreground">
                         Ask performance, risk, and market questions for this track.
                       </p>
@@ -831,7 +831,7 @@ export default function TrackInsightsDetail() {
                 <div className={cn("grid min-w-0 gap-4", hasAssistantResult && "xl:grid-cols-12")}>
                   <div className={cn("min-w-0 space-y-3", hasAssistantResult ? "xl:col-span-8" : "xl:col-span-12")}>
                     <div className="space-y-3 rounded-sm border border-border/45 bg-background/75 p-4">
-                  <label className="text-xs font-mono uppercase text-muted-foreground">Ask the AI agent about this track</label>
+                  <label className="type-nav text-xs text-muted-foreground">Ask the AI agent about this track</label>
                   <Textarea
                     value={chatInput}
                     onChange={(e) => setChatInput(e.target.value)}
@@ -874,7 +874,7 @@ export default function TrackInsightsDetail() {
                   <div className="flex items-start gap-2 border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/45 p-3">
                     <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-[hsl(var(--brand-accent))]" />
                     <div className="min-w-0">
-                      <p className="text-xs font-mono uppercase text-[hsl(var(--brand-accent))]">Analyzing next question</p>
+                      <p className="type-nav text-xs text-[hsl(var(--brand-accent))]">Analyzing next question</p>
                       <p className="truncate text-xs text-muted-foreground" title={pendingQuestion ?? undefined}>
                         {pendingQuestion ?? "Working on your latest prompt..."}
                       </p>
@@ -885,7 +885,7 @@ export default function TrackInsightsDetail() {
                 {!latestAnswer && !assistantTurnMutation.isPending && (
                       <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
                         <Sparkles className="h-7 w-7 text-[hsl(var(--brand-accent))]" />
-                        <p className="font-display text-sm">Start a conversation with the AI agent</p>
+                        <p className="type-display-section text-sm">Start a conversation with the AI agent</p>
                         <p className="max-w-lg text-xs text-muted-foreground">
                           Responses, charts, and evidence will appear in this workspace.
                         </p>
@@ -894,7 +894,7 @@ export default function TrackInsightsDetail() {
 
                     {!latestAnswer && assistantTurnMutation.isPending && (
                       <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
-                        <p className="font-display text-sm">AI agent is analyzing...</p>
+                        <p className="type-display-section text-sm">AI agent is analyzing...</p>
                         <p className="text-xs text-muted-foreground">
                           Reviewing performance, market, and quality data.
                         </p>
@@ -911,23 +911,23 @@ export default function TrackInsightsDetail() {
                     <div className="space-y-2">
                           {lastQuestion && (
                             <p className="text-xs text-muted-foreground">
-                              <span className="font-mono uppercase">Your question:</span> {lastQuestion}
+                              <span className="type-nav">Your question:</span> {lastQuestion}
                             </p>
                           )}
-                          <h3 className="font-display text-xl leading-tight md:text-2xl">{latestAnswer.answer_title}</h3>
+                          <h3 className="type-display-section text-xl leading-tight md:text-2xl">{latestAnswer.answer_title}</h3>
                       <p className="text-sm leading-relaxed">{latestAnswer.answer_text}</p>
                     </div>
 
                     {latestAnswer.why_this_matters && (
                       <div className="border border-border/35 bg-background/60 p-3">
-                        <p className="mb-1 text-[10px] font-mono uppercase text-muted-foreground">Business impact</p>
+                        <p className="type-micro mb-1 text-[10px] text-muted-foreground">Business impact</p>
                         <p className="text-xs leading-relaxed">{latestAnswer.why_this_matters}</p>
                       </div>
                     )}
 
                     {latestAnswer.chart && latestAnswer.chart.type !== "none" && latestChartData.length > 0 && (
                       <div className="border border-border/35 bg-background/60 p-3">
-                        <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">
+                        <p className="type-micro mb-2 text-[10px] text-muted-foreground">
                           {latestAnswer.chart.title ?? "AI response chart"}
                         </p>
                         <ResponsiveContainer width="100%" height={220}>
@@ -995,7 +995,7 @@ export default function TrackInsightsDetail() {
 
                     {latestAnswer.table && latestTableColumns.length > 0 && (
                       <div className="border border-border/35 bg-background/60 p-3">
-                        <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">AI query result preview</p>
+                        <p className="type-micro mb-2 text-[10px] text-muted-foreground">AI query result preview</p>
                         <div className="min-w-0 overflow-x-auto overscroll-x-contain">
                           <Table className="min-w-[680px] text-[11px]">
                             <TableHeader className="bg-muted/30">
@@ -1020,7 +1020,7 @@ export default function TrackInsightsDetail() {
                     )}
 
                     <div className="space-y-2">
-                      <p className="text-[10px] font-mono uppercase text-muted-foreground">
+                      <p className="type-micro text-[10px] text-muted-foreground">
                         Data evidence - {latestAnswer.evidence.row_count.toLocaleString()} rows -{" "}
                         {latestAnswer.evidence.duration_ms.toLocaleString()}ms
                       </p>
@@ -1046,7 +1046,7 @@ export default function TrackInsightsDetail() {
                   {hasAssistantResult ? (
                     <aside className="min-w-0 space-y-3 xl:col-span-4 xl:sticky xl:top-24 xl:self-start">
                       <div className="rounded-sm border border-border/40 bg-background/75 p-4">
-                        <p className="text-[10px] font-mono uppercase text-muted-foreground">AI context</p>
+                        <p className="type-micro text-[10px] text-muted-foreground">AI context</p>
                         <div className="mt-2 space-y-2 text-xs">
                           <div className="flex items-start justify-between gap-3 border-b border-border/25 pb-2">
                             <span className="text-muted-foreground">Track</span>
@@ -1075,12 +1075,12 @@ export default function TrackInsightsDetail() {
 
                       {latestAnswer?.kpis.length ? (
                         <div className="rounded-sm border border-border/40 bg-background/75 p-4">
-                          <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">AI key signals</p>
+                          <p className="type-micro mb-2 text-[10px] text-muted-foreground">AI key signals</p>
                           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                             {latestAnswer.kpis.map((kpi, idx) => (
                               <div key={idx} className="min-h-[80px] border border-border/35 bg-background/60 p-2.5">
-                                <p className="text-[10px] font-mono uppercase text-muted-foreground">{kpi.label}</p>
-                                <p className="font-display text-base leading-tight [overflow-wrap:anywhere]">{kpi.value}</p>
+                                <p className="type-micro text-[10px] text-muted-foreground">{kpi.label}</p>
+                                <p className="type-display-section text-base [overflow-wrap:anywhere]">{kpi.value}</p>
                                 {kpi.change ? <p className="text-[10px] text-muted-foreground">{kpi.change}</p> : null}
                               </div>
                             ))}
@@ -1090,7 +1090,7 @@ export default function TrackInsightsDetail() {
 
                       {latestAnswer?.follow_up_questions.length ? (
                         <div className="rounded-sm border border-border/40 bg-background/75 p-4">
-                          <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">Next questions</p>
+                          <p className="type-micro mb-2 text-[10px] text-muted-foreground">Next questions</p>
                           <div className="flex flex-wrap gap-2">
                             {latestAnswer.follow_up_questions.map((q) => (
                               <Button
@@ -1193,18 +1193,18 @@ export default function TrackInsightsDetail() {
 
                   <div className="min-w-0 xl:col-span-4 flex flex-col gap-6">
                     <div className="min-w-0 bg-background/70 border border-border/35 p-4 flex-1">
-                      <h3 className="font-display text-sm uppercase mb-4">Executive Summary</h3>
+                      <h3 className="type-display-section mb-4 text-sm">Executive Summary</h3>
                       <div className="space-y-4 text-xs">
                         <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
-                          <span className="text-muted-foreground uppercase font-mono text-[10px]">90-day momentum</span>
+                          <span className="type-micro text-[10px] text-muted-foreground">90-day momentum</span>
                           <span className={`font-bold ${trendPct >= 0 ? "text-[hsl(var(--tone-success))]" : "text-destructive"}`}>{trendPct.toFixed(1)}%</span>
                         </div>
                         <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
-                          <span className="text-muted-foreground uppercase font-mono text-[10px]">Top territory</span>
+                          <span className="type-micro text-[10px] text-muted-foreground">Top territory</span>
                           <span className="font-bold">{topTerritory?.territory ?? 'N/A'}</span>
                         </div>
                         <div className="flex justify-between items-baseline border-b border-border/25 pb-2">
-                          <span className="text-muted-foreground uppercase font-mono text-[10px]">Top platform</span>
+                          <span className="type-micro text-[10px] text-muted-foreground">Top platform</span>
                           <span className="font-bold">{topPlatform?.platform ?? 'N/A'}</span>
                         </div>
                         <p className="text-[10px] leading-relaxed opacity-70 mt-4">
@@ -1218,7 +1218,7 @@ export default function TrackInsightsDetail() {
 
                 <div className="min-w-0 bg-background/70 border border-border/35 overflow-hidden">
                   <div className="bg-secondary/60 p-2 border-b border-border/35">
-                    <h3 className="font-display text-xs uppercase text-center">Territory and Platform Breakdown</h3>
+                    <h3 className="type-display-section text-center text-xs">Territory and Platform Breakdown</h3>
                   </div>
                   <div className="min-w-0 overflow-x-auto overscroll-x-contain">
                     <Table className="min-w-[680px] text-[11px]">
@@ -1268,22 +1268,22 @@ export default function TrackInsightsDetail() {
                   </div>
 
                   <div className="min-w-0 bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
+                    <h3 className="type-display-section mb-6 flex items-center gap-2 text-sm">
                       <CircleAlert className="h-4 w-4" />
                       Concentration Risk
                     </h3>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="border border-border/35 bg-background/60 p-4">
-                        <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Territory Share</p>
-                        <p className="font-display text-[clamp(1.7rem,3.2vw,2.2rem)] leading-none whitespace-nowrap">{concentration.territoryShare.toFixed(1)}%</p>
+                        <p className="type-micro mb-1 text-[10px] text-muted-foreground">Top Territory Share</p>
+                        <p className="type-display-section text-[clamp(1.7rem,3.2vw,2.2rem)] whitespace-nowrap">{concentration.territoryShare.toFixed(1)}%</p>
                         <div className={`h-1 w-full mt-3 ${concentration.territoryRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
                         <p className="text-[10px] mt-2 text-muted-foreground">
                           {concentration.territoryRisk ? "High concentration" : "Healthy spread"}
                         </p>
                       </div>
                       <div className="border border-border/35 bg-background/60 p-4">
-                        <p className="text-[10px] font-mono uppercase text-muted-foreground mb-1">Top Platform Share</p>
-                        <p className="font-display text-[clamp(1.7rem,3.2vw,2.2rem)] leading-none whitespace-nowrap">{concentration.platformShare.toFixed(1)}%</p>
+                        <p className="type-micro mb-1 text-[10px] text-muted-foreground">Top Platform Share</p>
+                        <p className="type-display-section text-[clamp(1.7rem,3.2vw,2.2rem)] whitespace-nowrap">{concentration.platformShare.toFixed(1)}%</p>
                         <div className={`h-1 w-full mt-3 ${concentration.platformRisk ? "bg-destructive" : "bg-[hsl(var(--tone-success))]"}`} />
                         <p className="text-[10px] mt-2 text-muted-foreground">
                           {concentration.platformRisk ? "High concentration" : "Healthy spread"}
@@ -1300,7 +1300,7 @@ export default function TrackInsightsDetail() {
                   </div>
 
                   <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-4">Under-Monetized Territories</h3>
+                    <h3 className="type-display-section mb-4 text-sm">Under-Monetized Territories</h3>
                     <div className="min-w-0 overflow-x-auto overscroll-x-contain">
                       <Table className="min-w-[760px] text-[11px]">
                         <TableHeader className="bg-muted/30 font-mono text-[10px] uppercase">
@@ -1339,7 +1339,7 @@ export default function TrackInsightsDetail() {
               <TabsContent value="quality" className="space-y-6">
                 <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
                   <div className="min-w-0 bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
+                    <h3 className="type-display-section mb-6 flex items-center gap-2 text-sm">
                       <ShieldAlert className="h-4 w-4" />
                       Data Quality Overview
                     </h3>
@@ -1351,8 +1351,8 @@ export default function TrackInsightsDetail() {
                         { label: "Data Confidence", val: `${(quality?.avg_confidence ?? 0).toFixed(1)}%` }
                       ].map((m, i) => (
                         <div key={i} className="border border-border/35 bg-background/60 p-4">
-                          <p className="text-[9px] font-mono uppercase text-muted-foreground mb-1">{m.label}</p>
-                          <p className="font-display text-[clamp(1.45rem,2.7vw,1.95rem)] leading-none whitespace-nowrap">{m.val}</p>
+                          <p className="type-micro mb-1 text-[9px] text-muted-foreground">{m.label}</p>
+                          <p className="type-display-section text-[clamp(1.45rem,2.7vw,1.95rem)] whitespace-nowrap">{m.val}</p>
                         </div>
                       ))}
                     </div>
@@ -1376,18 +1376,18 @@ export default function TrackInsightsDetail() {
                   </div>
 
                   <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35 p-4">
-                    <h3 className="font-display text-sm uppercase mb-6">Field Coverage</h3>
+                    <h3 className="type-display-section mb-6 text-sm">Field Coverage</h3>
                     <div className="space-y-4">
                       {coverage.map((row) => (
                         <div key={row.field_name} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
-                          <span className="w-full font-mono text-[10px] uppercase font-bold sm:w-40 sm:truncate">{row.field_name}</span>
+                          <span className="type-micro w-full text-[10px] sm:w-40 sm:truncate">{row.field_name}</span>
                           <div className="h-3 w-full flex-1 border border-border/35 bg-muted overflow-hidden">
                             <div
                               className="h-full bg-[hsl(var(--brand-accent))]"
                               style={{ width: `${clampPercent(row.coverage_pct)}%` }}
                             />
                           </div>
-                          <span className="w-full font-mono text-[10px] font-bold sm:w-24 sm:text-right">
+                          <span className="w-full font-mono text-[10px] font-semibold sm:w-24 sm:text-right">
                             {row.populated_rows} / {row.total_rows}
                           </span>
                         </div>
@@ -1397,7 +1397,7 @@ export default function TrackInsightsDetail() {
 
                   <div className="min-w-0 xl:col-span-2 bg-background/70 border border-border/35">
                     <div className="bg-secondary/60 p-2 border-b border-border/35">
-                      <h3 className="font-display text-xs uppercase text-center">Data Provenance</h3>
+                      <h3 className="type-display-section text-center text-xs">Data Provenance</h3>
                     </div>
                     <div className="min-w-0 overflow-x-auto overscroll-x-contain">
                       <Table className="min-w-[840px] text-[10px]">

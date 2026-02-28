@@ -98,7 +98,7 @@ const CHART_STATUS_COLORS: Record<string, string> = {
 const CHART_TICK_STYLE = {
   fontSize: 10,
   fill: "hsl(0 0% 33%)",
-  fontFamily: '"Courier New", monospace',
+  fontFamily: "var(--font-mono)",
 };
 const CHART_AXIS_STYLE = {
   stroke: "hsl(0 0% 20%)",
@@ -109,14 +109,14 @@ const CHART_TOOLTIP_CONTENT_STYLE = {
   border: "1px solid hsl(0 0% 9%)",
   borderRadius: 0,
   color: "hsl(0 0% 9%)",
-  fontFamily: '"Courier New", monospace',
+  fontFamily: "var(--font-mono)",
   fontSize: "11px",
 };
 const CHART_TOOLTIP_LABEL_STYLE = {
   color: "hsl(0 0% 9%)",
-  fontFamily: "Antonio, sans-serif",
+  fontFamily: "var(--font-display)",
   fontSize: "10px",
-  letterSpacing: "0.08em",
+  letterSpacing: "var(--tracking-nav)",
   textTransform: "uppercase" as const,
 };
 
@@ -604,12 +604,12 @@ export default function Dashboard() {
 
       <section className="grid gap-4 rounded-sm border border-border/45 bg-card px-4 py-4 md:grid-cols-2 md:px-5">
         <div>
-          <p className="font-display text-xs text-muted-foreground">Processing Success</p>
+          <p className="type-nav text-xs text-muted-foreground">Processing Success</p>
           <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
           <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-2 h-2" />
         </div>
         <div>
-          <p className="font-display text-xs text-muted-foreground">Avg Extraction Accuracy</p>
+          <p className="type-nav text-xs text-muted-foreground">Avg Extraction Accuracy</p>
           <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
           <Progress value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))} className="mt-2 h-2" />
         </div>

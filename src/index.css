@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Archivo:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Antonio:wght@700&family=Archivo:wght@400;500;600&family=Archivo+Narrow:wght@500;600;700&family=Bebas+Neue&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -55,8 +55,16 @@
     --radius-lg: 8px;
     --border-weight: 1px;
     --grain-opacity: 0.035;
-    --font-display: "Antonio", sans-serif;
+    --font-display: "Bebas Neue", "Arial Narrow", sans-serif;
+    --font-ui: "Archivo Narrow", "Archivo", sans-serif;
     --font-body: "Archivo", sans-serif;
+    --font-mono: "Courier New", monospace;
+    --font-table-ui: "Archivo", sans-serif;
+    --font-table-head: "Antonio", sans-serif;
+    --tracking-nav: 0.055em;
+    --tracking-micro: 0.075em;
+    --tracking-display-hero: 0.03em;
+    --tracking-display-section: 0.045em;
     --space-rhythm-page: clamp(1.5rem, 1.2rem + 1vw, 2rem);
     --space-rhythm-section: clamp(1rem, 0.85rem + 0.6vw, 1.35rem);
     --space-rhythm-block: clamp(0.5rem, 0.45rem + 0.3vw, 0.75rem);
@@ -155,31 +163,83 @@
   h5,
   h6 {
     font-family: var(--font-display);
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
+    letter-spacing: var(--tracking-display-section);
   }
 
   code,
   pre {
-    font-family: "Courier New", monospace;
+    font-family: var(--font-mono);
+  }
+
+  .font-ui {
+    font-family: var(--font-ui);
   }
 
   .font-mono {
-    font-family: "Courier New", monospace;
+    font-family: var(--font-mono);
     color: hsl(var(--foreground));
     font-weight: 600;
   }
 
   .font-display {
     font-family: var(--font-display);
+    font-weight: 400;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--tracking-display-section);
+  }
+
+  .type-nav {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    letter-spacing: var(--tracking-nav);
+    text-transform: uppercase;
+  }
+
+  .type-micro {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    letter-spacing: var(--tracking-micro);
+    text-transform: uppercase;
+  }
+
+  .type-display-hero {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: var(--tracking-display-hero);
+    line-height: 0.96;
+    text-transform: uppercase;
+  }
+
+  .type-display-section {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: var(--tracking-display-section);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .brand-wordmark {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .type-table {
+    font-family: var(--font-table-ui);
+  }
+
+  .type-table-head {
+    font-family: var(--font-table-head);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 }
 
 @layer utilities {
   .table-col-id {
-    font-family: "Courier New", monospace;
+    font-family: var(--font-mono);
     font-weight: 700;
     letter-spacing: 0.02em;
   }

@@ -15,9 +15,10 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Antonio", "sans-serif"],
+        display: ["Bebas Neue", '"Arial Narrow"', "sans-serif"],
+        ui: ["Archivo Narrow", "Archivo", "sans-serif"],
         sans: ["Archivo", "sans-serif"],
-        mono: ["Courier New", "monospace"],
+        mono: ['"Courier New"', "monospace"],
       },
       colors: {
         border: "hsl(var(--border))",

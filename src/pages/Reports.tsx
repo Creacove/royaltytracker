@@ -664,7 +664,7 @@ export default function Reports() {
       </Card>
 
       <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-        <SheetContent className="w-[min(96vw,1100px)] max-w-[min(96vw,1100px)] p-0 sm:max-w-[min(92vw,1100px)]">
+        <SheetContent className="w-[min(96vw,1100px)] max-w-[min(96vw,1100px)] p-0 sm:max-w-[min(92vw,1100px)] lg:w-[calc(100vw-16rem)] lg:max-w-[calc(100vw-16rem)]">
           {selectedReport ? (
             <DetailDrawerFrame
               title={`${selectedReport.cmo_name} | ${selectedReport.file_name}`}
