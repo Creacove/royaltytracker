@@ -7,6 +7,7 @@ project_id = "vdzuypxdueelmkrwvyet"
 # Keep this aligned with the frontend dev server origin.
 site_url = "http://localhost:8080"
 additional_redirect_urls = ["http://localhost:8080"]
+enable_signup = false
 
 [auth.email]
 # If enabled, users need to confirm their email address before signing in.
@@ -50,4 +51,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.insights-export-v1]
+verify_jwt = false
+
+[functions.send-partner-invite]
 verify_jwt = false

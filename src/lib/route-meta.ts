@@ -33,10 +33,32 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
-    test: (pathname) => pathname.startsWith("/insights"),
+    test: (pathname) => /^\/insights\/[^/]+/.test(pathname),
     meta: {
       title: "Track Insights",
-      subtitle: "Track performance, risks, and opportunity.",
+      subtitle: "Use AI to ask forward-looking questions and decide next actions for this track.",
+    },
+  },
+  {
+    test: (pathname) => pathname === "/insights",
+    meta: {
+      title: "Insights",
+      subtitle: "Prioritize tracks, understand performance, and open track-level insights.",
+    },
+  },
+  {
+    test: (pathname) =>
+      pathname.startsWith("/workspace") || pathname.startsWith("/company") || pathname.startsWith("/admin/invites"),
+    meta: {
+      title: "Workspace",
+      subtitle: "Workspace identity, team access, and onboarding controls.",
+    },
+  },
+  {
+    test: (pathname) => pathname.startsWith("/settings"),
+    meta: {
+      title: "Settings",
+      subtitle: "Profile, authentication, and account preferences.",
     },
   },
 ];

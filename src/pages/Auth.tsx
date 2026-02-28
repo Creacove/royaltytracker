@@ -8,83 +8,72 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [pendingEmailConfirmation, setPendingEmailConfirmation] = useState(false);
+  const [activeAction, setActiveAction] = useState<"password" | "magic" | null>(null);
   const { toast } = useToast();
 
   const emailRedirectTo = useMemo(() => {
     return window.location.origin;
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const handlePasswordSignIn = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setActiveAction("password");
 
-    try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) {
-          const msg = error.message || "Login failed";
-          toast({ title: "Login failed", description: msg, variant: "destructive" });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
 
-          if (msg.toLowerCase().includes("confirm") || msg.toLowerCase().includes("not confirmed")) {
-            setPendingEmailConfirmation(true);
-          }
-        } else {
-          setPendingEmailConfirmation(false);
-        }
-      } else {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo },
-        });
-
-        if (error) {
-          toast({ title: "Sign up failed", description: error.message, variant: "destructive" });
-        } else {
-          const needsEmailConfirm = !data.session;
-          setPendingEmailConfirmation(needsEmailConfirm);
-
-          toast({
-            title: needsEmailConfirm ? "Check your email" : "Account created",
-            description: needsEmailConfirm
-              ? "We sent you a confirmation link. You must confirm before you can sign in."
-              : "You're signed in.",
-          });
-        }
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    if (!email) {
-      toast({ title: "Missing email", description: "Enter your email first.", variant: "destructive" });
+    if (error) {
+      toast({
+        title: "Sign in failed",
+        description: error.message || "Unable to sign in.",
+        variant: "destructive",
+      });
+      setActiveAction(null);
       return;
     }
 
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email,
-        options: { emailRedirectTo },
+    setActiveAction(null);
+  };
+
+  const handleMagicLink = async () => {
+    if (!email.trim()) {
+      toast({
+        title: "Missing email",
+        description: "Enter your invited work email first.",
+        variant: "destructive",
       });
-
-      if (error) {
-        toast({ title: "Resend failed", description: error.message, variant: "destructive" });
-        return;
-      }
-
-      toast({ title: "Email resent", description: "Check spam/junk if it doesn't arrive." });
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    setActiveAction("magic");
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: {
+        emailRedirectTo,
+        shouldCreateUser: false,
+      },
+    });
+
+    if (error) {
+      toast({
+        title: "Secure link failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setActiveAction(null);
+      return;
+    }
+
+    toast({
+      title: "Secure link sent",
+      description: "Check your inbox for a sign-in link.",
+    });
+    setActiveAction(null);
   };
 
   return (
@@ -102,10 +91,12 @@ export default function Auth() {
               </p>
             </div>
           </div>
+
           <div className="space-y-2 border-t border-border/45 pt-5">
             <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Access model</p>
             <p className="text-sm">
-              Secure workspace access for publisher teams. Session and audit controls are managed through Supabase Auth.
+              Invitation-only workspace. User access is controlled by partner invites, then finalized through first-login
+              onboarding.
             </p>
           </div>
         </section>
@@ -117,81 +108,53 @@ export default function Auth() {
                 <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
               </div>
               <CardTitle className="text-3xl">Workspace Access</CardTitle>
-              <CardDescription>Use your organization credentials to continue.</CardDescription>
+              <CardDescription>Use your invited organization email to continue.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="mb-4 grid grid-cols-2 rounded-sm border border-border/45 p-1">
-                <Button
-                  type="button"
-                  variant={isLogin ? "default" : "ghost"}
-                  className="h-8"
-                  onClick={() => {
-                    setIsLogin(true);
-                    setPendingEmailConfirmation(false);
-                  }}
-                >
-                  Sign In
-                </Button>
-                <Button
-                  type="button"
-                  variant={!isLogin ? "default" : "ghost"}
-                  className="h-8"
-                  onClick={() => {
-                    setIsLogin(false);
-                    setPendingEmailConfirmation(false);
-                  }}
-                >
-                  Sign Up
-                </Button>
-              </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+            <CardContent>
+              <form onSubmit={handlePasswordSignIn} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Work email</Label>
                   <Input
                     id="email"
                     type="email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(event) => setEmail(event.target.value)}
                     required
-                    placeholder="you@example.com"
+                    placeholder="you@publisher.com"
                   />
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <Input
                     id="password"
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(event) => setPassword(event.target.value)}
                     required
                     placeholder="********"
                     minLength={6}
                   />
                 </div>
 
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Loading..." : isLogin ? "Sign In" : "Create Account"}
+                <Button type="submit" className="w-full" disabled={activeAction !== null}>
+                  {activeAction === "password" ? "Signing in..." : "Sign In"}
                 </Button>
 
-                {pendingEmailConfirmation && (
-                  <Button type="button" variant="outline" className="w-full" disabled={loading} onClick={handleResend}>
-                    Resend confirmation email
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleMagicLink}
+                  disabled={activeAction !== null}
+                >
+                  {activeAction === "magic" ? "Sending link..." : "Email Me a Secure Sign-In Link"}
+                </Button>
               </form>
 
               <p className="mt-4 text-center text-sm text-muted-foreground">
-                {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
-                <button
-                  onClick={() => {
-                    setIsLogin(!isLogin);
-                    setPendingEmailConfirmation(false);
-                  }}
-                  className="font-medium text-foreground underline-offset-4 hover:underline"
-                >
-                  {isLogin ? "Sign Up" : "Sign In"}
-                </button>
+                No public sign-up is available. Request an invite from the OrderSounds team.
               </p>
             </CardContent>
           </Card>

@@ -1,7 +1,7 @@
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bot, CircleAlert, Compass, FileDown, LineChart, Send, ShieldAlert, Sparkles } from "lucide-react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Bot, CircleAlert, Compass, FileDown, LineChart, Loader2, Send, ShieldAlert, Sparkles } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -83,6 +83,21 @@ const CHAT_QUICK_STARTERS = [
   "What data quality blockers could affect payout confidence?",
   "Show anomalies I should review this week.",
 ];
+
+const ALL_TIME_FROM = "2000-01-01";
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeDateParam(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  return ISO_DATE_RE.test(value) ? value : fallback;
+}
+
+function toEndOfMonth(dateString: string): string {
+  const date = new Date(`${dateString}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateString;
+  const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return monthEnd.toISOString().slice(0, 10);
+}
 
 type ChartLegendItem = {
   label: string;
@@ -250,16 +265,23 @@ async function resolveEdgeFunctionError(error: unknown, data: unknown): Promise<
 
 export default function TrackInsightsDetail() {
   const params = useParams<{ trackKey: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const trackKey = decodeURIComponent(params.trackKey ?? "");
   const defaults = defaultDateRange();
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [hasExplicitScopeFromUrl] = useState(() => searchParams.has("from") || searchParams.has("to"));
+  const initialFromDate = normalizeDateParam(searchParams.get("from"), defaults.fromDate);
+  const initialToDate = normalizeDateParam(searchParams.get("to"), defaults.toDate);
   const { toast } = useToast();
 
-  const [fromDate, setFromDate] = useState(defaults.fromDate);
-  const [toDate, setToDate] = useState(defaults.toDate);
+  const [fromDate, setFromDate] = useState(initialFromDate);
+  const [toDate, setToDate] = useState(initialToDate);
   const [chatInput, setChatInput] = useState("");
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const [latestAnswer, setLatestAnswer] = useState<AssistantTurnResponseV2 | null>(null);
   const [lastQuestion, setLastQuestion] = useState<string>("");
+  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [hasAutoAdjustedRange, setHasAutoAdjustedRange] = useState(false);
 
   const { data: detailData, isLoading, isError, error } = useQuery({
     queryKey: ["track-insight-detail", trackKey, fromDate, toDate],
@@ -347,11 +369,20 @@ export default function TrackInsightsDetail() {
         follow_up_questions: legacy.follow_up_questions,
       };
     },
+    onMutate: (question) => {
+      setPendingQuestion(question);
+      setChatInput("");
+    },
     onSuccess: (result, question) => {
       setLastQuestion(question);
       setConversationId(result.conversation_id);
       setLatestAnswer(result);
-      setChatInput("");
+    },
+    onError: (_error, question) => {
+      setChatInput((current) => (current.trim().length > 0 ? current : question));
+    },
+    onSettled: () => {
+      setPendingQuestion(null);
     },
   });
 
@@ -425,6 +456,70 @@ export default function TrackInsightsDetail() {
   const detail = detailData;
   const summary = detail?.summary;
 
+  const { data: lifetimeDetail, isLoading: isLifetimeLoading } = useQuery({
+    queryKey: ["track-insight-detail-lifetime", trackKey, todayDate],
+    enabled: Boolean(trackKey) && !isLoading && !isError && !summary,
+    queryFn: async (): Promise<TrackInsightDetail | null> => {
+      const { data, error } = await supabase.rpc("get_track_insight_detail_v1", {
+        p_track_key: trackKey,
+        from_date: ALL_TIME_FROM,
+        to_date: todayDate,
+        filters_json: {},
+      });
+      if (error) throw error;
+      return parseDetail(data as Json | null);
+    },
+  });
+  const lifetimeSummary = lifetimeDetail?.summary;
+  const lifetimeRange = useMemo(() => {
+    const months = lifetimeDetail?.monthly_trend ?? [];
+    if (months.length === 0) {
+      return { fromDate: ALL_TIME_FROM, toDate: todayDate };
+    }
+    const first = months[0]?.month_start ?? ALL_TIME_FROM;
+    const last = months[months.length - 1]?.month_start ?? todayDate;
+    return {
+      fromDate: first,
+      toDate: toEndOfMonth(last),
+    };
+  }, [lifetimeDetail, todayDate]);
+
+  useEffect(() => {
+    if (hasExplicitScopeFromUrl || hasAutoAdjustedRange) return;
+    if (isLoading || isError) return;
+    if (summary) {
+      setHasAutoAdjustedRange(true);
+      return;
+    }
+    if (isLifetimeLoading) return;
+
+    if (!lifetimeSummary) {
+      setHasAutoAdjustedRange(true);
+      return;
+    }
+
+    if (fromDate === lifetimeRange.fromDate && toDate === lifetimeRange.toDate) {
+      setHasAutoAdjustedRange(true);
+      return;
+    }
+
+    setFromDate(lifetimeRange.fromDate);
+    setToDate(lifetimeRange.toDate);
+    setHasAutoAdjustedRange(true);
+  }, [
+    fromDate,
+    hasAutoAdjustedRange,
+    hasExplicitScopeFromUrl,
+    isError,
+    isLifetimeLoading,
+    isLoading,
+    lifetimeRange.fromDate,
+    lifetimeRange.toDate,
+    lifetimeSummary,
+    summary,
+    toDate,
+  ]);
+
   const monthlyTrend = useMemo(
     () =>
       (detail?.monthly_trend ?? []).map((row) => ({
@@ -480,6 +575,16 @@ export default function TrackInsightsDetail() {
     assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending;
   const latestChartData = buildChatChartData(latestAnswer ?? undefined);
   const latestTableColumns = latestAnswer?.table?.columns.slice(0, 6) ?? [];
+  const hasAssistantResult = Boolean(latestAnswer);
+
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("from", fromDate);
+      next.set("to", toDate);
+      return next;
+    }, { replace: true });
+  }, [fromDate, toDate, setSearchParams]);
 
   if (!trackKey) {
     return (
@@ -496,7 +601,7 @@ export default function TrackInsightsDetail() {
         subtitle={`Track ID: ${trackKey}`}
         actions={
           <Button asChild variant="outline">
-            <Link to="/insights">
+            <Link to={`/insights?from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`}>
               <ArrowLeft className="mr-1.5 h-4 w-4" />
               Back to Insights
             </Link>
@@ -504,27 +609,61 @@ export default function TrackInsightsDetail() {
         }
       />
 
-      <div className="grid min-w-0 grid-cols-1 gap-6">
-        <FilterToolbar title="Date Range" description="Adjust the reporting window before running AI analysis." sticky>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-              <div className="space-y-1">
-                <p className="text-xs font-mono uppercase text-muted-foreground">From</p>
-                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-mono uppercase text-muted-foreground">To</p>
-                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-              </div>
-              <div className="sm:col-span-2 lg:col-span-2 xl:col-span-4 flex items-end justify-start xl:justify-end">
-                <Button size="sm" variant="outline" onClick={() => exportMonthlyMutation.mutate()} disabled={assistantBusy}>
-                  <FileDown className="mr-1.5 h-3 w-3" />
-                  Monthly Snapshot
-                </Button>
+      <div className="grid min-w-0 grid-cols-1 gap-5">
+        <FilterToolbar
+          title="Analysis Context"
+          description="AI responses and exports use this active date scope."
+          sticky
+          className="p-3 md:p-4"
+        >
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-12">
+            <div className="space-y-1 xl:col-span-2">
+              <p className="text-xs font-mono uppercase text-muted-foreground">From</p>
+              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="space-y-1 xl:col-span-2">
+              <p className="text-xs font-mono uppercase text-muted-foreground">To</p>
+              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <div className="space-y-1 md:col-span-2 xl:col-span-5">
+              <p className="text-xs font-mono uppercase text-muted-foreground">Active Scope</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-flex items-center border border-border/40 bg-background/75 px-2 py-1 text-[11px] text-muted-foreground">
+                  {fromDate} to {toDate}
+                </span>
+                {summary?.track_title ? (
+                  <span
+                    className="inline-flex max-w-[240px] truncate items-center border border-border/35 bg-background/70 px-2 py-1 text-[11px]"
+                    title={summary.track_title}
+                  >
+                    {summary.track_title}
+                  </span>
+                ) : null}
+                {summary?.artist_name ? (
+                  <span className="inline-flex items-center border border-border/35 bg-background/70 px-2 py-1 text-[11px]">
+                    {summary.artist_name}
+                  </span>
+                ) : null}
+                {summary?.avg_confidence != null ? (
+                  <span className="inline-flex items-center border border-border/35 bg-background/70 px-2 py-1 text-[11px]">
+                    Confidence {toConfidenceGrade(summary.avg_confidence)}
+                  </span>
+                ) : null}
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Reporting window: {fromDate} to {toDate}
-            </p>
+            <div className="md:col-span-2 xl:col-span-3 flex items-end justify-start xl:justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => exportMonthlyMutation.mutate()}
+                disabled={assistantBusy}
+                className="w-full sm:w-auto"
+              >
+                <FileDown className="mr-1.5 h-3 w-3" />
+                Monthly Snapshot
+              </Button>
+            </div>
+          </div>
         </FilterToolbar>
 
 
@@ -542,36 +681,47 @@ export default function TrackInsightsDetail() {
           </Card>
         ) : !summary ? (
           <Card>
-            <CardContent className="p-6">
-              <p className="text-sm text-muted-foreground">No data for this track in the selected range.</p>
+            <CardContent className="space-y-3 p-6">
+              <p className="text-sm text-muted-foreground">No data for this track in the selected range ({fromDate} to {toDate}).</p>
+              {isLifetimeLoading ? (
+                <p className="text-xs text-muted-foreground">Checking track lifetime availability...</p>
+              ) : lifetimeSummary ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setFromDate(lifetimeRange.fromDate);
+                      setToDate(lifetimeRange.toDate);
+                    }}
+                  >
+                    Use available lifetime range
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Available window: {lifetimeRange.fromDate} to {lifetimeRange.toDate}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No data found for this track even when checking full history.
+                </p>
+              )}
             </CardContent>
           </Card>
         ) : (
           <>
-            <KpiStrip
-              items={[
-                { label: "Track", value: summary.track_title ?? "-" },
-                { label: "Artist", value: summary.artist_name ?? "-" },
-                { label: "Net Revenue", value: toMoney(summary.net_revenue) },
-                { label: "Units", value: Math.round(summary.quantity ?? 0).toLocaleString() },
-                { label: "Revenue / Unit", value: toMoney(summary.net_per_unit) },
-                { label: "Data Confidence", value: toConfidenceGrade(summary.avg_confidence) },
-              ]}
-              columnsClassName="md:grid-cols-3 xl:grid-cols-6"
-            />
-
             {/* Decision Assistant */}
-            <section className="min-w-0 rounded-sm border border-[hsl(var(--brand-accent))]/30 bg-[hsl(var(--brand-accent-ghost))]/35 p-4">
-              <div className="flex flex-col gap-4">
+            <section className="min-w-0 rounded-sm border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/45 p-4 md:p-5">
+              <div className="space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="flex h-9 w-9 items-center justify-center border border-[hsl(var(--brand-accent))]/35 bg-background/70">
                       <Bot className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
                     </div>
                     <div>
-                      <h2 className="font-display text-lg leading-none">Track AI Agent</h2>
+                      <h2 className="font-display text-lg leading-none md:text-xl">Track AI Agent</h2>
                       <p className="text-xs text-muted-foreground">
-                        Chat with the AI agent about this track for the selected date range.
+                        Ask performance, risk, and market questions for this track.
                       </p>
                     </div>
                   </div>
@@ -587,7 +737,9 @@ export default function TrackInsightsDetail() {
                   </Button>
                 </div>
 
-                <div className="space-y-3 rounded-sm border border-border/40 bg-background/70 p-3">
+                <div className={cn("grid min-w-0 gap-4", hasAssistantResult && "xl:grid-cols-12")}>
+                  <div className={cn("min-w-0 space-y-3", hasAssistantResult ? "xl:col-span-8" : "xl:col-span-12")}>
+                    <div className="space-y-3 rounded-sm border border-border/45 bg-background/75 p-4">
                   <label className="text-xs font-mono uppercase text-muted-foreground">Ask the AI agent about this track</label>
                   <Textarea
                     value={chatInput}
@@ -601,7 +753,7 @@ export default function TrackInsightsDetail() {
                         key={s}
                         size="sm"
                         variant="ghost"
-                        className="h-auto border border-border/40 bg-background/70 px-2 py-1 text-left text-[11px] normal-case tracking-normal whitespace-normal"
+                        className="h-auto border border-border/45 bg-background/80 px-2 py-1 text-left text-[11px] normal-case tracking-normal whitespace-normal transition-colors hover:bg-muted/40"
                         onClick={() => handleSubmitChatQuestion(s)}
                         disabled={assistantBusy}
                       >
@@ -618,7 +770,7 @@ export default function TrackInsightsDetail() {
                       Ask AI Agent
                     </Button>
                   </div>
-                </div>
+                    </div>
 
                 {activeChatError && (
                   <div className="flex items-start gap-2 border border-destructive/40 bg-destructive/10 p-3">
@@ -627,48 +779,53 @@ export default function TrackInsightsDetail() {
                   </div>
                 )}
 
+                {latestAnswer && assistantTurnMutation.isPending && (
+                  <div className="flex items-start gap-2 border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/45 p-3">
+                    <Loader2 className="mt-0.5 h-4 w-4 animate-spin text-[hsl(var(--brand-accent))]" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-mono uppercase text-[hsl(var(--brand-accent))]">Analyzing next question</p>
+                      <p className="truncate text-xs text-muted-foreground" title={pendingQuestion ?? undefined}>
+                        {pendingQuestion ?? "Working on your latest prompt..."}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {!latestAnswer && !assistantTurnMutation.isPending && (
-                  <div className="flex flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
-                    <Sparkles className="h-7 w-7 text-[hsl(var(--brand-accent))]" />
-                    <p className="font-display text-sm">Start a conversation with the AI agent</p>
-                    <p className="max-w-lg text-xs text-muted-foreground">
-                      Responses, charts, and data evidence will appear below.
-                    </p>
-                  </div>
-                )}
+                      <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
+                        <Sparkles className="h-7 w-7 text-[hsl(var(--brand-accent))]" />
+                        <p className="font-display text-sm">Start a conversation with the AI agent</p>
+                        <p className="max-w-lg text-xs text-muted-foreground">
+                          Responses, charts, and evidence will appear in this workspace.
+                        </p>
+                      </div>
+                    )}
 
-                {assistantTurnMutation.isPending && (
-                  <div className="flex flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
-                    <p className="font-display text-sm">AI agent is analyzing...</p>
-                    <p className="text-xs text-muted-foreground">
-                      Reviewing performance, market, and quality data.
-                    </p>
-                  </div>
-                )}
+                    {!latestAnswer && assistantTurnMutation.isPending && (
+                      <div className="flex min-h-[180px] flex-col items-center justify-center gap-2 border border-border/40 bg-background/70 p-6 text-center">
+                        <p className="font-display text-sm">AI agent is analyzing...</p>
+                        <p className="text-xs text-muted-foreground">
+                          Reviewing performance, market, and quality data.
+                        </p>
+                      </div>
+                    )}
 
-                {latestAnswer && (
-                  <div className="space-y-4 rounded-sm border border-border/40 bg-background/70 p-3">
+                    {latestAnswer && (
+                  <div
+                    className={cn(
+                      "space-y-4 rounded-sm border border-border/40 bg-background/75 p-4 transition-opacity",
+                      assistantTurnMutation.isPending && "opacity-65"
+                    )}
+                  >
                     <div className="space-y-2">
                           {lastQuestion && (
                             <p className="text-xs text-muted-foreground">
                               <span className="font-mono uppercase">Your question:</span> {lastQuestion}
                             </p>
                           )}
-                      <h3 className="font-display text-2xl leading-tight">{latestAnswer.answer_title}</h3>
+                          <h3 className="font-display text-xl leading-tight md:text-2xl">{latestAnswer.answer_title}</h3>
                       <p className="text-sm leading-relaxed">{latestAnswer.answer_text}</p>
                     </div>
-
-                    {latestAnswer.kpis.length > 0 && (
-                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                        {latestAnswer.kpis.map((kpi, idx) => (
-                          <div key={idx} className="border border-border/35 bg-background/60 p-3">
-                            <p className="text-[10px] font-mono uppercase text-muted-foreground">{kpi.label}</p>
-                            <p className="font-display text-lg leading-tight">{kpi.value}</p>
-                            {kpi.change && <p className="text-[10px] text-muted-foreground">{kpi.change}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
 
                     {latestAnswer.why_this_matters && (
                       <div className="border border-border/35 bg-background/60 p-3">
@@ -790,36 +947,117 @@ export default function TrackInsightsDetail() {
                       )}
                     </div>
 
-                    {latestAnswer.follow_up_questions.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {latestAnswer.follow_up_questions.map((q) => (
-                          <Button
-                            key={q}
-                            size="sm"
-                            variant="ghost"
-                            className="h-auto border border-border/40 bg-background/70 px-2 py-1 text-[11px] normal-case tracking-normal whitespace-normal"
-                            onClick={() => handleSubmitChatQuestion(q)}
-                            disabled={assistantBusy}
-                          >
-                            {q}
-                          </Button>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
+
+                  </div>
+
+                  {hasAssistantResult ? (
+                    <aside className="min-w-0 space-y-3 xl:col-span-4 xl:sticky xl:top-24 xl:self-start">
+                      <div className="rounded-sm border border-border/40 bg-background/75 p-4">
+                        <p className="text-[10px] font-mono uppercase text-muted-foreground">AI context</p>
+                        <div className="mt-2 space-y-2 text-xs">
+                          <div className="flex items-start justify-between gap-3 border-b border-border/25 pb-2">
+                            <span className="text-muted-foreground">Track</span>
+                            <span className="max-w-[160px] text-right font-medium" title={summary.track_title ?? "-"}>
+                              {summary.track_title ?? "-"}
+                            </span>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 border-b border-border/25 pb-2">
+                            <span className="text-muted-foreground">Artist</span>
+                            <span className="max-w-[160px] text-right font-medium">{summary.artist_name ?? "-"}</span>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 border-b border-border/25 pb-2">
+                            <span className="text-muted-foreground">Net revenue</span>
+                            <span className="font-medium">{toCompactMoney(summary.net_revenue)}</span>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 border-b border-border/25 pb-2">
+                            <span className="text-muted-foreground">Data confidence</span>
+                            <span className="font-medium">{toConfidenceGrade(summary.avg_confidence)}</span>
+                          </div>
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="text-muted-foreground">Range</span>
+                            <span className="font-mono text-[10px]">{fromDate} to {toDate}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {latestAnswer?.kpis.length ? (
+                        <div className="rounded-sm border border-border/40 bg-background/75 p-4">
+                          <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">AI key signals</p>
+                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                            {latestAnswer.kpis.map((kpi, idx) => (
+                              <div key={idx} className="min-h-[80px] border border-border/35 bg-background/60 p-2.5">
+                                <p className="text-[10px] font-mono uppercase text-muted-foreground">{kpi.label}</p>
+                                <p className="font-display text-base leading-tight [overflow-wrap:anywhere]">{kpi.value}</p>
+                                {kpi.change ? <p className="text-[10px] text-muted-foreground">{kpi.change}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {latestAnswer?.follow_up_questions.length ? (
+                        <div className="rounded-sm border border-border/40 bg-background/75 p-4">
+                          <p className="mb-2 text-[10px] font-mono uppercase text-muted-foreground">Next questions</p>
+                          <div className="flex flex-wrap gap-2">
+                            {latestAnswer.follow_up_questions.map((q) => (
+                              <Button
+                                key={q}
+                                size="sm"
+                                variant="ghost"
+                                className="h-auto border border-border/45 bg-background/80 px-2 py-1 text-left text-[11px] normal-case tracking-normal whitespace-normal transition-colors hover:bg-muted/40"
+                                onClick={() => handleSubmitChatQuestion(q)}
+                                disabled={assistantBusy}
+                              >
+                                {q}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </aside>
+                  ) : null}
+                </div>
               </div>
             </section>
 
+            <KpiStrip
+              items={[
+                {
+                  label: "Track",
+                  value: (
+                    <span className="block truncate" title={summary.track_title ?? "-"}>
+                      {summary.track_title ?? "-"}
+                    </span>
+                  ),
+                },
+                {
+                  label: "Artist",
+                  value: (
+                    <span className="block truncate" title={summary.artist_name ?? "-"}>
+                      {summary.artist_name ?? "-"}
+                    </span>
+                  ),
+                },
+                { label: "Net Revenue", value: toCompactMoney(summary.net_revenue) },
+                { label: "Units", value: Math.round(summary.quantity ?? 0).toLocaleString() },
+                { label: "Revenue / Unit", value: toCompactMoney(summary.net_per_unit) },
+                { label: "Data Confidence", value: toConfidenceGrade(summary.avg_confidence) },
+              ]}
+              columnsClassName="sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+              className="py-3"
+            />
+
             {/* EXPLORER TABS */}
             <Tabs defaultValue="performance" className="w-full min-w-0">
-              <TabsList className="w-full">
-                <TabsTrigger value="performance">Performance</TabsTrigger>
-                <TabsTrigger value="opportunity">Opportunities</TabsTrigger>
-                <TabsTrigger value="quality">Data Quality</TabsTrigger>
+              <TabsList className="grid h-auto w-full grid-cols-3 rounded-sm border border-border/40 bg-background/70 p-1">
+                <TabsTrigger className="text-[11px] md:text-xs" value="performance">Performance</TabsTrigger>
+                <TabsTrigger className="text-[11px] md:text-xs" value="opportunity">Opportunities</TabsTrigger>
+                <TabsTrigger className="text-[11px] md:text-xs" value="quality">Data Quality</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="performance" className="space-y-8">
+              <TabsContent value="performance" className="space-y-6">
                 <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-12">
                   <div className="min-w-0 xl:col-span-8 bg-background/70 border border-border/35 p-4 md:p-5">
                     <ChartPanelHeader
@@ -918,8 +1156,8 @@ export default function TrackInsightsDetail() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="opportunity" className="space-y-8">
-                <div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
+              <TabsContent value="opportunity" className="space-y-6">
+                <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
                   <div className="min-w-0 bg-background/70 border border-border/35 p-4 md:p-5">
                     <ChartPanelHeader
                       icon={<Compass className="h-4 w-4" />}
@@ -1007,8 +1245,8 @@ export default function TrackInsightsDetail() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="quality" className="space-y-8">
-                <div className="grid min-w-0 grid-cols-1 gap-8 xl:grid-cols-2">
+              <TabsContent value="quality" className="space-y-6">
+                <div className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-2">
                   <div className="min-w-0 bg-background/70 border border-border/35 p-4">
                     <h3 className="font-display text-sm uppercase mb-6 flex items-center gap-2">
                       <ShieldAlert className="h-4 w-4" />

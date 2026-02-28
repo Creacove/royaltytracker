@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import { ArrowRightLeft, BarChart3, LayoutDashboard, LogOut, ShieldAlert, Upload } from "lucide-react";
+import { ArrowRightLeft, BarChart3, ChevronRight, LayoutDashboard, LogOut, Settings2, ShieldAlert, Upload } from "lucide-react";
 
 import type { RouteMeta } from "@/lib/route-meta";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,13 +17,14 @@ import {
   SidebarProvider,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview" },
   { to: "/reports", icon: Upload, label: "Statements" },
-  { to: "/insights", icon: BarChart3, label: "Track Insights" },
+  { to: "/insights", icon: BarChart3, label: "Insights" },
   { to: "/review-queue", icon: ShieldAlert, label: "Statement Reviews" },
   { to: "/transactions", icon: ArrowRightLeft, label: "Transactions" },
 ];
@@ -31,18 +32,46 @@ const navItems = [
 type AppLayoutProps = {
   children: React.ReactNode;
   routeMeta: RouteMeta;
+  companyName?: string | null;
+  companyRole?: string | null;
+  isPlatformAdmin?: boolean;
 };
 
-export default function AppLayout({ children, routeMeta }: AppLayoutProps) {
+function formatRole(role: string | null | undefined) {
+  if (!role) return "Member";
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function AppLayoutContent({
+  children,
+  routeMeta,
+  companyName,
+  companyRole,
+  isPlatformAdmin = false,
+}: AppLayoutProps) {
   const { signOut } = useAuth();
   const location = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const settingsActive = location.pathname === "/settings" || location.pathname.startsWith("/settings/");
+  const workspaceActive =
+    location.pathname === "/workspace" ||
+    location.pathname.startsWith("/workspace/") ||
+    location.pathname.startsWith("/company") ||
+    location.pathname.startsWith("/admin/invites");
 
   useEffect(() => {
     document.documentElement.classList.remove("dark");
   }, []);
 
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [isMobile, location.pathname, setOpenMobile]);
+
   return (
-    <SidebarProvider defaultOpen>
+    <>
       <Sidebar className="border-r border-sidebar-border/60 bg-sidebar" collapsible="offcanvas">
         <SidebarHeader className="gap-3 border-b border-sidebar-border/60 px-4 py-4">
           <Link to="/" className="flex items-center gap-2">
@@ -54,6 +83,28 @@ export default function AppLayout({ children, routeMeta }: AppLayoutProps) {
           <p className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
             Forensic Royalty Workspace
           </p>
+          <Link
+            to="/workspace"
+            className={cn(
+              "group rounded-sm border bg-background/70 p-2 text-xs transition-colors",
+              workspaceActive
+                ? "border-[hsl(var(--brand-accent))]/40 bg-[hsl(var(--brand-accent-ghost))]/70"
+                : "border-border/50 hover:border-border hover:bg-background",
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-display text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                  Workspace
+                </p>
+                <p className="truncate font-medium">{companyName ?? "Workspace pending"}</p>
+                <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                  {isPlatformAdmin ? "Platform Admin" : formatRole(companyRole)}
+                </p>
+              </div>
+              <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </div>
+          </Link>
         </SidebarHeader>
 
         <SidebarContent className="px-2 py-3">
@@ -73,7 +124,7 @@ export default function AppLayout({ children, routeMeta }: AppLayoutProps) {
                       "h-9 rounded-sm border border-transparent px-2.5 text-xs font-display uppercase tracking-[0.08em]",
                       active
                         ? "border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground"
-                        : "text-sidebar-foreground hover:border-border/35 hover:bg-muted/40"
+                        : "text-sidebar-foreground hover:border-border/35 hover:bg-muted/40",
                     )}
                   >
                     <Link to={to}>
@@ -89,6 +140,19 @@ export default function AppLayout({ children, routeMeta }: AppLayoutProps) {
 
         <SidebarFooter className="px-2 pb-3 pt-0">
           <SidebarSeparator className="mb-2" />
+          <Button
+            asChild
+            variant="ghost"
+            className={cn(
+              "mb-1 h-9 w-full justify-start rounded-sm px-2.5 text-xs text-sidebar-foreground",
+              settingsActive && "border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground",
+            )}
+          >
+            <Link to="/settings">
+              <Settings2 className="h-4 w-4" />
+              Settings
+            </Link>
+          </Button>
           <Button
             variant="ghost"
             className="h-9 w-full justify-start rounded-sm px-2.5 text-xs text-sidebar-foreground"
@@ -122,6 +186,14 @@ export default function AppLayout({ children, routeMeta }: AppLayoutProps) {
           </div>
         </main>
       </SidebarInset>
+    </>
+  );
+}
+
+export default function AppLayout(props: AppLayoutProps) {
+  return (
+    <SidebarProvider defaultOpen>
+      <AppLayoutContent {...props} />
     </SidebarProvider>
   );
 }

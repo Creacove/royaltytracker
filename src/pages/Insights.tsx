@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Search, ArrowUpRight, Copy, ArrowRightLeft, Sparkles } from "lucide-react";
@@ -18,19 +18,30 @@ import { AppliedFiltersRow, EmptyStateBlock, FilterToolbar, KpiStrip, PageHeader
 
 type Report = Pick<Tables<"cmo_reports">, "id" | "cmo_name" | "status">;
 type Tx = Pick<Tables<"royalty_transactions">, "territory" | "platform" | "usage_type">;
+const ALL_TIME_FROM = "2000-01-01";
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeDateParam(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  return ISO_DATE_RE.test(value) ? value : fallback;
+}
 
 export default function Insights() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const defaults = defaultDateRange();
+  const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const initialFromDate = normalizeDateParam(searchParams.get("from"), defaults.fromDate);
+  const initialToDate = normalizeDateParam(searchParams.get("to"), defaults.toDate);
 
   const [search, setSearch] = useState("");
   const [selectedCmo, setSelectedCmo] = useState("all");
   const [selectedTerritory, setSelectedTerritory] = useState("all");
   const [selectedPlatform, setSelectedPlatform] = useState("all");
   const [selectedUsageType, setSelectedUsageType] = useState("all");
-  const [fromDate, setFromDate] = useState(defaults.fromDate);
-  const [toDate, setToDate] = useState(defaults.toDate);
+  const [fromDate, setFromDate] = useState(initialFromDate);
+  const [toDate, setToDate] = useState(initialToDate);
 
   const { data: reports = [] } = useQuery({
     queryKey: ["insights-filter-reports"],
@@ -94,6 +105,10 @@ export default function Insights() {
     () => Array.from(new Set(reports.map((report) => report.cmo_name))).sort((a, b) => a.localeCompare(b)),
     [reports]
   );
+  const nonFailedReportCount = useMemo(
+    () => reports.filter((report) => report.status !== "failed").length,
+    [reports]
+  );
   const territoryOptions = useMemo(
     () =>
       Array.from(new Set(filterTx.map((tx) => tx.territory).filter(Boolean) as string[])).sort((a, b) =>
@@ -129,6 +144,8 @@ export default function Insights() {
     };
   }, [rows]);
 
+  const hasAnyTransactions = filterTx.length > 0;
+
   const appliedFilters = useMemo(() => {
     const tokens: string[] = [];
     if (fromDate !== defaults.fromDate || toDate !== defaults.toDate) {
@@ -162,25 +179,41 @@ export default function Insights() {
     setToDate(defaults.toDate);
   };
 
+  const setAllTimeRange = () => {
+    setFromDate(ALL_TIME_FROM);
+    setToDate(todayDate);
+  };
+
+  useEffect(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("from", fromDate);
+      next.set("to", toDate);
+      return next;
+    }, { replace: true });
+  }, [fromDate, toDate, setSearchParams]);
+
   const copyShareLink = async (trackKey: string) => {
-    const url = `${window.location.origin}/insights/${encodeURIComponent(trackKey)}`;
+    const params = new URLSearchParams({ from: fromDate, to: toDate });
+    const url = `${window.location.origin}/insights/${encodeURIComponent(trackKey)}?${params.toString()}`;
     try {
       await navigator.clipboard.writeText(url);
-      toast({ title: "Link copied", description: "Track Insights link copied to clipboard." });
+      toast({ title: "Link copied", description: "Track insights link copied to clipboard." });
     } catch {
       toast({ title: "Copy failed", description: url, variant: "destructive" });
     }
   };
 
   const openTrack = (trackKey: string) => {
-    navigate(`/insights/${encodeURIComponent(trackKey)}`);
+    const params = new URLSearchParams({ from: fromDate, to: toDate });
+    navigate(`/insights/${encodeURIComponent(trackKey)}?${params.toString()}`);
   };
 
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
       <PageHeader
-        title="Track Insights"
-        subtitle="Review track-level performance, risk signals, and opportunity before opening the Track AI Agent."
+        title="Insights"
+        subtitle="Make better decisions with track-level performance signals and AI-powered track insights."
       />
 
       <KpiStrip
@@ -291,8 +324,26 @@ export default function Insights() {
           ) : rows.length === 0 ? (
             <EmptyStateBlock
               icon={<Sparkles className="h-10 w-10" />}
-              title="No tracks found"
-              description="No tracks match the selected filter scope."
+              title={hasAnyTransactions ? "No tracks in current scope" : "No tracks found"}
+              description={
+                hasAnyTransactions
+                  ? `No tracks match ${fromDate} to ${toDate} with current filters.`
+                  : nonFailedReportCount > 0
+                    ? "Reports exist, but no normalized transaction rows are available yet for insights."
+                    : "No tracks match the selected filter scope."
+              }
+              action={
+                hasAnyTransactions ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button size="sm" variant="outline" onClick={setAllTimeRange}>
+                      Use all-time range
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </div>
+                ) : undefined
+              }
             />
           ) : (
             <div className="min-w-0 overflow-x-auto overscroll-x-contain">
