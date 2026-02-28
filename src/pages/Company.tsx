@@ -8,6 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkspaceSubscriptionState } from "@/hooks/useWorkspaceSubscriptionState";
@@ -76,6 +84,8 @@ type GeneratedPartnerCode = {
   generatedAt: string;
 };
 
+type PlatformTargetMode = "current" | "existing" | "new";
+
 const roleOptions = ["owner", "admin", "member", "viewer"];
 const expiryOptions = [7, 14, 30];
 const sponsorMonthOptions = [1, 3, 6, 12];
@@ -125,6 +135,11 @@ function toUsagePercent(value: number): string {
   return `${Math.max(0, Math.round(value * 100))}%`;
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "N/A";
+  return new Date(value).toLocaleString();
+}
+
 export default function Company({ onboardingState, schemaReady, onCompanyUpdated }: CompanyProps) {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -165,8 +180,9 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [inviteExpiryDays, setInviteExpiryDays] = useState(14);
+  const [activeSection, setActiveSection] = useState("overview");
 
-  const [platformTargetMode, setPlatformTargetMode] = useState<"current" | "existing" | "new">(
+  const [platformTargetMode, setPlatformTargetMode] = useState<PlatformTargetMode>(
     onboardingState.companyId ? "current" : "existing",
   );
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(onboardingState.companyId ?? "");
@@ -202,6 +218,12 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       setPlatformTargetMode((current) => (current === "current" ? "existing" : current));
     }
   }, [onboardingState]);
+
+  useEffect(() => {
+    if (!onboardingState.isPlatformAdmin && activeSection === "platform") {
+      setActiveSection("overview");
+    }
+  }, [activeSection, onboardingState.isPlatformAdmin]);
 
   const loadWorkspaceData = async () => {
     if (!schemaReady) return;
@@ -644,135 +666,200 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   const roleBadgeLabel = onboardingState.isPlatformAdmin
     ? "Platform Admin"
     : titleCaseRole(onboardingState.activeMembershipRole);
+  const pendingInviteCount = invites.filter((invite) => invite.status === "pending").length;
+  const workspaceCount = globalWorkspaces.length;
+  const subscriptionStatusLabel = titleCaseStatus(subscriptionState.effectiveSubscriptionStatus);
+  const planSummaryLabel = subscriptionState.planName
+    ? subscriptionState.priceMonthlyCents > 0
+      ? `${subscriptionState.planName} ($${(subscriptionState.priceMonthlyCents / 100).toFixed(0)}/mo)`
+      : subscriptionState.planName
+    : "Unassigned";
   const inviteTargetLabel =
     !onboardingState.isPlatformAdmin || platformTargetMode === "current"
       ? onboardingState.companyName ?? "Current workspace"
       : platformTargetMode === "existing"
-        ? (workspaceNameById.get(selectedWorkspaceId) ?? "Select a workspace")
+        ? (workspaceNameById.get(selectedWorkspaceId) ?? "Select workspace")
         : newWorkspaceName.trim()
           ? `New workspace: ${newWorkspaceName.trim()}`
-          : "New workspace (name required)";
+          : "New workspace name required";
+  const canShowWorkspaceTargetSelect = onboardingState.isPlatformAdmin && platformTargetMode === "existing";
+  const canShowNewWorkspaceInput = onboardingState.isPlatformAdmin && platformTargetMode === "new";
+  const canShowCurrentWorkspaceHint = onboardingState.isPlatformAdmin && platformTargetMode === "current";
+  const selectedPartnerCodeWorkspaceName = workspaceNameById.get(partnerCodeWorkspaceId) ?? "Workspace not selected";
 
   return (
-    <div className="space-y-5">
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="grid gap-4 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost))/80,transparent_65%)] p-6 md:grid-cols-[1.35fr_1fr]">
-          <div className="space-y-2">
-            <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Workspace</p>
-            <h1 className="font-display text-3xl tracking-[0.04em]">
-              {onboardingState.companyName ?? "Workspace profile pending"}
+    <div className="space-y-6">
+      <Card className="soft-elevation overflow-hidden border-border/60">
+        <CardContent className="relative grid gap-6 overflow-hidden bg-[linear-gradient(120deg,hsl(var(--brand-accent-ghost))/95,transparent_72%)] p-6 lg:grid-cols-[1.2fr_1fr]">
+          <div className="space-y-4">
+            <p className="font-display text-xs uppercase tracking-[0.1em] text-muted-foreground">Workspace Console</p>
+            <h1 className="font-display text-3xl tracking-[0.03em]">
+              {onboardingState.companyName ?? "Workspace Profile Pending"}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              Identity, team directory, and controlled access for your workspace.
+            <p className="max-w-xl text-sm text-muted-foreground">
+              A focused command center for billing, members, invites, and cross-workspace onboarding controls.
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{roleBadgeLabel}</Badge>
+              <Badge variant="outline">{hasWorkspace ? `${members.length} members` : "No active workspace"}</Badge>
+              {onboardingState.isPlatformAdmin && <Badge variant="outline">{workspaceCount} visible workspaces</Badge>}
+            </div>
           </div>
-          <div className="flex flex-wrap items-start justify-start gap-2 md:justify-end">
-            <Badge variant="outline">{roleBadgeLabel}</Badge>
-            {hasWorkspace && <Badge variant="outline">{members.length} Members</Badge>}
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Plan Status</p>
+              <p className="font-medium">
+                {subscriptionLoading || !subscriptionLoaded ? "Loading..." : subscriptionStatusLabel}
+              </p>
+            </div>
+            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Plan</p>
+              <p className="font-medium">{subscriptionLoading || !subscriptionLoaded ? "Loading..." : planSummaryLabel}</p>
+            </div>
+            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Pending Invites</p>
+              <p className="font-medium">{pendingInviteCount}</p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-border/60">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-            <CardTitle>Plan &amp; Billing</CardTitle>
-          </div>
-          <CardDescription>
-            Current subscription, usage limits, and billing actions for this workspace.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {subscriptionLoading || !subscriptionLoaded ? (
-            <p className="text-sm text-muted-foreground">Loading billing state...</p>
-          ) : !subscriptionState.companyId ? (
-            <p className="text-sm text-muted-foreground">Billing state is available after workspace membership is active.</p>
-          ) : (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-sm border border-border/50 p-3">
-                  <p className="text-xs text-muted-foreground">Plan</p>
-                  <p className="font-medium">
-                    {subscriptionState.planName ?? "Unassigned"}{" "}
-                    {subscriptionState.priceMonthlyCents > 0
-                      ? `($${(subscriptionState.priceMonthlyCents / 100).toFixed(0)}/mo)`
-                      : ""}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {titleCaseStatus(subscriptionState.effectiveSubscriptionStatus)}
-                  </p>
-                </div>
-                <div className="rounded-sm border border-border/50 p-3">
-                  <p className="text-xs text-muted-foreground">Seats</p>
-                  <p className="font-medium">
-                    {subscriptionState.seatsUsed}
-                    {subscriptionState.seatLimit !== null ? ` / ${subscriptionState.seatLimit}` : ""}
-                  </p>
-                </div>
-                <div className="rounded-sm border border-border/50 p-3">
-                  <p className="text-xs text-muted-foreground">Statements</p>
-                  <p className="font-medium">
-                    {subscriptionState.statementsUsed}
-                    {subscriptionState.statementsLimit !== null ? ` / ${subscriptionState.statementsLimit}` : ""}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.statementsUsageRatio)}</p>
-                </div>
-                <div className="rounded-sm border border-border/50 p-3">
-                  <p className="text-xs text-muted-foreground">AI Requests</p>
-                  <p className="font-medium">
-                    {subscriptionState.aiRequestsUsed}
-                    {subscriptionState.aiRequestsLimit !== null ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.aiUsageRatio)}</p>
-                </div>
-              </div>
-
-              {subscriptionState.sponsorExpiresAt && subscriptionState.effectiveSubscriptionStatus === "active_sponsored" && (
-                <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
-                  Partner sponsorship active through{" "}
-                  {new Date(subscriptionState.sponsorExpiresAt).toLocaleDateString()}. After this date, reactivate
-                  billing at $149/month to continue.
-                </div>
-              )}
-
-              {(subscriptionState.softLimitReached || subscriptionState.hardLimitReached) && (
-                <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
-                  Usage is near or above current limits. Upgrade to prevent operational friction as volume grows.
-                </div>
-              )}
-
-              <div className="flex flex-wrap gap-2">
-                {(subscriptionState.needsActivation || subscriptionState.effectiveSubscriptionStatus === "past_due") && (
-                  <Button onClick={() => navigate("/activate")}>Activate Workspace</Button>
-                )}
-                {!subscriptionState.needsActivation &&
-                  subscriptionState.effectiveSubscriptionStatus === "active_paid" &&
-                  subscriptionState.canManageBilling && (
-                    <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingBillingPortal}>
-                      {openingBillingPortal ? "Opening portal..." : "Manage Billing"}
-                    </Button>
-                  )}
-                <Button
-                  variant="ghost"
-                  onClick={() => void refreshSubscriptionState()}
-                  disabled={subscriptionLoading}
-                >
-                  Refresh Usage
-                </Button>
-              </div>
-            </>
+      <Tabs value={activeSection} onValueChange={setActiveSection} className="space-y-4">
+        <TabsList className="w-full rounded-sm border border-border/60 bg-background/70 p-1 sm:w-auto">
+          <TabsTrigger
+            value="overview"
+            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
+          >
+            Overview
+          </TabsTrigger>
+          <TabsTrigger
+            value="access"
+            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
+          >
+            Access
+          </TabsTrigger>
+          <TabsTrigger
+            value="profile"
+            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
+          >
+            Profile
+          </TabsTrigger>
+          {onboardingState.isPlatformAdmin && (
+            <TabsTrigger
+              value="platform"
+              className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
+            >
+              Platform
+            </TabsTrigger>
           )}
-        </CardContent>
-      </Card>
+        </TabsList>
 
-      <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
-        <Card className="border-border/60">
+        <TabsContent value="overview" className="space-y-5">
+          <Card className="soft-elevation border-border/60">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>Plan &amp; Billing</CardTitle>
+                </div>
+                <CardDescription>
+                  Current subscription, usage limits, and billing actions for this workspace.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {subscriptionLoading || !subscriptionLoaded ? (
+                  <p className="text-sm text-muted-foreground">Loading billing state...</p>
+                ) : !subscriptionState.companyId ? (
+                  <p className="text-sm text-muted-foreground">
+                    Billing state is available after workspace membership is active.
+                  </p>
+                ) : (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <div className="rounded-sm border border-border/50 p-3">
+                        <p className="text-xs text-muted-foreground">Plan</p>
+                        <p className="font-medium">
+                          {subscriptionState.planName ?? "Unassigned"}{" "}
+                          {subscriptionState.priceMonthlyCents > 0
+                            ? `($${(subscriptionState.priceMonthlyCents / 100).toFixed(0)}/mo)`
+                            : ""}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {titleCaseStatus(subscriptionState.effectiveSubscriptionStatus)}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-border/50 p-3">
+                        <p className="text-xs text-muted-foreground">Seats</p>
+                        <p className="font-medium">
+                          {subscriptionState.seatsUsed}
+                          {subscriptionState.seatLimit !== null ? ` / ${subscriptionState.seatLimit}` : ""}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-border/50 p-3">
+                        <p className="text-xs text-muted-foreground">Statements</p>
+                        <p className="font-medium">
+                          {subscriptionState.statementsUsed}
+                          {subscriptionState.statementsLimit !== null ? ` / ${subscriptionState.statementsLimit}` : ""}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {toUsagePercent(subscriptionState.statementsUsageRatio)}
+                        </p>
+                      </div>
+                      <div className="rounded-sm border border-border/50 p-3">
+                        <p className="text-xs text-muted-foreground">AI Requests</p>
+                        <p className="font-medium">
+                          {subscriptionState.aiRequestsUsed}
+                          {subscriptionState.aiRequestsLimit !== null ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.aiUsageRatio)}</p>
+                      </div>
+                    </div>
+
+                    {subscriptionState.sponsorExpiresAt &&
+                      subscriptionState.effectiveSubscriptionStatus === "active_sponsored" && (
+                        <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                          Partner sponsorship active through{" "}
+                          {new Date(subscriptionState.sponsorExpiresAt).toLocaleDateString()}. After this date,
+                          reactivate billing at $149/month to continue.
+                        </div>
+                      )}
+
+                    {(subscriptionState.softLimitReached || subscriptionState.hardLimitReached) && (
+                      <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                        Usage is near or above current limits. Upgrade to prevent operational friction as volume grows.
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      {(subscriptionState.needsActivation ||
+                        subscriptionState.effectiveSubscriptionStatus === "past_due") && (
+                        <Button onClick={() => navigate("/activate")}>Activate Workspace</Button>
+                      )}
+                      {!subscriptionState.needsActivation &&
+                        subscriptionState.effectiveSubscriptionStatus === "active_paid" &&
+                        subscriptionState.canManageBilling && (
+                          <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingBillingPortal}>
+                            {openingBillingPortal ? "Opening portal..." : "Manage Billing"}
+                          </Button>
+                        )}
+                      <Button variant="ghost" onClick={() => void refreshSubscriptionState()} disabled={subscriptionLoading}>
+                        Refresh Usage
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="profile" className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
+        <Card className="soft-elevation border-border/60">
           <CardHeader>
             <CardTitle>Workspace Profile</CardTitle>
             <CardDescription>
               {canManageWorkspace
-                ? "Control defaults for this workspace."
+                ? "Set identity and defaults for this workspace."
                 : "Workspace defaults are managed by your workspace admins."}
             </CardDescription>
           </CardHeader>
@@ -868,7 +955,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
+        <Card className="soft-elevation border-border/60">
           <CardHeader>
             <CardTitle>Team Directory</CardTitle>
             <CardDescription>Everyone with access to this workspace.</CardDescription>
@@ -900,10 +987,12 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
             )}
           </CardContent>
         </Card>
-      </div>
+          </div>
+        </TabsContent>
 
-      {onboardingState.isPlatformAdmin && (
-        <Card className="border-border/60">
+        {onboardingState.isPlatformAdmin && (
+          <TabsContent value="platform" className="space-y-5">
+            <Card className="soft-elevation border-border/60">
           <CardHeader>
             <CardTitle>Platform Admin Controls</CardTitle>
             <CardDescription>
@@ -921,8 +1010,10 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {globalWorkspaces.map((workspace) => (
                     <div key={workspace.company_id} className="rounded-sm border border-border/50 p-3">
-                      <p className="truncate font-medium">{workspace.company_name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{workspace.company_id}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-medium">{workspace.company_name}</p>
+                        {workspace.company_id === onboardingState.companyId && <Badge variant="outline">Current</Badge>}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -934,35 +1025,37 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
               <form className="space-y-3" onSubmit={handleGeneratePartnerCode}>
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="partnerCodeWorkspace">Workspace</Label>
-                    <select
-                      id="partnerCodeWorkspace"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={partnerCodeWorkspaceId}
-                      onChange={(event) => setPartnerCodeWorkspaceId(event.target.value)}
-                    >
-                      <option value="">Choose workspace...</option>
-                      {globalWorkspaces.map((workspace) => (
-                        <option key={workspace.company_id} value={workspace.company_id}>
-                          {workspace.company_name}
-                        </option>
-                      ))}
-                    </select>
+                    <Label>Workspace</Label>
+                    <Select value={partnerCodeWorkspaceId || undefined} onValueChange={setPartnerCodeWorkspaceId}>
+                      <SelectTrigger id="partnerCodeWorkspace">
+                        <SelectValue
+                          placeholder={globalWorkspaces.length === 0 ? "No workspaces available" : "Select workspace"}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {globalWorkspaces.map((workspace) => (
+                          <SelectItem key={workspace.company_id} value={workspace.company_id}>
+                            {workspace.company_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Selected workspace: {selectedPartnerCodeWorkspaceName}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="sponsorMonths">Sponsor months</Label>
-                    <select
-                      id="sponsorMonths"
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={String(partnerCodeMonths)}
-                      onChange={(event) => setPartnerCodeMonths(Number(event.target.value))}
-                    >
-                      {sponsorMonthOptions.map((months) => (
-                        <option key={months} value={months}>
-                          {months} month{months > 1 ? "s" : ""}
-                        </option>
-                      ))}
-                    </select>
+                    <Label>Sponsor months</Label>
+                    <Select value={String(partnerCodeMonths)} onValueChange={(value) => setPartnerCodeMonths(Number(value))}>
+                      <SelectTrigger id="sponsorMonths">
+                        <SelectValue placeholder="Select duration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {sponsorMonthOptions.map((months) => (
+                          <SelectItem key={months} value={String(months)}>
+                            {months} month{months > 1 ? "s" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -974,7 +1067,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
               {generatedPartnerCode && (
                 <div className="space-y-2 rounded-sm border border-border/50 bg-background/60 p-3">
                   <p className="text-xs text-muted-foreground">
-                    {generatedPartnerCode.companyName} • {generatedPartnerCode.sponsorMonths} month sponsorship
+                    {generatedPartnerCode.companyName} | {generatedPartnerCode.sponsorMonths} month sponsorship
                   </p>
                   <Input
                     readOnly
@@ -1003,22 +1096,24 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                       Copy Code
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Generated {new Date(generatedPartnerCode.generatedAt).toLocaleString()}
+                      Generated {formatDateTime(generatedPartnerCode.generatedAt)}
                     </p>
                   </div>
                   {generatedPartnerCode.expiresAt && (
                     <p className="text-xs text-muted-foreground">
-                      Code expires {new Date(generatedPartnerCode.expiresAt).toLocaleString()}.
+                      Code expires {formatDateTime(generatedPartnerCode.expiresAt)}.
                     </p>
                   )}
                 </div>
               )}
             </div>
           </CardContent>
-        </Card>
-      )}
+            </Card>
+          </TabsContent>
+        )}
 
-      <Card className="border-border/60">
+        <TabsContent value="access" className="space-y-5">
+          <Card className="soft-elevation border-border/60">
         <CardHeader>
           <CardTitle>Access & Invitations</CardTitle>
           <CardDescription>
@@ -1045,89 +1140,81 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="inviteRole">Role</Label>
-                  <select
-                    id="inviteRole"
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={inviteRole}
-                    onChange={(event) => setInviteRole(event.target.value)}
-                  >
-                    {roleOptions.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                  <Label>Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger id="inviteRole">
+                      <SelectValue placeholder="Select role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {roleOptions.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {titleCaseRole(value)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="expiryDays">Invite expiry</Label>
-                  <select
-                    id="expiryDays"
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={String(inviteExpiryDays)}
-                    onChange={(event) => setInviteExpiryDays(Number(event.target.value))}
-                  >
-                    {expiryOptions.map((days) => (
-                      <option key={days} value={days}>
-                        {days} days
-                      </option>
-                    ))}
-                  </select>
+                  <Label>Invite expiry</Label>
+                  <Select value={String(inviteExpiryDays)} onValueChange={(value) => setInviteExpiryDays(Number(value))}>
+                    <SelectTrigger id="expiryDays">
+                      <SelectValue placeholder="Select expiry" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {expiryOptions.map((days) => (
+                        <SelectItem key={days} value={String(days)}>
+                          {days} days
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 {onboardingState.isPlatformAdmin && (
                   <>
                     <div className="space-y-2 md:col-span-2">
-                      <Label>Workspace target</Label>
-                      <div className={`grid gap-2 ${hasWorkspace ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
-                        {hasWorkspace && (
-                          <Button
-                            type="button"
-                            variant={platformTargetMode === "current" ? "default" : "outline"}
-                            onClick={() => setPlatformTargetMode("current")}
-                          >
-                            Current workspace
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant={platformTargetMode === "existing" ? "default" : "outline"}
-                          onClick={() => setPlatformTargetMode("existing")}
-                        >
-                          Existing workspace
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={platformTargetMode === "new" ? "default" : "outline"}
-                          onClick={() => setPlatformTargetMode("new")}
-                        >
-                          New workspace
-                        </Button>
-                      </div>
+                      <Label>Workspace target mode</Label>
+                      <Select
+                        value={platformTargetMode}
+                        onValueChange={(value) => setPlatformTargetMode(value as PlatformTargetMode)}
+                      >
+                        <SelectTrigger id="workspaceTargetMode">
+                          <SelectValue placeholder="Select target mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hasWorkspace && <SelectItem value="current">Current workspace</SelectItem>}
+                          <SelectItem value="existing">Existing workspace</SelectItem>
+                          <SelectItem value="new">New workspace</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    {platformTargetMode === "existing" ? (
+
+                    {canShowWorkspaceTargetSelect && (
                       <div className="space-y-2 md:col-span-3">
-                        <Label htmlFor="targetWorkspace">Select workspace</Label>
-                        <select
-                          id="targetWorkspace"
-                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                          value={selectedWorkspaceId}
-                          onChange={(event) => setSelectedWorkspaceId(event.target.value)}
-                        >
-                          <option value="">Choose workspace...</option>
-                          {globalWorkspaces.map((workspace) => (
-                            <option key={workspace.company_id} value={workspace.company_id}>
-                              {workspace.company_name}
-                            </option>
-                          ))}
-                        </select>
+                        <Label>Target workspace</Label>
+                        <Select value={selectedWorkspaceId || undefined} onValueChange={setSelectedWorkspaceId}>
+                          <SelectTrigger id="targetWorkspace">
+                            <SelectValue
+                              placeholder={globalWorkspaces.length === 0 ? "No workspaces available" : "Select workspace"}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {globalWorkspaces.map((workspace) => (
+                              <SelectItem key={workspace.company_id} value={workspace.company_id}>
+                                {workspace.company_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {globalWorkspaces.length === 0 && (
                           <p className="text-xs text-muted-foreground">No workspace records found yet.</p>
                         )}
                       </div>
-                    ) : platformTargetMode === "new" ? (
+                    )}
+
+                    {canShowNewWorkspaceInput && (
                       <div className="space-y-2 md:col-span-3">
                         <Label htmlFor="newWorkspaceName">New workspace name</Label>
                         <Input
@@ -1137,7 +1224,9 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                           placeholder="Nexus Music Publishing"
                         />
                       </div>
-                    ) : (
+                    )}
+
+                    {canShowCurrentWorkspaceHint && (
                       <div className="space-y-2 md:col-span-3">
                         <Label>Target workspace</Label>
                         <div className="rounded-sm border border-border/50 p-3 text-sm">
@@ -1145,6 +1234,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                         </div>
                       </div>
                     )}
+
                   </>
                 )}
               </div>
@@ -1180,12 +1270,12 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium">{invite.email}</p>
                       <Badge variant="outline">{titleCaseRole(invite.role)}</Badge>
-                      <Badge variant="outline">{titleCaseRole(invite.status)}</Badge>
+                      <Badge variant="outline">{titleCaseStatus(invite.status)}</Badge>
                       <Badge variant="outline">{titleCaseStatus(invite.auth_delivery_status)}</Badge>
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {invite.company_name ?? "Workspace pending"} | Created{" "}
-                      {new Date(invite.created_at).toLocaleString()} | Expires {new Date(invite.expires_at).toLocaleString()}
+                      {invite.company_name ?? "Workspace pending"} | Created {formatDateTime(invite.created_at)} |
+                      Expires {formatDateTime(invite.expires_at)}
                     </p>
                     {invite.auth_delivery_error && (
                       <p className="mt-1 text-xs text-muted-foreground">{invite.auth_delivery_error}</p>
@@ -1201,7 +1291,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                         <div className="flex flex-wrap items-center gap-2">
                           {invite.latest_invite_link_generated_at && (
                             <p className="text-xs text-muted-foreground">
-                              Generated {new Date(invite.latest_invite_link_generated_at).toLocaleString()}
+                              Generated {formatDateTime(invite.latest_invite_link_generated_at)}
                             </p>
                           )}
                           <Button
@@ -1234,10 +1324,12 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
             )}
           </div>
         </CardContent>
-      </Card>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {!schemaReady && (
-        <Card className="border-border/60">
+        <Card className="soft-elevation border-border/60">
           <CardContent className="flex items-start gap-2 p-4 text-sm text-muted-foreground">
             <Shield className="mt-0.5 h-4 w-4" />
             <p>
@@ -1250,3 +1342,4 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     </div>
   );
 }
+
