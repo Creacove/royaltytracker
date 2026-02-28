@@ -701,6 +701,14 @@ serve(async (req) => {
       const conversationId =
         asString((body as { conversation_id?: unknown }).conversation_id) ?? crypto.randomUUID();
 
+      const { error: aiUsageError } = await supabase.rpc("increment_workspace_ai_usage", {
+        p_user_id: requesterId,
+        p_amount: 1,
+      });
+      if (aiUsageError) {
+        console.error("insights-natural-chat: failed to increment AI usage", aiUsageError.message);
+      }
+
       const userClient = createClient(supabaseUrl, anonKey, {
         global: {
           headers: {
@@ -928,6 +936,14 @@ serve(async (req) => {
 
     if (action === "plan_query") {
       if (!question) throw new Error("question is required for plan_query.");
+
+      const { error: aiUsageError } = await supabase.rpc("increment_workspace_ai_usage", {
+        p_user_id: requesterId,
+        p_amount: 1,
+      });
+      if (aiUsageError) {
+        console.error("insights-natural-chat: failed to increment AI usage", aiUsageError.message);
+      }
 
       const systemPrompt = [
         "You are a SQL planner for publisher analytics.",

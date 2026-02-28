@@ -57,6 +57,7 @@ function AppLayoutContent({
   const workspaceActive =
     location.pathname === "/workspace" ||
     location.pathname.startsWith("/workspace/") ||
+    location.pathname.startsWith("/activate") ||
     location.pathname.startsWith("/company") ||
     location.pathname.startsWith("/admin/invites");
 

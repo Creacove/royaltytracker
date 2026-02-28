@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Building2, Copy, MailPlus, Shield, Users2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Copy, CreditCard, MailPlus, Shield, Users2 } from "lucide-react";
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
 
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkspaceSubscriptionState } from "@/hooks/useWorkspaceSubscriptionState";
 import { supabase } from "@/integrations/supabase/client";
 import type { OnboardingState } from "@/types/onboarding";
 
@@ -57,8 +60,25 @@ type SendInviteResponse = {
   auth_warning?: string | null;
 };
 
+type PartnerCodeResponseRow = {
+  company_id: string;
+  partner_code: string;
+  sponsor_months: number;
+  expires_at: string | null;
+};
+
+type GeneratedPartnerCode = {
+  companyId: string;
+  companyName: string;
+  partnerCode: string;
+  sponsorMonths: number;
+  expiresAt: string | null;
+  generatedAt: string;
+};
+
 const roleOptions = ["owner", "admin", "member", "viewer"];
 const expiryOptions = [7, 14, 30];
+const sponsorMonthOptions = [1, 3, 6, 12];
 
 async function resolveFunctionErrorMessage(error: unknown): Promise<string> {
   if (error instanceof FunctionsHttpError) {
@@ -101,8 +121,14 @@ function titleCaseStatus(value: string | null | undefined): string {
     .join(" ");
 }
 
+function toUsagePercent(value: number): string {
+  return `${Math.max(0, Math.round(value * 100))}%`;
+}
+
 export default function Company({ onboardingState, schemaReady, onCompanyUpdated }: CompanyProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const hasWorkspace = Boolean(onboardingState.companyId);
   const canManageWorkspace = useMemo(() => {
@@ -117,6 +143,14 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   const [loading, setLoading] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const [openingBillingPortal, setOpeningBillingPortal] = useState(false);
+
+  const {
+    state: subscriptionState,
+    loading: subscriptionLoading,
+    loaded: subscriptionLoaded,
+    refresh: refreshSubscriptionState,
+  } = useWorkspaceSubscriptionState(user?.id ?? null);
 
   const [workspaceName, setWorkspaceName] = useState(onboardingState.companyName ?? "");
   const [website, setWebsite] = useState(onboardingState.website ?? "");
@@ -132,9 +166,26 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   const [inviteRole, setInviteRole] = useState("member");
   const [inviteExpiryDays, setInviteExpiryDays] = useState(14);
 
-  const [workspaceMode, setWorkspaceMode] = useState<"existing" | "new">("existing");
+  const [platformTargetMode, setPlatformTargetMode] = useState<"current" | "existing" | "new">(
+    onboardingState.companyId ? "current" : "existing",
+  );
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(onboardingState.companyId ?? "");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [partnerCodeWorkspaceId, setPartnerCodeWorkspaceId] = useState(onboardingState.companyId ?? "");
+  const [partnerCodeMonths, setPartnerCodeMonths] = useState(3);
+  const [generatingPartnerCode, setGeneratingPartnerCode] = useState(false);
+  const [generatedPartnerCode, setGeneratedPartnerCode] = useState<GeneratedPartnerCode | null>(null);
+
+  const workspaceNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const workspace of globalWorkspaces) {
+      map.set(workspace.company_id, workspace.company_name);
+    }
+    if (onboardingState.companyId && onboardingState.companyName) {
+      map.set(onboardingState.companyId, onboardingState.companyName);
+    }
+    return map;
+  }, [globalWorkspaces, onboardingState.companyId, onboardingState.companyName]);
 
   useEffect(() => {
     setWorkspaceName(onboardingState.companyName ?? "");
@@ -145,7 +196,10 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     setMonthlyStatementVolume(onboardingState.monthlyStatementVolume ?? "");
     setPrimaryCmoCount(onboardingState.primaryCmoCount === null ? "" : String(onboardingState.primaryCmoCount));
     if (onboardingState.companyId) {
-      setSelectedWorkspaceId(onboardingState.companyId);
+      setSelectedWorkspaceId((current) => current || onboardingState.companyId || "");
+      setPartnerCodeWorkspaceId((current) => current || onboardingState.companyId || "");
+    } else {
+      setPlatformTargetMode((current) => (current === "current" ? "existing" : current));
     }
   }, [onboardingState]);
 
@@ -153,14 +207,24 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     if (!schemaReady) return;
     setLoading(true);
 
+    const emptyResult = Promise.resolve({ data: [], error: null });
+    const membersPromise = hasWorkspace ? (supabase as any).rpc("list_my_company_members") : emptyResult;
+    const invitesPromise = canManageWorkspace
+      ? onboardingState.isPlatformAdmin
+        ? (supabase as any).rpc("list_visible_partner_invitations", { p_limit: 100 })
+        : hasWorkspace
+          ? (supabase as any).rpc("list_my_company_invitations", { p_limit: 100 })
+          : emptyResult
+      : emptyResult;
+    const workspacesPromise = onboardingState.isPlatformAdmin ? (supabase as any).rpc("list_invitable_companies") : emptyResult;
+
+    const [membersResult, invitesResult, workspacesResult] = await Promise.all([
+      membersPromise,
+      invitesPromise,
+      workspacesPromise,
+    ]);
+
     if (hasWorkspace) {
-      const calls = [(supabase as any).rpc("list_my_company_members")] as Array<Promise<any>>;
-      if (canManageWorkspace) {
-        calls.push((supabase as any).rpc("list_my_company_invitations", { p_limit: 100 }));
-      }
-
-      const [membersResult, invitesResult] = await Promise.all(calls);
-
       if (membersResult?.error) {
         toast({
           title: "Could not load workspace members",
@@ -170,56 +234,49 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       } else {
         setMembers((membersResult?.data ?? []) as CompanyMember[]);
       }
+    } else {
+      setMembers([]);
+    }
 
-      if (canManageWorkspace) {
-        if (invitesResult?.error) {
-          toast({
-            title: "Could not load invitations",
-            description: invitesResult.error.message,
-            variant: "destructive",
-          });
-        } else {
-          setInvites((invitesResult?.data ?? []) as CompanyInvitation[]);
-        }
-      } else {
-        setInvites([]);
-      }
-
-      setGlobalWorkspaces([]);
-    } else if (onboardingState.isPlatformAdmin) {
-      const [workspacesResult, invitesResult] = await Promise.all([
-        (supabase as any).rpc("list_invitable_companies"),
-        (supabase as any).rpc("list_visible_partner_invitations", { p_limit: 100 }),
-      ]);
-
-      if (workspacesResult.error) {
-        toast({
-          title: "Could not load workspaces",
-          description: workspacesResult.error.message,
-          variant: "destructive",
-        });
-      } else {
-        const rows = (workspacesResult.data ?? []) as InvitableWorkspace[];
-        setGlobalWorkspaces(rows);
-        if (!selectedWorkspaceId && rows.length > 0) {
-          setSelectedWorkspaceId(rows[0].company_id);
-        }
-      }
-
-      if (invitesResult.error) {
+    if (canManageWorkspace) {
+      if (invitesResult?.error) {
         toast({
           title: "Could not load invitations",
           description: invitesResult.error.message,
           variant: "destructive",
         });
       } else {
-        setInvites((invitesResult.data ?? []) as CompanyInvitation[]);
+        setInvites((invitesResult?.data ?? []) as CompanyInvitation[]);
       }
-
-      setMembers([]);
     } else {
-      setMembers([]);
       setInvites([]);
+    }
+
+    if (onboardingState.isPlatformAdmin) {
+      if (workspacesResult?.error) {
+        toast({
+          title: "Could not load workspaces",
+          description: workspacesResult.error.message,
+          variant: "destructive",
+        });
+      } else {
+        const rows = (workspacesResult?.data ?? []) as InvitableWorkspace[];
+        setGlobalWorkspaces(rows);
+
+        const workspaceIds = new Set(rows.map((workspace) => workspace.company_id));
+        const preferredWorkspaceId =
+          onboardingState.companyId && workspaceIds.has(onboardingState.companyId)
+            ? onboardingState.companyId
+            : (rows[0]?.company_id ?? "");
+
+        if (!selectedWorkspaceId || !workspaceIds.has(selectedWorkspaceId)) {
+          setSelectedWorkspaceId(preferredWorkspaceId);
+        }
+        if (!partnerCodeWorkspaceId || !workspaceIds.has(partnerCodeWorkspaceId)) {
+          setPartnerCodeWorkspaceId(preferredWorkspaceId);
+        }
+      }
+    } else {
       setGlobalWorkspaces([]);
     }
 
@@ -332,6 +389,31 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       return;
     }
 
+    const shouldValidateCurrentWorkspaceLimits = !onboardingState.isPlatformAdmin || platformTargetMode === "current";
+
+    if (shouldValidateCurrentWorkspaceLimits && subscriptionLoaded && subscriptionState.needsActivation) {
+      toast({
+        title: "Workspace not active",
+        description: "Activate billing before inviting teammates.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      shouldValidateCurrentWorkspaceLimits &&
+      subscriptionLoaded &&
+      subscriptionState.seatLimit !== null &&
+      subscriptionState.seatsUsed >= subscriptionState.seatLimit
+    ) {
+      toast({
+        title: "Seat limit reached",
+        description: "Upgrade your plan to invite more members.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!inviteEmail.trim()) {
       toast({
         title: "Missing email",
@@ -348,10 +430,18 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       redirectTo: window.location.origin,
     };
 
-    if (hasWorkspace && onboardingState.companyId) {
-      payload.companyId = onboardingState.companyId;
-    } else if (onboardingState.isPlatformAdmin) {
-      if (workspaceMode === "existing") {
+    if (onboardingState.isPlatformAdmin) {
+      if (platformTargetMode === "current") {
+        if (!onboardingState.companyId) {
+          toast({
+            title: "No current workspace",
+            description: "Choose an existing workspace or create a new workspace target.",
+            variant: "destructive",
+          });
+          return;
+        }
+        payload.companyId = onboardingState.companyId;
+      } else if (platformTargetMode === "existing") {
         if (!selectedWorkspaceId) {
           toast({
             title: "Choose a workspace",
@@ -372,6 +462,8 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
         }
         payload.companyName = newWorkspaceName.trim();
       }
+    } else if (hasWorkspace && onboardingState.companyId) {
+      payload.companyId = onboardingState.companyId;
     }
 
     setSendingInvite(true);
@@ -421,7 +513,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     setInviteEmail("");
     setInviteRole("member");
     setInviteExpiryDays(14);
-    if (onboardingState.isPlatformAdmin && !hasWorkspace) {
+    if (onboardingState.isPlatformAdmin && platformTargetMode === "new") {
       setNewWorkspaceName("");
     }
 
@@ -429,9 +521,137 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     setSendingInvite(false);
   };
 
+  const handleGeneratePartnerCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!schemaReady) {
+      toast({
+        title: "Schema not ready",
+        description: "Apply latest migrations, then retry.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!onboardingState.isPlatformAdmin) {
+      toast({
+        title: "Permission denied",
+        description: "Only platform admins can generate sponsored partner codes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!partnerCodeWorkspaceId) {
+      toast({
+        title: "Choose a workspace",
+        description: "Select a workspace before generating a partner code.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGeneratingPartnerCode(true);
+
+    const { data, error } = await (supabase as any).rpc("create_workspace_partner_code", {
+      p_company_id: partnerCodeWorkspaceId,
+      p_sponsor_months: partnerCodeMonths,
+      p_expires_at: null,
+    });
+
+    if (error) {
+      toast({
+        title: "Partner code generation failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setGeneratingPartnerCode(false);
+      return;
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as PartnerCodeResponseRow | null;
+    const partnerCode = row?.partner_code;
+    if (!partnerCode) {
+      toast({
+        title: "Partner code generation failed",
+        description: "No partner code was returned.",
+        variant: "destructive",
+      });
+      setGeneratingPartnerCode(false);
+      return;
+    }
+
+    const workspaceName =
+      workspaceNameById.get(partnerCodeWorkspaceId) ??
+      (partnerCodeWorkspaceId === onboardingState.companyId ? onboardingState.companyName : null) ??
+      "Selected workspace";
+
+    setGeneratedPartnerCode({
+      companyId: partnerCodeWorkspaceId,
+      companyName: workspaceName,
+      partnerCode,
+      sponsorMonths: row?.sponsor_months ?? partnerCodeMonths,
+      expiresAt: row?.expires_at ?? null,
+      generatedAt: new Date().toISOString(),
+    });
+
+    try {
+      await navigator.clipboard.writeText(partnerCode);
+    } catch {
+      // non-fatal
+    }
+
+    toast({
+      title: "Partner code generated",
+      description: `Code copied to clipboard for ${workspaceName}.`,
+    });
+
+    setGeneratingPartnerCode(false);
+  };
+
+  const handleOpenBillingPortal = async () => {
+    setOpeningBillingPortal(true);
+    const { data, error } = await supabase.functions.invoke("create-billing-portal-session", {
+      body: {
+        return_url: `${window.location.origin}/workspace`,
+      },
+    });
+
+    if (error) {
+      toast({
+        title: "Billing portal unavailable",
+        description: error.message,
+        variant: "destructive",
+      });
+      setOpeningBillingPortal(false);
+      return;
+    }
+
+    const portalUrl = ((data ?? {}) as { portal_url?: string }).portal_url;
+    if (!portalUrl) {
+      toast({
+        title: "Billing portal unavailable",
+        description: "Portal URL was not returned.",
+        variant: "destructive",
+      });
+      setOpeningBillingPortal(false);
+      return;
+    }
+
+    window.location.assign(portalUrl);
+  };
+
   const roleBadgeLabel = onboardingState.isPlatformAdmin
     ? "Platform Admin"
     : titleCaseRole(onboardingState.activeMembershipRole);
+  const inviteTargetLabel =
+    !onboardingState.isPlatformAdmin || platformTargetMode === "current"
+      ? onboardingState.companyName ?? "Current workspace"
+      : platformTargetMode === "existing"
+        ? (workspaceNameById.get(selectedWorkspaceId) ?? "Select a workspace")
+        : newWorkspaceName.trim()
+          ? `New workspace: ${newWorkspaceName.trim()}`
+          : "New workspace (name required)";
 
   return (
     <div className="space-y-5">
@@ -450,6 +670,99 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
             <Badge variant="outline">{roleBadgeLabel}</Badge>
             {hasWorkspace && <Badge variant="outline">{members.length} Members</Badge>}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-border/60">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <CardTitle>Plan &amp; Billing</CardTitle>
+          </div>
+          <CardDescription>
+            Current subscription, usage limits, and billing actions for this workspace.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {subscriptionLoading || !subscriptionLoaded ? (
+            <p className="text-sm text-muted-foreground">Loading billing state...</p>
+          ) : !subscriptionState.companyId ? (
+            <p className="text-sm text-muted-foreground">Billing state is available after workspace membership is active.</p>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-sm border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">Plan</p>
+                  <p className="font-medium">
+                    {subscriptionState.planName ?? "Unassigned"}{" "}
+                    {subscriptionState.priceMonthlyCents > 0
+                      ? `($${(subscriptionState.priceMonthlyCents / 100).toFixed(0)}/mo)`
+                      : ""}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {titleCaseStatus(subscriptionState.effectiveSubscriptionStatus)}
+                  </p>
+                </div>
+                <div className="rounded-sm border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">Seats</p>
+                  <p className="font-medium">
+                    {subscriptionState.seatsUsed}
+                    {subscriptionState.seatLimit !== null ? ` / ${subscriptionState.seatLimit}` : ""}
+                  </p>
+                </div>
+                <div className="rounded-sm border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">Statements</p>
+                  <p className="font-medium">
+                    {subscriptionState.statementsUsed}
+                    {subscriptionState.statementsLimit !== null ? ` / ${subscriptionState.statementsLimit}` : ""}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.statementsUsageRatio)}</p>
+                </div>
+                <div className="rounded-sm border border-border/50 p-3">
+                  <p className="text-xs text-muted-foreground">AI Requests</p>
+                  <p className="font-medium">
+                    {subscriptionState.aiRequestsUsed}
+                    {subscriptionState.aiRequestsLimit !== null ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.aiUsageRatio)}</p>
+                </div>
+              </div>
+
+              {subscriptionState.sponsorExpiresAt && subscriptionState.effectiveSubscriptionStatus === "active_sponsored" && (
+                <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                  Partner sponsorship active through{" "}
+                  {new Date(subscriptionState.sponsorExpiresAt).toLocaleDateString()}. After this date, reactivate
+                  billing at $149/month to continue.
+                </div>
+              )}
+
+              {(subscriptionState.softLimitReached || subscriptionState.hardLimitReached) && (
+                <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                  Usage is near or above current limits. Upgrade to prevent operational friction as volume grows.
+                </div>
+              )}
+
+              <div className="flex flex-wrap gap-2">
+                {(subscriptionState.needsActivation || subscriptionState.effectiveSubscriptionStatus === "past_due") && (
+                  <Button onClick={() => navigate("/activate")}>Activate Workspace</Button>
+                )}
+                {!subscriptionState.needsActivation &&
+                  subscriptionState.effectiveSubscriptionStatus === "active_paid" &&
+                  subscriptionState.canManageBilling && (
+                    <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingBillingPortal}>
+                      {openingBillingPortal ? "Opening portal..." : "Manage Billing"}
+                    </Button>
+                  )}
+                <Button
+                  variant="ghost"
+                  onClick={() => void refreshSubscriptionState()}
+                  disabled={subscriptionLoading}
+                >
+                  Refresh Usage
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -589,12 +902,130 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
         </Card>
       </div>
 
+      {onboardingState.isPlatformAdmin && (
+        <Card className="border-border/60">
+          <CardHeader>
+            <CardTitle>Platform Admin Controls</CardTitle>
+            <CardDescription>
+              Cross-workspace visibility and partner sponsorship controls for onboarding new companies.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Workspace Directory</p>
+              {loading ? (
+                <p className="text-sm text-muted-foreground">Loading workspace list...</p>
+              ) : globalWorkspaces.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No workspaces found yet.</p>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {globalWorkspaces.map((workspace) => (
+                    <div key={workspace.company_id} className="rounded-sm border border-border/50 p-3">
+                      <p className="truncate font-medium">{workspace.company_name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{workspace.company_id}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 rounded-sm border border-border/50 p-4">
+              <p className="text-sm font-medium">Generate Partner Code</p>
+              <form className="space-y-3" onSubmit={handleGeneratePartnerCode}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="partnerCodeWorkspace">Workspace</Label>
+                    <select
+                      id="partnerCodeWorkspace"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={partnerCodeWorkspaceId}
+                      onChange={(event) => setPartnerCodeWorkspaceId(event.target.value)}
+                    >
+                      <option value="">Choose workspace...</option>
+                      {globalWorkspaces.map((workspace) => (
+                        <option key={workspace.company_id} value={workspace.company_id}>
+                          {workspace.company_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="sponsorMonths">Sponsor months</Label>
+                    <select
+                      id="sponsorMonths"
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={String(partnerCodeMonths)}
+                      onChange={(event) => setPartnerCodeMonths(Number(event.target.value))}
+                    >
+                      {sponsorMonthOptions.map((months) => (
+                        <option key={months} value={months}>
+                          {months} month{months > 1 ? "s" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <Button type="submit" variant="outline" disabled={generatingPartnerCode}>
+                  {generatingPartnerCode ? "Generating..." : "Generate Partner Code"}
+                </Button>
+              </form>
+
+              {generatedPartnerCode && (
+                <div className="space-y-2 rounded-sm border border-border/50 bg-background/60 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    {generatedPartnerCode.companyName} • {generatedPartnerCode.sponsorMonths} month sponsorship
+                  </p>
+                  <Input
+                    readOnly
+                    value={generatedPartnerCode.partnerCode}
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(generatedPartnerCode.partnerCode);
+                          toast({ title: "Partner code copied" });
+                        } catch {
+                          toast({
+                            title: "Copy failed",
+                            description: generatedPartnerCode.partnerCode,
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      <Copy className="mr-2 h-3 w-3" />
+                      Copy Code
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Generated {new Date(generatedPartnerCode.generatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {generatedPartnerCode.expiresAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Code expires {new Date(generatedPartnerCode.expiresAt).toLocaleString()}.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-border/60">
         <CardHeader>
           <CardTitle>Access & Invitations</CardTitle>
           <CardDescription>
             {canManageWorkspace
-              ? "Invite teammates and monitor invitation status."
+              ? onboardingState.isPlatformAdmin
+                ? "Invite users to your own workspace, any existing workspace, or a newly created workspace."
+                : "Invite teammates and monitor invitation status."
               : "Only workspace owners/admins can send invites."}
           </CardDescription>
         </CardHeader>
@@ -646,28 +1077,37 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                     ))}
                   </select>
                 </div>
-                {!hasWorkspace && onboardingState.isPlatformAdmin && (
+                {onboardingState.isPlatformAdmin && (
                   <>
                     <div className="space-y-2 md:col-span-2">
                       <Label>Workspace target</Label>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      <div className={`grid gap-2 ${hasWorkspace ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                        {hasWorkspace && (
+                          <Button
+                            type="button"
+                            variant={platformTargetMode === "current" ? "default" : "outline"}
+                            onClick={() => setPlatformTargetMode("current")}
+                          >
+                            Current workspace
+                          </Button>
+                        )}
                         <Button
                           type="button"
-                          variant={workspaceMode === "existing" ? "default" : "outline"}
-                          onClick={() => setWorkspaceMode("existing")}
+                          variant={platformTargetMode === "existing" ? "default" : "outline"}
+                          onClick={() => setPlatformTargetMode("existing")}
                         >
                           Existing workspace
                         </Button>
                         <Button
                           type="button"
-                          variant={workspaceMode === "new" ? "default" : "outline"}
-                          onClick={() => setWorkspaceMode("new")}
+                          variant={platformTargetMode === "new" ? "default" : "outline"}
+                          onClick={() => setPlatformTargetMode("new")}
                         >
                           New workspace
                         </Button>
                       </div>
                     </div>
-                    {workspaceMode === "existing" ? (
+                    {platformTargetMode === "existing" ? (
                       <div className="space-y-2 md:col-span-3">
                         <Label htmlFor="targetWorkspace">Select workspace</Label>
                         <select
@@ -683,8 +1123,11 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                             </option>
                           ))}
                         </select>
+                        {globalWorkspaces.length === 0 && (
+                          <p className="text-xs text-muted-foreground">No workspace records found yet.</p>
+                        )}
                       </div>
-                    ) : (
+                    ) : platformTargetMode === "new" ? (
                       <div className="space-y-2 md:col-span-3">
                         <Label htmlFor="newWorkspaceName">New workspace name</Label>
                         <Input
@@ -694,10 +1137,21 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                           placeholder="Nexus Music Publishing"
                         />
                       </div>
+                    ) : (
+                      <div className="space-y-2 md:col-span-3">
+                        <Label>Target workspace</Label>
+                        <div className="rounded-sm border border-border/50 p-3 text-sm">
+                          {onboardingState.companyName ?? "No current workspace selected"}
+                        </div>
+                      </div>
                     )}
                   </>
                 )}
               </div>
+
+              {onboardingState.isPlatformAdmin && (
+                <p className="text-xs text-muted-foreground">Invite target: {inviteTargetLabel}</p>
+              )}
 
               <Button type="submit" disabled={sendingInvite} className="w-full sm:w-auto">
                 <MailPlus className="mr-2 h-4 w-4" />

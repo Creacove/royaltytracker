@@ -55,3 +55,15 @@ verify_jwt = false
 
 [functions.send-partner-invite]
 verify_jwt = false
+
+[functions.request-access]
+verify_jwt = false
+
+[functions.create-billing-checkout-session]
+verify_jwt = false
+
+[functions.create-billing-portal-session]
+verify_jwt = false
+
+[functions.stripe-billing-webhook]
+verify_jwt = false

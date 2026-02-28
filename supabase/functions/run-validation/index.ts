@@ -161,6 +161,13 @@ serve(async (req) => {
       }
     }
 
+    const { data: usageData, error: usageError } = await supabase.rpc("record_workspace_usage_from_report", {
+      p_report_id: reportId,
+    });
+    if (usageError) {
+      throw new Error(`Failed to record workspace usage: ${usageError.message}`);
+    }
+
     return new Response(
       JSON.stringify({
         stage: "validation",
@@ -169,6 +176,7 @@ serve(async (req) => {
         quality_gate_status: qualityGateStatus,
         report_status: reportStatus,
         ingestion_status: ingestionStatus,
+        usage: usageData ?? [],
         metrics: {
           transactions: txCount,
           failed_transactions: failedTxCount,

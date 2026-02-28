@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkspaceSubscriptionState } from "@/hooks/useWorkspaceSubscriptionState";
 import { supabase } from "@/integrations/supabase/client";
 import type { OnboardingState } from "@/types/onboarding";
 
@@ -22,6 +23,7 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
   const { toast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
+  const { state: subscriptionState, loading: subscriptionLoading } = useWorkspaceSubscriptionState(userId);
 
   const [firstName, setFirstName] = useState(onboardingState.firstName);
   const [lastName, setLastName] = useState(onboardingState.lastName);
@@ -42,6 +44,12 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
   }, [location.hash, location.search]);
 
   const passwordResetRedirectTo = useMemo(() => `${window.location.origin}/settings?password_reset=1`, []);
+  const planBadgeLabel = useMemo(() => {
+    if (subscriptionLoading) return "Plan: ...";
+    const planName = subscriptionState.planName ?? "Inactive";
+    const status = subscriptionState.effectiveSubscriptionStatus.replaceAll("_", " ");
+    return `Plan: ${planName} (${status})`;
+  }, [subscriptionLoading, subscriptionState.effectiveSubscriptionStatus, subscriptionState.planName]);
 
   useEffect(() => {
     setFirstName(onboardingState.firstName);
@@ -221,6 +229,7 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
           </div>
           <div className="flex items-start justify-start gap-2 md:justify-end">
             <Badge variant="outline">{onboardingState.companyName ?? "No workspace"}</Badge>
+            <Badge variant="outline">{planBadgeLabel}</Badge>
           </div>
         </CardContent>
       </Card>

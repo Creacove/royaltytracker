@@ -5,10 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnboardingState } from "@/hooks/useOnboardingState";
+import { useWorkspaceSubscriptionState } from "@/hooks/useWorkspaceSubscriptionState";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import Company from "@/pages/Company";
 import Settings from "@/pages/Settings";
+import ActivateWorkspace from "@/pages/ActivateWorkspace";
 import Auth from "@/pages/Auth";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
@@ -33,6 +35,14 @@ function AppRoutes() {
     error: onboardingError,
     refresh: refreshOnboardingState,
   } = useOnboardingState(user?.id ?? null);
+  const {
+    state: subscriptionState,
+    loading: subscriptionLoading,
+    loaded: subscriptionLoaded,
+    schemaReady: subscriptionSchemaReady,
+    error: subscriptionError,
+    refresh: refreshSubscriptionState,
+  } = useWorkspaceSubscriptionState(user?.id ?? null);
 
   if (loading) {
     return (
@@ -67,10 +77,31 @@ function AppRoutes() {
     );
   }
 
-  const canManageInvites =
-    onboardingState.isPlatformAdmin ||
-    onboardingState.activeMembershipRole === "owner" ||
-    onboardingState.activeMembershipRole === "admin";
+  const hasWorkspaceMembership = onboardingState.hasActiveMembership && Boolean(onboardingState.companyId);
+  const enforceSubscriptionGate = hasWorkspaceMembership && !onboardingState.isPlatformAdmin;
+
+  if (enforceSubscriptionGate && (!subscriptionLoaded || subscriptionLoading)) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Checking subscription status...</p>
+      </div>
+    );
+  }
+
+  if (enforceSubscriptionGate && subscriptionSchemaReady && subscriptionError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-md border border-border/50 bg-card p-6 text-center">
+          <h1 className="font-display text-xl">Billing Check Failed</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{subscriptionError}</p>
+          <Button className="mt-4 w-full" onClick={() => void refreshSubscriptionState()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   if (!onboardingState.onboardingComplete && !onboardingState.isPlatformAdmin) {
     if (location.pathname !== "/onboarding") {
@@ -94,6 +125,20 @@ function AppRoutes() {
     return <Navigate to="/" replace />;
   }
 
+  const activationRoute = location.pathname.startsWith("/activate");
+  if (enforceSubscriptionGate) {
+    const hasResolvedSubscriptionState = subscriptionSchemaReady && Boolean(subscriptionState.companyId);
+    const shouldRequireActivation = !hasResolvedSubscriptionState || subscriptionState.needsActivation;
+
+    if (shouldRequireActivation && !activationRoute) {
+      return <Navigate to="/activate" replace />;
+    }
+
+    if (hasResolvedSubscriptionState && !subscriptionState.needsActivation && activationRoute) {
+      return <Navigate to="/" replace />;
+    }
+  }
+
   const routeMeta = resolveRouteMeta(location.pathname);
 
   return (
@@ -109,6 +154,16 @@ function AppRoutes() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/insights" element={<Insights />} />
         <Route path="/insights/:trackKey" element={<TrackInsightsDetail />} />
+        <Route
+          path="/activate"
+          element={
+            <ActivateWorkspace
+              onboardingState={onboardingState}
+              subscriptionState={subscriptionState}
+              refreshSubscriptionState={refreshSubscriptionState}
+            />
+          }
+        />
         <Route
           path="/workspace"
           element={

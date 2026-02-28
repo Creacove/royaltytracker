@@ -47,6 +47,13 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
+    test: (pathname) => pathname.startsWith("/activate"),
+    meta: {
+      title: "Activation",
+      subtitle: "Choose a plan or redeem a partner code to unlock workspace access.",
+    },
+  },
+  {
     test: (pathname) =>
       pathname.startsWith("/workspace") || pathname.startsWith("/company") || pathname.startsWith("/admin/invites"),
     meta: {
