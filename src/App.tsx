@@ -187,7 +187,7 @@ function AppRoutes() {
         />
         <Route path="/company" element={<Navigate to="/workspace" replace />} />
         <Route path="/admin/invites" element={<Navigate to="/workspace" replace />} />
-        <Route path="/validation" element={<Navigate to="/transactions?view=issues" replace />} />
+        <Route path="/validation" element={<Navigate to="/review-queue" replace />} />
         <Route path="/review-queue" element={<DataQualityQueue />} />
         <Route path="/quality-queue" element={<Navigate to="/review-queue" replace />} />
         <Route path="/analytics" element={<Navigate to="/insights" replace />} />

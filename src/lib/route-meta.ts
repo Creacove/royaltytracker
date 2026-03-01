@@ -22,7 +22,7 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     test: (pathname) => pathname.startsWith("/transactions"),
     meta: {
       title: "Transactions",
-      subtitle: "Transaction history and validation issues in one workspace.",
+      subtitle: "Explore normalized transaction history across CMOs and statements.",
     },
   },
   {

@@ -311,7 +311,7 @@ async function resolveEdgeFunctionError(error: unknown, data: unknown): Promise<
 export default function TrackInsightsDetail() {
   const params = useParams<{ trackKey: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const trackKey = decodeURIComponent(params.trackKey ?? "");
+  const trackKey = (params.trackKey ?? searchParams.get("track_key") ?? "").trim();
   const defaults = defaultDateRange();
   const todayDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const [hasExplicitScopeFromUrl] = useState(() => searchParams.has("from") || searchParams.has("to"));

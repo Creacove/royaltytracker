@@ -185,6 +185,14 @@ export default function Insights() {
   };
 
   useEffect(() => {
+    const sharedTrackKey = searchParams.get("track_key");
+    if (!sharedTrackKey) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("track_key");
+    navigate(`/insights/${encodeURIComponent(sharedTrackKey)}?${nextParams.toString()}`, { replace: true });
+  }, [navigate, searchParams]);
+
+  useEffect(() => {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set("from", fromDate);
@@ -193,9 +201,17 @@ export default function Insights() {
     }, { replace: true });
   }, [fromDate, toDate, setSearchParams]);
 
-  const copyShareLink = async (trackKey: string) => {
-    const params = new URLSearchParams({ from: fromDate, to: toDate });
-    const url = `${window.location.origin}/insights/${encodeURIComponent(trackKey)}?${params.toString()}`;
+  const buildTrackParams = (trackKey: string) =>
+    new URLSearchParams({ from: fromDate, to: toDate, track_key: trackKey });
+
+  const copyShareLink = async (row: TrackInsightListRow) => {
+    const params = buildTrackParams(row.track_key);
+    const currentUrl = new URL(window.location.href);
+    const basePath = currentUrl.pathname.replace(/\/+$/, "");
+    currentUrl.pathname = `${basePath}/${encodeURIComponent(row.track_key)}`;
+    currentUrl.search = params.toString();
+    currentUrl.hash = "";
+    const url = currentUrl.toString();
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: "Link copied", description: "Track insights link copied to clipboard." });
@@ -205,8 +221,18 @@ export default function Insights() {
   };
 
   const openTrack = (trackKey: string) => {
-    const params = new URLSearchParams({ from: fromDate, to: toDate });
-    navigate(`/insights/${encodeURIComponent(trackKey)}?${params.toString()}`);
+    const params = buildTrackParams(trackKey);
+    navigate(`${encodeURIComponent(trackKey)}?${params.toString()}`, { relative: "path" });
+  };
+
+  const openRelatedTransactions = (row: TrackInsightListRow) => {
+    const params = new URLSearchParams();
+    params.set("q", row.track_title || row.artist_name || row.isrc || "");
+    params.set("track_key", row.track_key);
+    params.set("track_title", row.track_title);
+    params.set("artist_name", row.artist_name);
+    if (row.isrc) params.set("isrc", row.isrc);
+    navigate(`/transactions?${params.toString()}`);
   };
 
   return (
@@ -380,7 +406,7 @@ export default function Insights() {
                           <div className="truncate font-medium underline-offset-2 hover:underline">{row.track_title}</div>
                           <div className="truncate text-xs text-muted-foreground">
                             {row.artist_name}
-                            {row.isrc ? ` • ${row.isrc}` : ""}
+                            {row.isrc ? ` - ${row.isrc}` : ""}
                           </div>
                         </div>
                       </TableCell>
@@ -411,7 +437,7 @@ export default function Insights() {
                             className="h-8 w-8 border border-border/35 bg-background/80 p-0 text-muted-foreground hover:text-foreground"
                             onClick={(event) => {
                               event.stopPropagation();
-                              copyShareLink(row.track_key);
+                              copyShareLink(row);
                             }}
                             title="Copy track link"
                             aria-label={`Copy link for ${row.track_title}`}
@@ -424,7 +450,7 @@ export default function Insights() {
                             className="h-8 w-8 border border-border/35 bg-background/80 p-0 text-muted-foreground hover:text-foreground"
                             onClick={(event) => {
                               event.stopPropagation();
-                              navigate(`/transactions?q=${encodeURIComponent(row.isrc ?? row.track_title)}`);
+                              openRelatedTransactions(row);
                             }}
                             title="Open related transactions"
                             aria-label={`Open transactions for ${row.track_title}`}
