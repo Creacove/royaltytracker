@@ -346,22 +346,15 @@ export default function Insights() {
               }
             />
           ) : (
-            <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-              <Table className="min-w-[1320px]">
+            <div className="min-w-0 overflow-x-auto overscroll-x-contain lg:overflow-x-visible">
+              <Table className="min-w-[760px] lg:min-w-0 lg:table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Track</TableHead>
-                    <TableHead>Artist</TableHead>
-                    <TableHead>ISRC / Key</TableHead>
+                    <TableHead className="w-[46%] min-w-[260px]">Track</TableHead>
                     <TableHead className="text-right">Net Revenue</TableHead>
-                    <TableHead className="text-right">Units</TableHead>
-                    <TableHead className="text-right">Revenue/Unit</TableHead>
                     <TableHead className="text-right">3-Month Trend</TableHead>
-                    <TableHead>Top Territory</TableHead>
-                    <TableHead>Top Platform</TableHead>
-                    <TableHead>Data Quality</TableHead>
-                    <TableHead className="text-right">Opportunity Score</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-right">Opportunity</TableHead>
+                    <TableHead className="w-[160px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -382,24 +375,19 @@ export default function Insights() {
                         }
                       }}
                     >
-                      <TableCell className="max-w-[220px] truncate font-medium underline-offset-2 hover:underline">
-                        {row.track_title}
+                      <TableCell className="max-w-[420px]">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium underline-offset-2 hover:underline">{row.track_title}</div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {row.artist_name}
+                            {row.isrc ? ` • ${row.isrc}` : ""}
+                          </div>
+                        </div>
                       </TableCell>
-                      <TableCell className="max-w-[180px] truncate">{row.artist_name}</TableCell>
-                      <TableCell className="font-mono text-xs">{row.isrc ?? row.track_key}</TableCell>
                       <TableCell className="text-right font-mono">{toMoney(row.net_revenue)}</TableCell>
-                      <TableCell className="text-right font-mono">{Math.round(row.quantity ?? 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{toMoney(row.net_per_unit)}</TableCell>
                       <TableCell className="text-right font-mono">
                         <span className={row.trend_3m_pct >= 0 ? "text-foreground" : "text-destructive"}>
                           {row.trend_3m_pct.toFixed(1)}%
-                        </span>
-                      </TableCell>
-                      <TableCell>{row.top_territory}</TableCell>
-                      <TableCell>{row.top_platform}</TableCell>
-                      <TableCell>
-                        <span className="font-mono text-xs uppercase">
-                          {row.quality_flag} ({row.failed_line_count + row.open_critical_task_count})
                         </span>
                       </TableCell>
                       <TableCell className="text-right font-mono">{row.opportunity_score.toFixed(1)}</TableCell>

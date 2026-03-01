@@ -722,7 +722,11 @@ export default function Reports() {
                       <Table className="min-w-[1480px]">
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Track</TableHead>
+                            <TableHead className="sticky left-0 z-30 w-[180px] min-w-[180px] max-w-[180px] bg-background pr-4">
+                              <span className="relative block after:pointer-events-none after:absolute after:-right-5 after:top-0 after:h-full after:w-5 after:bg-gradient-to-r after:from-background after:via-background/90 after:to-transparent">
+                                Track
+                              </span>
+                            </TableHead>
                             <TableHead>Artist</TableHead>
                             <TableHead>ISRC</TableHead>
                             <TableHead>ISWC</TableHead>
@@ -745,7 +749,11 @@ export default function Reports() {
                             const customProperties = readCustomProperties(tx);
                             return (
                               <TableRow key={tx.id}>
-                                <TableCell>{tx.track_title ?? "-"}</TableCell>
+                                <TableCell className="sticky left-0 z-20 w-[180px] min-w-[180px] max-w-[180px] bg-background pr-4">
+                                  <span className="relative block truncate after:pointer-events-none after:absolute after:-right-5 after:top-0 after:h-full after:w-5 after:bg-gradient-to-r after:from-background after:via-background/90 after:to-transparent">
+                                    {tx.track_title ?? "-"}
+                                  </span>
+                                </TableCell>
                                 <TableCell>{tx.artist_name ?? "-"}</TableCell>
                                 <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
                                 <TableCell className="font-mono text-xs">{tx.iswc ?? "-"}</TableCell>
