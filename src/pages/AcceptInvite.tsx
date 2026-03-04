@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Session } from "@supabase/supabase-js";
+import type { EmailOtpType, Session } from "@supabase/supabase-js";
 import { AlertCircle, Loader2, MailCheck, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,8 @@ type InviteUrlState = {
   accessToken: string | null;
   refreshToken: string | null;
   code: string | null;
-  verifyToken: string | null;
+  tokenHash: string | null;
+  rawToken: string | null;
   flowType: string | null;
   authError: string | null;
   authErrorDescription: string | null;
@@ -32,17 +33,19 @@ function parseInviteUrlState(): InviteUrlState {
   const accessToken = read("access_token");
   const refreshToken = read("refresh_token");
   const code = read("code");
-  const verifyToken = read("token") ?? read("token_hash");
+  const tokenHash = read("token_hash");
+  const rawToken = read("token");
   const flowType = read("type");
   const authError = read("error");
   const authErrorDescription = read("error_description");
   const invitedEmailHint = read("email");
 
   const hasAuthParams = Boolean(
-    accessToken ||
+      accessToken ||
       refreshToken ||
       code ||
-      verifyToken ||
+      tokenHash ||
+      rawToken ||
       flowType ||
       authError ||
       authErrorDescription,
@@ -52,7 +55,8 @@ function parseInviteUrlState(): InviteUrlState {
     accessToken,
     refreshToken,
     code,
-    verifyToken,
+    tokenHash,
+    rawToken,
     flowType,
     authError,
     authErrorDescription,
@@ -166,10 +170,34 @@ export default function AcceptInvite() {
         }
       }
 
-      if (urlState.verifyToken && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
+      if (urlState.tokenHash && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
+        const { data, error } = await supabase.auth.verifyOtp({
+          token_hash: urlState.tokenHash,
+          type: urlState.flowType as EmailOtpType,
+        });
+
+        if (error) {
+          const message = error.message.toLowerCase();
+          if (message.includes("expired") || message.includes("invalid")) {
+            failToRecovery(
+              "Invite token is invalid or expired. Enter your invited email to receive a fresh password setup link."
+            );
+            return;
+          }
+          failWithError(error.message);
+          return;
+        }
+
+        if (data.session) {
+          await handleSessionReady(data.session);
+          return;
+        }
+      }
+
+      if (urlState.rawToken && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
         redirectedToVerify = true;
         const verifyUrl = new URL("/auth/v1/verify", import.meta.env.VITE_SUPABASE_URL);
-        verifyUrl.searchParams.set("token", urlState.verifyToken);
+        verifyUrl.searchParams.set("token", urlState.rawToken);
         verifyUrl.searchParams.set("type", urlState.flowType);
         verifyUrl.searchParams.set("redirect_to", `${window.location.origin}/accept-invite`);
         window.location.replace(verifyUrl.toString());
