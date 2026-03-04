@@ -18,6 +18,10 @@ enable_confirmations = false
 max_frequency = "1m0s"
 otp_length = 8
 
+[auth.email.template.invite]
+subject = "You're invited to OrderSounds"
+content_path = "./supabase/templates/invite.html"
+
 [auth.mfa.totp]
 # Keep TOTP MFA available (was unintentionally disabled by a config push).
 enroll_enabled = true
