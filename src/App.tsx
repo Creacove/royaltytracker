@@ -53,11 +53,11 @@ function AppRoutes() {
     );
   }
 
-  if (!user) {
-    if (location.pathname === "/accept-invite") {
-      return <AcceptInvite />;
-    }
+  if (location.pathname === "/accept-invite") {
+    return <AcceptInvite />;
+  }
 
+  if (!user) {
     return <Auth />;
   }
 
@@ -85,7 +85,11 @@ function AppRoutes() {
   }
 
   const hasWorkspaceMembership = onboardingState.hasActiveMembership && Boolean(onboardingState.companyId);
-  const enforceSubscriptionGate = hasWorkspaceMembership && !onboardingState.isPlatformAdmin;
+  const canManageBilling =
+    onboardingState.isPlatformAdmin ||
+    onboardingState.activeMembershipRole === "owner" ||
+    onboardingState.activeMembershipRole === "admin";
+  const enforceSubscriptionGate = hasWorkspaceMembership && !onboardingState.isPlatformAdmin && canManageBilling;
 
   if (enforceSubscriptionGate && (!subscriptionLoaded || subscriptionLoading)) {
     return (
@@ -192,7 +196,7 @@ function AppRoutes() {
             />
           }
         />
-        <Route path="/accept-invite" element={<Navigate to="/" replace />} />
+        <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/company" element={<Navigate to="/workspace" replace />} />
         <Route path="/admin/invites" element={<Navigate to="/workspace" replace />} />
         <Route path="/validation" element={<Navigate to="/review-queue" replace />} />
