@@ -28,6 +28,9 @@ const queryClient = new QueryClient();
 function AppRoutes() {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
+  const searchParams = new URLSearchParams(location.search);
+  const isRecoveryFlow = hashParams.get("type") === "recovery" || searchParams.get("password_reset") === "1";
   const {
     state: onboardingState,
     loading: onboardingLoading,
@@ -115,11 +118,17 @@ function AppRoutes() {
   }
 
   if (!onboardingState.onboardingComplete && !onboardingState.isPlatformAdmin) {
-    if (location.pathname !== "/onboarding") {
+    if (isRecoveryFlow) {
+      if (location.pathname !== "/settings") {
+        return <Navigate to="/settings?password_reset=1" replace />;
+      }
+    } else if (location.pathname !== "/onboarding") {
       return <Navigate to="/onboarding" replace />;
     }
 
-    return <Onboarding initialState={onboardingState} onCompleted={refreshOnboardingState} />;
+    if (location.pathname === "/onboarding") {
+      return <Onboarding initialState={onboardingState} onCompleted={refreshOnboardingState} />;
+    }
   }
 
   if (!onboardingState.onboardingComplete && onboardingState.isPlatformAdmin) {

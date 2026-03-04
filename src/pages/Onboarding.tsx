@@ -54,6 +54,12 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
   }, [initialState]);
 
   const companyLocked = Boolean(initialState.companyId);
+  const effectiveWorkspaceRole = initialState.activeMembershipRole ?? initialState.pendingInvitationRole;
+  const canEditWorkspaceProfile = useMemo(() => {
+    if (initialState.isPlatformAdmin) return true;
+    if (!initialState.companyId) return true;
+    return effectiveWorkspaceRole === "owner" || effectiveWorkspaceRole === "admin";
+  }, [effectiveWorkspaceRole, initialState.companyId, initialState.isPlatformAdmin]);
   const inviteRole = useMemo(() => {
     if (!initialState.pendingInvitationRole) return null;
     return initialState.pendingInvitationRole.charAt(0).toUpperCase() + initialState.pendingInvitationRole.slice(1);
@@ -71,7 +77,7 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
       return;
     }
 
-    if (!companyLocked && !companyName.trim()) {
+    if (canEditWorkspaceProfile && !companyLocked && !companyName.trim()) {
       toast({
         title: "Workspace name required",
         description: "Enter your workspace name to finish onboarding.",
@@ -81,7 +87,7 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
     }
 
     const parsedCmoCount = primaryCmoCount.trim() === "" ? null : Number(primaryCmoCount);
-    if (parsedCmoCount !== null && (!Number.isInteger(parsedCmoCount) || parsedCmoCount < 0)) {
+    if (canEditWorkspaceProfile && parsedCmoCount !== null && (!Number.isInteger(parsedCmoCount) || parsedCmoCount < 0)) {
       toast({
         title: "Invalid CMO count",
         description: "Primary CMO count must be a whole number greater than or equal to 0.",
@@ -97,13 +103,13 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
       p_last_name: lastName.trim(),
       p_job_title: jobTitle.trim(),
       p_phone: phone.trim() || null,
-      p_company_name: companyName.trim() || null,
-      p_website: website.trim() || null,
-      p_country_code: countryCode.trim() || null,
+      p_company_name: canEditWorkspaceProfile ? companyName.trim() || null : null,
+      p_website: canEditWorkspaceProfile ? website.trim() || null : null,
+      p_country_code: canEditWorkspaceProfile ? countryCode.trim() || null : null,
       p_default_currency: defaultCurrency.trim() || "USD",
       p_timezone: timezone.trim() || "UTC",
-      p_monthly_statement_volume: monthlyStatementVolume || null,
-      p_primary_cmo_count: parsedCmoCount,
+      p_monthly_statement_volume: canEditWorkspaceProfile ? monthlyStatementVolume || null : null,
+      p_primary_cmo_count: canEditWorkspaceProfile ? parsedCmoCount : null,
     });
 
     if (error) {
@@ -214,100 +220,113 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">
-                    Publisher workspace
-                  </p>
+                {canEditWorkspaceProfile ? (
+                  <div className="space-y-3">
+                    <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">
+                      Publisher workspace
+                    </p>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="companyName">Workspace name</Label>
-                    <Input
-                      id="companyName"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      required={!companyLocked}
-                      disabled={companyLocked}
-                    />
-                    {companyLocked && (
-                      <p className="text-xs text-muted-foreground">
-                        Workspace name is fixed by your invitation and cannot be changed here.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="website">Website</Label>
+                      <Label htmlFor="companyName">Workspace name</Label>
                       <Input
-                        id="website"
-                        value={website}
-                        onChange={(e) => setWebsite(e.target.value)}
-                        placeholder="https://"
+                        id="companyName"
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        required={!companyLocked}
+                        disabled={companyLocked}
+                      />
+                      {companyLocked && (
+                        <p className="text-xs text-muted-foreground">
+                          Workspace name is fixed by your invitation and cannot be changed here.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="website">Website</Label>
+                        <Input
+                          id="website"
+                          value={website}
+                          onChange={(e) => setWebsite(e.target.value)}
+                          placeholder="https://"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="countryCode">Country (ISO code)</Label>
+                        <Input
+                          id="countryCode"
+                          value={countryCode}
+                          onChange={(e) => setCountryCode(e.target.value)}
+                          placeholder="US"
+                          maxLength={3}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="defaultCurrency">Default currency</Label>
+                        <Input
+                          id="defaultCurrency"
+                          value={defaultCurrency}
+                          onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
+                          placeholder="USD"
+                          maxLength={3}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="timezone">Timezone</Label>
+                        <Input
+                          id="timezone"
+                          value={timezone}
+                          onChange={(e) => setTimezone(e.target.value)}
+                          placeholder="UTC"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Monthly statement volume</Label>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {statementVolumeOptions.map((option) => (
+                          <Button
+                            key={option.value}
+                            type="button"
+                            variant={monthlyStatementVolume === option.value ? "default" : "outline"}
+                            className="justify-start"
+                            onClick={() => setMonthlyStatementVolume(option.value)}
+                          >
+                            {option.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="primaryCmoCount">Primary CMO relationships</Label>
+                      <Input
+                        id="primaryCmoCount"
+                        type="number"
+                        min={0}
+                        value={primaryCmoCount}
+                        onChange={(e) => setPrimaryCmoCount(e.target.value)}
+                        placeholder="Example: 6"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="countryCode">Country (ISO code)</Label>
-                      <Input
-                        id="countryCode"
-                        value={countryCode}
-                        onChange={(e) => setCountryCode(e.target.value)}
-                        placeholder="US"
-                        maxLength={3}
-                      />
-                    </div>
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="defaultCurrency">Default currency</Label>
-                      <Input
-                        id="defaultCurrency"
-                        value={defaultCurrency}
-                        onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
-                        placeholder="USD"
-                        maxLength={3}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="timezone">Timezone</Label>
-                      <Input
-                        id="timezone"
-                        value={timezone}
-                        onChange={(e) => setTimezone(e.target.value)}
-                        placeholder="UTC"
-                      />
-                    </div>
+                ) : (
+                  <div className="space-y-2 rounded-md border border-border/50 bg-muted/20 p-4">
+                    <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Workspace access</p>
+                    <p className="text-sm">
+                      You are joining <span className="font-medium">{companyName || "your workspace"}</span> as{" "}
+                      <span className="font-medium">{inviteRole ?? "member"}</span>.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Workspace profile settings are managed by owners/admins and are not editable during member onboarding.
+                    </p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Monthly statement volume</Label>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      {statementVolumeOptions.map((option) => (
-                        <Button
-                          key={option.value}
-                          type="button"
-                          variant={monthlyStatementVolume === option.value ? "default" : "outline"}
-                          className="justify-start"
-                          onClick={() => setMonthlyStatementVolume(option.value)}
-                        >
-                          {option.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="primaryCmoCount">Primary CMO relationships</Label>
-                    <Input
-                      id="primaryCmoCount"
-                      type="number"
-                      min={0}
-                      value={primaryCmoCount}
-                      onChange={(e) => setPrimaryCmoCount(e.target.value)}
-                      placeholder="Example: 6"
-                    />
-                  </div>
-                </div>
+                )}
 
                 <Button type="submit" className="w-full" disabled={submitting}>
                   {submitting ? "Finalizing..." : "Enter Workspace"}
