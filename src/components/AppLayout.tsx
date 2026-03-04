@@ -75,11 +75,12 @@ function AppLayoutContent({
     <>
       <Sidebar className="border-r border-sidebar-border/60 bg-sidebar" collapsible="offcanvas">
         <SidebarHeader className="gap-3 border-b border-sidebar-border/60 px-4 py-4">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-sm border border-border/50 bg-background">
-              <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain p-0.5" />
-            </div>
-            <span className="brand-wordmark text-base leading-none text-foreground">OrderSounds</span>
+          <Link to="/" className="flex items-center">
+            <img
+              src="/ordersounds-logo.png"
+              alt="OrderSounds"
+              className="h-7 w-auto object-contain"
+            />
           </Link>
           <p className="type-micro text-[10px] text-muted-foreground">
             Forensic Royalty Workspace

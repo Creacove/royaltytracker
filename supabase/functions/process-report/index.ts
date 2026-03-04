@@ -997,6 +997,8 @@ function normalizeRow(row: TransactionRow): TransactionRow {
 
 // ─── Validation ──────────────────────────────────────────────────────
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 interface ValidationError {
   row_index: number;
   error_type: string;
@@ -1065,6 +1067,63 @@ function validateRows(
         });
       }
     }
+
+    // Currency missing: revenue data exists but no currency code
+    const hasRevenue =
+      r.gross_revenue != null || r.net_revenue != null ||
+      r.amount_original != null || r.amount_reporting != null;
+    const hasCurrency =
+      (r.currency_original && r.currency_original.length > 0) ||
+      (r.currency_reporting && r.currency_reporting.length > 0) ||
+      (r.currency && r.currency.length > 0);
+    if (hasRevenue && !hasCurrency) {
+      errors.push({
+        row_index: i,
+        error_type: "currency_missing",
+        expected: null,
+        actual: null,
+        deviation: null,
+        severity: "warning",
+        field: "currency",
+        message: "Revenue data present but no currency code found.",
+      });
+    }
+
+    // Period validation
+    if (r.period_start && r.period_end) {
+      const start = new Date(r.period_start).getTime();
+      const end = new Date(r.period_end).getTime();
+      if (!isNaN(start) && !isNaN(end) && start > end) {
+        errors.push({
+          row_index: i,
+          error_type: "period_inversion",
+          expected: null,
+          actual: null,
+          deviation: null,
+          severity: "warning",
+          field: "period_start",
+          message: `Period start (${r.period_start}) is after period end (${r.period_end}).`,
+        });
+      }
+    }
+
+    // Period year out-of-range
+    for (const [field, dateStr] of [["period_start", r.period_start], ["period_end", r.period_end]]) {
+      if (!dateStr) continue;
+      const year = new Date(dateStr as string).getFullYear();
+      if (!isNaN(year) && (year < 2000 || year > CURRENT_YEAR + 1)) {
+        errors.push({
+          row_index: i,
+          error_type: "period_year_out_of_range",
+          expected: null,
+          actual: year,
+          deviation: null,
+          severity: "warning",
+          field: field as string,
+          message: `${field} year ${year} is outside the expected range (2000–${CURRENT_YEAR + 1}).`,
+        });
+      }
+    }
   }
 
   const criticalRows = new Set(
@@ -1084,6 +1143,12 @@ function mapValidationErrorToTaskType(errorType: string): string {
       return "revenue_math_mismatch";
     case "negative_value":
       return "numeric_outlier";
+    case "currency_missing":
+      return "currency_missing";
+    case "period_inversion":
+      return "period_mismatch";
+    case "period_year_out_of_range":
+      return "period_year_out_of_range";
     default:
       return "other";
   }
@@ -1610,7 +1675,7 @@ serve(async (req) => {
         rawRows = extractedItems
           .map((item) => ({
             source_page: item.source_page,
-            source_row: item.item_index,
+            item_index: item.item_index,
             ocr_confidence: item.ocr_confidence ?? 0,
             track_title: item.track_title,
             track_artist: item.track_artist ?? item.release_artist,
@@ -1716,7 +1781,7 @@ serve(async (req) => {
       const { error: emptyUpdateErr } = await supabase
         .from("cmo_reports")
         .update({
-          status: "processing",
+          status: "completed_passed", // Changed from "processing" to "completed_passed"
           quality_gate_status: "needs_review",
           processed_at: new Date().toISOString(),
           transaction_count: 0,
@@ -1731,7 +1796,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
-          status: "processing",
+          status: "completed_passed", // Changed from "processing" to "completed_passed"
           message: noDataMessage,
           transactions: 0,
         }),
@@ -1917,7 +1982,7 @@ serve(async (req) => {
         normalizeCurrencyCode(r.currency_reporting) ??
         normalizeCurrencyCode(r.currency_original) ??
         normalizeCurrencyCode(r.currency) ??
-        "USD",
+        null,
       period_start: r.period_start || null,
       period_end: r.period_end || null,
       source_page: r.source_page ?? null,
@@ -2007,38 +2072,47 @@ serve(async (req) => {
 
       console.log(`[process-report] Inserted ${errorRecords.length} validation errors`);
 
-      // Link review tasks to source_rows for provenance tracking (Audit Reference & Source Evidence)
-      const reviewTasks = validationErrors.map((e) => {
-        const mappedTaskType = mapValidationErrorToTaskType(e.error_type);
-        const payload = {
-          error_type: e.error_type,
+      // Group errors by row_index so one multi-error row gets ONE task with a full errors[] array.
+      const errorsByRow = new Map<number, ValidationError[]>();
+      for (const e of validationErrors) {
+        const bucket = errorsByRow.get(e.row_index) ?? [];
+        bucket.push(e);
+        errorsByRow.set(e.row_index, bucket);
+      }
+
+      const reviewTasks = Array.from(errorsByRow.entries()).map(([rowIdx, rowErrors]) => {
+        const primary = rowErrors[0];
+        const worstSeverity = rowErrors.some((e) => e.severity === "critical") ? "critical" : "warning";
+        const mappedTaskType = mapValidationErrorToTaskType(primary.error_type);
+        const serializedErrors = rowErrors.map((e) => ({
+          type: e.error_type,
           field: e.field,
           actual: e.actual,
           expected: e.expected,
-          row_index: e.row_index,
-          source_page: normalizedRows[e.row_index]?.source_page ?? null,
-          transaction_id: insertedTransactionIds[e.row_index] ?? null,
-          errors: [
-            {
-              type: e.error_type,
-              field: e.field,
-              actual: e.actual,
-              expected: e.expected,
-              severity: e.severity,
-              message: e.message,
-            },
-          ],
+          severity: e.severity,
+          message: e.message,
+        }));
+        const payload = {
+          error_type: primary.error_type,
+          field: primary.field,
+          actual: primary.actual,
+          expected: primary.expected,
+          row_index: rowIdx,
+          source_page: normalizedRows[rowIdx]?.source_page ?? null,
+          transaction_id: insertedTransactionIds[rowIdx] ?? null,
+          errors: serializedErrors,
         };
-
         return {
           report_id,
           user_id: report.user_id,
-          source_row_id: insertedSourceRowIds[e.row_index] ?? null, // Link to source_row for provenance
+          source_row_id: insertedSourceRowIds[rowIdx] ?? null,
           source_field_id: null,
           task_type: mappedTaskType,
-          severity: e.severity === "critical" ? "critical" : "warning",
+          severity: worstSeverity,
           status: "open",
-          reason: e.message,
+          reason: rowErrors.length > 1
+            ? `${rowErrors.length} issues on this row (${rowErrors.map((e) => e.error_type).join(", ")})`
+            : primary.message,
           payload,
         };
       });
@@ -2049,7 +2123,7 @@ serve(async (req) => {
         if (taskErr) throw new Error(`Review task insert failed: ${taskErr.message}`);
       }
 
-      console.log(`[process-report] Inserted ${reviewTasks.length} review tasks`);
+      console.log(`[process-report] Inserted ${reviewTasks.length} row-grouped review tasks (from ${validationErrors.length} errors`);
     }
 
     // 10.5 Insert mapping unresolved tasks for each unique unmapped header
@@ -2087,7 +2161,7 @@ serve(async (req) => {
     }
 
 
-    // 11. Update report with results
+    // 11. Compute final quality gate and update report with results
     const totalRevenue = normalizedRows.reduce(
       (sum, r) => sum + (r.gross_revenue ?? 0),
       0
@@ -2107,21 +2181,30 @@ serve(async (req) => {
       let winner: string | null = null;
       let max = -1;
       for (const [code, count] of counts.entries()) {
-        if (count > max) {
-          max = count;
-          winner = code;
-        }
+        if (count > max) { max = count; winner = code; }
       }
       return winner;
     })();
     const pageCount = lane === "structured" ? 1 : document?.pages?.length ?? 0;
 
+    // Determine final status from actual error counts (not a hardcoded default)
+    const openTaskCount = validationErrors.length;  // every validation error produces a task
+    const hasCritical = validationErrors.some((e) => e.severity === "critical");
+    const qualityGateStatus: "passed" | "needs_review" | "failed" =
+      hasCritical ? "failed" : openTaskCount > 0 ? "needs_review" : "passed";
+    const reportFinalStatus: "completed_passed" | "completed_with_warnings" | "needs_review" =
+      hasCritical
+        ? "needs_review"
+        : openTaskCount > 0
+          ? "completed_with_warnings"
+          : "completed_passed";
+
     {
       const { error: reportUpdateErr } = await supabase
         .from("cmo_reports")
         .update({
-          status: "processing",
-          quality_gate_status: "needs_review",
+          status: reportFinalStatus,
+          quality_gate_status: qualityGateStatus,
           processed_at: new Date().toISOString(),
           transaction_count: transactions.length,
           accuracy_score: Math.round(accuracy * 100) / 100,
@@ -2138,7 +2221,8 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        status: "processing",
+        status: reportFinalStatus,
+        quality_gate: qualityGateStatus,
         transactions: transactions.length,
         errors: validationErrors.length,
         accuracy: Math.round(accuracy * 100) / 100,

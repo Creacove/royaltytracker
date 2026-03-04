@@ -130,9 +130,7 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-[1200px] overflow-hidden rounded-md border border-border/50 md:grid-cols-[1.05fr_1fr]">
         <section className="relative hidden border-r border-border/50 bg-[linear-gradient(145deg,hsl(var(--brand-accent-ghost))/80,transparent_72%)] p-8 md:flex md:flex-col md:justify-between">
           <div className="space-y-6">
-            <div className="flex h-14 w-14 items-center justify-center rounded-sm border border-border bg-background p-1">
-              <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
-            </div>
+            <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />
             <div className="space-y-2">
               <h1 className="font-display text-4xl leading-none tracking-[0.04em]">Partner Onboarding</h1>
               <p className="text-sm text-muted-foreground">

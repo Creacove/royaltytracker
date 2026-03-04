@@ -112,9 +112,7 @@ export default function Auth() {
 
           {/* Header Section (Hidden on mobile to focus purely on the graphic as a background) */}
           <div className="relative z-10 space-y-8 hidden lg:block">
-            <div className="flex h-12 w-12 items-center justify-center bg-background rounded-sm border border-border shadow-sm p-1">
-              <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
-            </div>
+            <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />
 
             <div className="space-y-4">
               <h1 className="type-display-hero text-5xl leading-[0.9] tracking-tighter text-primary">
@@ -230,8 +228,8 @@ export default function Auth() {
         <section className="relative flex items-center justify-center p-4 md:p-8 z-20 col-start-1 row-start-1 lg:col-start-2 lg:row-start-1 bg-transparent">
           <Card className="w-full max-w-md border border-border/40 lg:border-0 bg-background/85 lg:bg-transparent shadow-2xl lg:shadow-none backdrop-blur-xl lg:backdrop-blur-none transition-all duration-500">
             <CardHeader className="text-center pt-8 lg:pt-6">
-              <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-sm border border-border bg-background p-1 lg:hidden shadow-sm">
-                <img src="/ordersounds-logo.png" alt="OrderSounds logo" className="h-full w-full object-contain" />
+              <div className="mx-auto mb-5 flex items-center justify-center lg:hidden">
+                <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />
               </div>
               <CardTitle className="text-3xl">Workspace Access</CardTitle>
               <CardDescription>Sign in with your invited organization credentials.</CardDescription>
