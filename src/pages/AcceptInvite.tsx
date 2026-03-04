@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, Loader2, MailCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-type AcceptStatus = "processing" | "invalid" | "error";
+type AcceptStatus = "processing" | "setup_password" | "error";
 
 function parseAuthParams() {
   const hashParams = new URLSearchParams(window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash);
@@ -21,9 +24,13 @@ function parseAuthParams() {
 
 export default function AcceptInvite() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [{ hasAuthParams, flowType }] = useState(() => parseAuthParams());
   const [status, setStatus] = useState<AcceptStatus>("processing");
   const [detail, setDetail] = useState("Verifying your invite and creating a secure session.");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [sendingSetupLink, setSendingSetupLink] = useState(false);
+  const passwordResetRedirectTo = useMemo(() => `${window.location.origin}/settings?password_reset=1`, []);
 
   const flowLabel = useMemo(() => {
     if (!flowType) return "Invitation";
@@ -58,8 +65,10 @@ export default function AcceptInvite() {
           return;
         }
 
-        setStatus("invalid");
-        setDetail("Invite link is missing required authentication parameters.");
+        setStatus("setup_password");
+        setDetail(
+          "This invite link did not include a sign-in token. Enter the invited email and we will send a secure password setup link."
+        );
         return;
       }
 
@@ -82,8 +91,8 @@ export default function AcceptInvite() {
       }
 
       if (cancelled) return;
-      setStatus("invalid");
-      setDetail("Invite link is invalid, expired, or already used. Ask your workspace admin to resend it.");
+      setStatus("setup_password");
+      setDetail("Invite token is invalid or expired. Enter the invited email to receive a fresh password setup link.");
     };
 
     void resolveInviteSession();
@@ -93,6 +102,37 @@ export default function AcceptInvite() {
       subscription.unsubscribe();
     };
   }, [hasAuthParams, navigate]);
+
+  const handleSendSetupLink = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Enter the invited email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSendingSetupLink(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: passwordResetRedirectTo,
+    });
+    setSendingSetupLink(false);
+
+    if (error) {
+      setStatus("error");
+      setDetail(error.message);
+      return;
+    }
+
+    toast({
+      title: "Password setup link sent",
+      description: "Check your inbox, set your password, then sign in to continue onboarding.",
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 flex items-center justify-center">
@@ -108,16 +148,37 @@ export default function AcceptInvite() {
             )}
           </div>
           <CardTitle>
-            {status === "processing" ? "Accepting Invite" : status === "error" ? "Invite Error" : "Invite Not Available"}
+            {status === "processing" ? "Accepting Invite" : status === "error" ? "Invite Error" : "Set Your Password"}
           </CardTitle>
           <CardDescription>{flowLabel} flow</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 text-center">
           <p className="text-sm text-muted-foreground">{detail}</p>
 
+          {status === "setup_password" && (
+            <form onSubmit={handleSendSetupLink} className="space-y-3 text-left">
+              <div className="space-y-2">
+                <Label htmlFor="invite-email">Invited email</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  placeholder="you@company.com"
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={sendingSetupLink}>
+                {sendingSetupLink ? "Sending..." : "Send Password Setup Link"}
+              </Button>
+            </form>
+          )}
+
           {status !== "processing" && (
             <div className="flex items-center justify-center gap-2">
-              <Button onClick={() => navigate("/", { replace: true })}>Go To Sign In</Button>
+              <Button variant={status === "setup_password" ? "ghost" : "default"} onClick={() => navigate("/", { replace: true })}>
+                Go To Sign In
+              </Button>
             </div>
           )}
         </CardContent>
