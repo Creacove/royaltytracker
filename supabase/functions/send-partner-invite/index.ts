@@ -144,8 +144,13 @@ serve(async (req) => {
     const role = normalizeRole((body as Record<string, unknown>).role);
     const companyId = asString((body as Record<string, unknown>).companyId);
     const companyName = asString((body as Record<string, unknown>).companyName);
-    const redirectTo = asString((body as Record<string, unknown>).redirectTo);
     const expiresInDays = normalizeExpiresInDays((body as Record<string, unknown>).expiresInDays);
+
+    // Always resolve a redirectTo pointing at /accept-invite so invite email
+    // links land on the correct page. Callers can override this explicitly.
+    const siteUrl = Deno.env.get("SITE_URL") ?? Deno.env.get("VITE_APP_URL") ?? "";
+    const rawRedirectTo = asString((body as Record<string, unknown>).redirectTo);
+    const redirectTo = rawRedirectTo ?? (siteUrl ? `${siteUrl}/accept-invite` : null);
 
     if (!email) {
       return jsonResponse({ error: "Invite email is required." }, 400);

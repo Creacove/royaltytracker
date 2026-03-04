@@ -30,7 +30,12 @@ function AppRoutes() {
   const location = useLocation();
   const hashParams = new URLSearchParams(location.hash.startsWith("#") ? location.hash.slice(1) : location.hash);
   const searchParams = new URLSearchParams(location.search);
-  const isRecoveryFlow = hashParams.get("type") === "recovery" || searchParams.get("password_reset") === "1";
+  // Recovery from Settings page (password reset → /settings?password_reset=1).
+  // Note: recovery from the invite page redirects back to /accept-invite which
+  // handles itself — we must NOT intercept it here.
+  const isRecoveryFlow =
+    location.pathname !== "/accept-invite" &&
+    (hashParams.get("type") === "recovery" || searchParams.get("password_reset") === "1");
   const {
     state: onboardingState,
     loading: onboardingLoading,
@@ -119,9 +124,13 @@ function AppRoutes() {
 
   if (!onboardingState.onboardingComplete && !onboardingState.isPlatformAdmin) {
     if (isRecoveryFlow) {
+      // Password reset from Settings — let them through to /settings
       if (location.pathname !== "/settings") {
         return <Navigate to="/settings?password_reset=1" replace />;
       }
+    } else if (location.pathname === "/accept-invite") {
+      // /accept-invite handles its own onboarding inline — let it through
+      return <AcceptInvite />;
     } else if (location.pathname !== "/onboarding") {
       return <Navigate to="/onboarding" replace />;
     }
