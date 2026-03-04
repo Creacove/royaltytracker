@@ -55,7 +55,7 @@ async function sendNotificationEmail(
   }
 
   const toEmail = Deno.env.get("ACCESS_REQUEST_TO_EMAIL") ?? "ordersoundsapp@gmail.com";
-  const fromEmail = Deno.env.get("ACCESS_REQUEST_FROM_EMAIL") ?? "OrderSounds <onboarding@ordersounds.app>";
+  const fromEmail = Deno.env.get("ACCESS_REQUEST_FROM_EMAIL") ?? "OrderSounds <onboarding@ordersounds.com>";
 
   const subject = `New OrderSounds access request: ${payload.fullName}`;
   const safeName = escapeHtml(payload.fullName);

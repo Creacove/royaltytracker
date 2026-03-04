@@ -19,6 +19,7 @@ import DataQualityQueue from "@/pages/DataQualityQueue";
 import Insights from "@/pages/Insights";
 import TrackInsightsDetail from "@/pages/TrackInsightsDetail";
 import Onboarding from "@/pages/Onboarding";
+import AcceptInvite from "@/pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
 import { resolveRouteMeta } from "@/lib/route-meta";
 
@@ -52,7 +53,13 @@ function AppRoutes() {
     );
   }
 
-  if (!user) return <Auth />;
+  if (!user) {
+    if (location.pathname === "/accept-invite") {
+      return <AcceptInvite />;
+    }
+
+    return <Auth />;
+  }
 
   if (!onboardingLoaded || onboardingLoading) {
     return (
@@ -185,6 +192,7 @@ function AppRoutes() {
             />
           }
         />
+        <Route path="/accept-invite" element={<Navigate to="/" replace />} />
         <Route path="/company" element={<Navigate to="/workspace" replace />} />
         <Route path="/admin/invites" element={<Navigate to="/workspace" replace />} />
         <Route path="/validation" element={<Navigate to="/review-queue" replace />} />

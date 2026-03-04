@@ -4,9 +4,9 @@ project_id = "vdzuypxdueelmkrwvyet"
 # Dev-friendly auth: disable email confirmations so signup can immediately sign in.
 # For production, re-enable confirmations and configure SMTP.
 # Used for auth redirects (password recovery, magic links, etc.).
-# Keep this aligned with the frontend dev server origin.
-site_url = "http://localhost:8080"
-additional_redirect_urls = ["http://localhost:8080"]
+# Keep this aligned with live app origins and local dev.
+site_url = "https://desk.ordersounds.com"
+additional_redirect_urls = ["http://localhost:8080/**", "https://desk.ordersounds.com/**"]
 enable_signup = false
 
 [auth.email]

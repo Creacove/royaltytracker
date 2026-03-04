@@ -449,7 +449,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       email: inviteEmail.trim(),
       role: inviteRole,
       expiresInDays: inviteExpiryDays,
-      redirectTo: window.location.origin,
+      redirectTo: `${window.location.origin}/accept-invite`,
     };
 
     if (onboardingState.isPlatformAdmin) {
