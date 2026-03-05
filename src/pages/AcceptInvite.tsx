@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, useRef, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import {
@@ -107,7 +107,14 @@ export default function AcceptInvite() {
   const [urlState] = useState<InviteUrlState>(() => parseInviteUrlState());
 
   // ── Step state ──────────────────────────────────────────────────────────
-  const [step, setStep] = useState<AcceptStep>("processing");
+  const [step, setStepState] = useState<AcceptStep>("processing");
+  const currentStepRef = useRef<AcceptStep>("processing");
+
+  const setStep = (newStep: AcceptStep) => {
+    currentStepRef.current = newStep;
+    setStepState(newStep);
+  };
+
   const [detail, setDetail] = useState("Verifying your invite and creating a secure session.");
   const [sessionRef, setSessionRef] = useState<Session | null>(null);
 
@@ -179,7 +186,13 @@ export default function AcceptInvite() {
       if (isInviteFlow) {
         // Load onboarding state to pre-fill profile and understand workspace context
         await loadOnboardingStateForProfile();
-        if (!cancelled) setStep("set_password");
+
+        // GUARD: Only move to set_password if we are currently in processing.
+        // This prevents the auth state change (triggered by updateUser) from
+        // resetting the wizard back to the password step after success.
+        if (!cancelled && currentStepRef.current === "processing") {
+          setStep("set_password");
+        }
         return;
       }
 
@@ -207,7 +220,7 @@ export default function AcceptInvite() {
         setWebsite(state.website ?? "");
         setCountryCode(state.country_code ?? "");
         setDefaultCurrency(state.default_currency ?? "USD");
-        setTimezone(state.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+        setTimezone(state.timezone ?? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"));
         setMonthlyStatementVolume(state.monthly_statement_volume ?? "");
         setPrimaryCmoCount(state.primary_cmo_count == null ? "" : String(state.primary_cmo_count));
 
@@ -257,25 +270,42 @@ export default function AcceptInvite() {
       }
 
       // 3. OTP token_hash (email OTP / invite links with token_hash param)
-      //    IMPORTANT: Supabase inviteUserByEmail generates type="email" OTP links,
-      //    NOT type="invite". Passing type="invite" to verifyOtp is wrong and will fail.
       if (urlState.tokenHash && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
-        // Map "invite" flowType to "email" which is the correct OTP type for Supabase invite links
-        const otpType = urlState.flowType === "invite" ? "email" : urlState.flowType;
-        const { data, error } = await supabase.auth.verifyOtp({
-          token_hash: urlState.tokenHash,
-          type: otpType as any,
-        });
-        if (error) {
-          const msg = error.message.toLowerCase();
-          if (msg.includes("expired") || msg.includes("invalid")) {
-            failToRecovery("Invite link has expired or is no longer valid. Enter your email to receive a new invite link.");
+        const normalizedType = urlState.flowType.toLowerCase();
+        const otpTypes =
+          normalizedType === "invite"
+            ? ["invite", "email"]
+            : normalizedType === "email"
+              ? ["email", "invite"]
+              : [normalizedType];
+
+        let lastOtpError: string | null = null;
+        for (const otpType of otpTypes) {
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: urlState.tokenHash,
+            type: otpType as any,
+          });
+
+          if (!error && data.session) {
+            await handleSessionReady(data.session);
             return;
           }
-          failWithError(error.message);
+
+          if (!error) continue;
+
+          lastOtpError = error.message;
+          const message = error.message.toLowerCase();
+          const tokenIssue = message.includes("expired") || message.includes("invalid");
+          if (!tokenIssue) {
+            failWithError(error.message);
+            return;
+          }
+        }
+
+        if (lastOtpError) {
+          failToRecovery("Invite link has expired or is no longer valid. Enter your email to receive a new invite link.");
           return;
         }
-        if (data.session) { await handleSessionReady(data.session); return; }
       }
 
       // 4. Raw token → redirect through Supabase verify endpoint
@@ -412,10 +442,8 @@ export default function AcceptInvite() {
   };
 
   // ─── Recovery: resend invite link ─────────────────────────────────────────
-  // Instead of triggering a password-reset flow (which sends a different link
-  // to /settings), we call the send-partner-invite function with resend intent.
-  // If that fails (e.g. no invitation record), fall back to resetPasswordForEmail
-  // pointed back at /accept-invite (not /settings) so the UX stays consistent.
+  // Recovery sends a fresh auth link back to /accept-invite so users can
+  // re-enter this wizard without being redirected into Settings.
   const handleResendInviteLink = async (event: FormEvent) => {
     event.preventDefault();
     const email = recoveryEmail.trim().toLowerCase();
@@ -499,8 +527,8 @@ export default function AcceptInvite() {
                   <div className="flex flex-col items-center gap-0.5">
                     <div
                       className={`h-1.5 w-12 rounded-full transition-colors ${idx <= activeProgressIdx
-                          ? "bg-primary"
-                          : "bg-border"
+                        ? "bg-primary"
+                        : "bg-border"
                         }`}
                     />
                     <span className="text-[10px] text-muted-foreground">{s.label}</span>
