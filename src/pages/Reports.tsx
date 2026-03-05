@@ -1,8 +1,9 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Tables } from "@/integrations/supabase/types";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -92,6 +93,7 @@ export default function Reports() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [cmoName, setCmoName] = useState("");
   const [reportPeriod, setReportPeriod] = useState("");
@@ -219,6 +221,21 @@ export default function Reports() {
   }, [filteredReports]);
 
   const uploadStep = !file ? 1 : cmoName.trim() || reportPeriod.trim() || notes.trim() ? 3 : 2;
+  const hasAnyReports = reports.length > 0;
+  const emptyReportDescription = hasAnyReports
+    ? "No statements match your current filters."
+    : "Upload your first statement to unlock Overview and Statement Reviews.";
+
+  useEffect(() => {
+    if (searchParams.get("setup") !== "upload-first") return;
+    toast({
+      title: "Upload your first statement",
+      description: "Overview and Statement Reviews unlock after your first upload.",
+    });
+    const next = new URLSearchParams(searchParams);
+    next.delete("setup");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, toast]);
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
@@ -578,7 +595,7 @@ export default function Reports() {
                 <EmptyStateBlock
                   icon={<FileText className="h-10 w-10" />}
                   title="No documents found"
-                  description="No statements match your current filters."
+                  description={emptyReportDescription}
                 />
               )}
             </TabsContent>
@@ -655,7 +672,7 @@ export default function Reports() {
                 <EmptyStateBlock
                   icon={<FileText className="h-10 w-10" />}
                   title="No documents found"
-                  description="No statements match your current filters."
+                  description={emptyReportDescription}
                 />
               )}
             </TabsContent>
@@ -705,7 +722,10 @@ export default function Reports() {
                         : null,
                     ],
                     ["Status", selectedReport.status],
-                    ["Accuracy", selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null],
+                    [
+                      "System Confidence Score",
+                      selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null,
+                    ],
                     ["Error Count", selectedReport.error_count?.toLocaleString()],
                     ["Notes", selectedReport.notes],
                   ].map(([label, value]) => (

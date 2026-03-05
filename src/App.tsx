@@ -1,13 +1,14 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useOnboardingState } from "@/hooks/useOnboardingState";
 import { useWorkspaceSubscriptionState } from "@/hooks/useWorkspaceSubscriptionState";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import Company from "@/pages/Company";
 import Settings from "@/pages/Settings";
 import ActivateWorkspace from "@/pages/ActivateWorkspace";
@@ -52,6 +53,22 @@ function AppRoutes() {
     error: subscriptionError,
     refresh: refreshSubscriptionState,
   } = useWorkspaceSubscriptionState(user?.id ?? null);
+  const {
+    data: reportCount = 0,
+    isLoading: reportCountLoading,
+    isError: reportCountErrored,
+  } = useQuery({
+    queryKey: ["workspace-report-count", user?.id],
+    enabled: Boolean(user?.id),
+    queryFn: async (): Promise<number> => {
+      const { count, error } = await supabase
+        .from("cmo_reports")
+        .select("id", { count: "exact", head: true });
+      if (error) throw error;
+      return count ?? 0;
+    },
+    staleTime: 30_000,
+  });
 
   if (loading) {
     return (
@@ -97,7 +114,12 @@ function AppRoutes() {
     onboardingState.isPlatformAdmin ||
     onboardingState.activeMembershipRole === "owner" ||
     onboardingState.activeMembershipRole === "admin";
+  const activationRoute = location.pathname.startsWith("/activate");
   const enforceSubscriptionGate = hasWorkspaceMembership && !onboardingState.isPlatformAdmin && canManageBilling;
+
+  if (activationRoute && !canManageBilling) {
+    return <Navigate to="/" replace />;
+  }
 
   if (enforceSubscriptionGate && (!subscriptionLoaded || subscriptionLoading)) {
     return (
@@ -154,7 +176,35 @@ function AppRoutes() {
     return <Navigate to="/" replace />;
   }
 
-  const activationRoute = location.pathname.startsWith("/activate");
+  const hasAnyUploads = reportCountErrored ? true : reportCount > 0;
+  const isReviewRoute =
+    location.pathname === "/review-queue" ||
+    location.pathname === "/validation" ||
+    location.pathname === "/quality-queue";
+  const shouldGateForFirstUpload =
+    onboardingState.onboardingComplete &&
+    !onboardingState.isPlatformAdmin &&
+    !hasAnyUploads &&
+    (location.pathname === "/" || isReviewRoute);
+
+  if (
+    onboardingState.onboardingComplete &&
+    !onboardingState.isPlatformAdmin &&
+    !hasAnyUploads &&
+    reportCountLoading
+  ) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Checking workspace data...</p>
+      </div>
+    );
+  }
+
+  if (shouldGateForFirstUpload) {
+    return <Navigate to="/reports?setup=upload-first" replace />;
+  }
+
   if (enforceSubscriptionGate) {
     const hasResolvedSubscriptionState = subscriptionSchemaReady && Boolean(subscriptionState.companyId);
     const shouldRequireActivation = !hasResolvedSubscriptionState || subscriptionState.needsActivation;
@@ -176,9 +226,10 @@ function AppRoutes() {
       companyName={onboardingState.companyName}
       companyRole={onboardingState.activeMembershipRole}
       isPlatformAdmin={onboardingState.isPlatformAdmin}
+      hasAnyUploads={hasAnyUploads}
     >
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={hasAnyUploads ? <Dashboard /> : <Navigate to="/reports?setup=upload-first" replace />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/insights" element={<Insights />} />
@@ -217,9 +268,18 @@ function AppRoutes() {
         <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/company" element={<Navigate to="/workspace" replace />} />
         <Route path="/admin/invites" element={<Navigate to="/workspace" replace />} />
-        <Route path="/validation" element={<Navigate to="/review-queue" replace />} />
-        <Route path="/review-queue" element={<DataQualityQueue />} />
-        <Route path="/quality-queue" element={<Navigate to="/review-queue" replace />} />
+        <Route
+          path="/validation"
+          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports?setup=upload-first"} replace />}
+        />
+        <Route
+          path="/review-queue"
+          element={hasAnyUploads ? <DataQualityQueue /> : <Navigate to="/reports?setup=upload-first" replace />}
+        />
+        <Route
+          path="/quality-queue"
+          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports?setup=upload-first"} replace />}
+        />
         <Route path="/analytics" element={<Navigate to="/insights" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

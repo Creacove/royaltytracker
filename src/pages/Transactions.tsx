@@ -186,6 +186,7 @@ export default function Transactions() {
     const tracks = new Set(filteredTransactions.map((tx) => tx.track_title).filter(Boolean)).size;
     return { gross, net, qty, tracks };
   }, [filteredTransactions]);
+  const noTransactionsAvailable = transactions.length === 0;
 
   const grouped = useMemo(() => {
     if (groupMode === "line") return null;
@@ -457,7 +458,9 @@ export default function Transactions() {
                 icon={<ArrowRightLeft className="h-10 w-10" />}
                 title="No transactions found"
                 description={
-                  hasTrackDeepLink
+                  noTransactionsAvailable
+                    ? "Upload and process your first statement to unlock transactions."
+                    : hasTrackDeepLink
                     ? "No transaction rows match this linked track in the current scope."
                     : "No transaction rows match your current filters."
                 }
@@ -494,7 +497,11 @@ export default function Transactions() {
             <EmptyStateBlock
               icon={<ArrowRightLeft className="h-10 w-10" />}
               title="No grouped data"
-              description="No grouped transaction rows are available for this scope."
+              description={
+                noTransactionsAvailable
+                  ? "Upload and process your first statement to unlock grouped transaction views."
+                  : "No grouped transaction rows are available for this scope."
+              }
             />
           )}
         </CardContent>

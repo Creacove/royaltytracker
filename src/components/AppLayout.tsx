@@ -22,11 +22,11 @@ import {
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Overview" },
-  { to: "/reports", icon: Upload, label: "Statements" },
-  { to: "/insights", icon: BarChart3, label: "Insights" },
-  { to: "/review-queue", icon: ShieldAlert, label: "Statement Reviews" },
-  { to: "/transactions", icon: ArrowRightLeft, label: "Transactions" },
+  { to: "/", icon: LayoutDashboard, label: "Overview", requiresUploads: true },
+  { to: "/reports", icon: Upload, label: "Statements", requiresUploads: false },
+  { to: "/insights", icon: BarChart3, label: "Insights", requiresUploads: false },
+  { to: "/review-queue", icon: ShieldAlert, label: "Statement Reviews", requiresUploads: true },
+  { to: "/transactions", icon: ArrowRightLeft, label: "Transactions", requiresUploads: false },
 ];
 
 type AppLayoutProps = {
@@ -35,6 +35,7 @@ type AppLayoutProps = {
   companyName?: string | null;
   companyRole?: string | null;
   isPlatformAdmin?: boolean;
+  hasAnyUploads?: boolean;
 };
 
 function formatRole(role: string | null | undefined) {
@@ -48,6 +49,7 @@ function AppLayoutContent({
   companyName,
   companyRole,
   isPlatformAdmin = false,
+  hasAnyUploads = true,
 }: AppLayoutProps) {
   const { signOut } = useAuth();
   const location = useLocation();
@@ -71,11 +73,13 @@ function AppLayoutContent({
     }
   }, [isMobile, location.pathname, setOpenMobile]);
 
+  const visibleNavItems = navItems.filter((item) => hasAnyUploads || !item.requiresUploads);
+
   return (
     <>
       <Sidebar className="border-r border-sidebar-border/60 bg-sidebar" collapsible="offcanvas">
         <SidebarHeader className="gap-3 border-b border-sidebar-border/60 px-4 py-4">
-          <Link to="/" className="flex items-center">
+          <Link to={hasAnyUploads ? "/" : "/reports"} className="flex items-center">
             <img
               src="/ordersounds-logo.png"
               alt="OrderSounds"
@@ -113,7 +117,7 @@ function AppLayoutContent({
 
         <SidebarContent className="px-2 py-3">
           <SidebarMenu>
-            {navItems.map(({ to, icon: Icon, label }) => {
+            {visibleNavItems.map(({ to, icon: Icon, label }) => {
               const active =
                 to === "/"
                   ? location.pathname === "/"

@@ -206,69 +206,75 @@ serve(async (req) => {
       redirectTo: redirectTo ?? undefined,
     });
 
+    let shouldGenerateManualLink = false;
+
     if (authInviteError) {
       const inferred = inferAuthStatus(authInviteError.message ?? "");
       if (inferred === "already_exists") {
         authStatus = "already_exists";
         deliveryStatus = "already_exists";
         deliveryError = authInviteError.message ?? null;
+        shouldGenerateManualLink = true;
       } else {
         deliveryError = authInviteError.message ?? null;
         authWarning = authInviteError.message ?? "Invite email delivery failed.";
         authStatus = "manual_link";
         deliveryStatus = "manual_link_ready";
+        shouldGenerateManualLink = true;
       }
     }
 
-    const { link, errorMessage: linkErrorMessage } = await generateReusableInviteLink(
-      serviceClient,
-      email,
-      redirectTo,
-      authStatus === "already_exists",
-    );
+    if (shouldGenerateManualLink) {
+      const { link, errorMessage: linkErrorMessage } = await generateReusableInviteLink(
+        serviceClient,
+        email,
+        redirectTo,
+        authStatus === "already_exists",
+      );
 
-    if (!link) {
-      if (deliveryStatus === "manual_link_ready") {
-        deliveryStatus = "email_failed_link_failed";
-      }
+      if (!link) {
+        if (deliveryStatus === "manual_link_ready") {
+          deliveryStatus = "email_failed_link_failed";
+        }
 
-      deliveryError = [deliveryError, linkErrorMessage].filter(Boolean).join(" | ");
+        deliveryError = [deliveryError, linkErrorMessage].filter(Boolean).join(" | ");
 
-      const { error: persistFailureError } = await serviceClient
-        .from("partner_invitations")
-        .update({
-          auth_delivery_status: deliveryStatus,
-          auth_delivery_error: deliveryError,
-          latest_invite_link: null,
-          latest_invite_link_generated_at: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", invitationId);
+        const { error: persistFailureError } = await serviceClient
+          .from("partner_invitations")
+          .update({
+            auth_delivery_status: deliveryStatus,
+            auth_delivery_error: deliveryError,
+            latest_invite_link: null,
+            latest_invite_link_generated_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", invitationId);
 
-      if (persistFailureError) {
-        return jsonResponse(
-          {
-            error:
-              `Auth invite failed and link generation failed. ` +
-              `Also failed to persist invitation status: ${persistFailureError.message}`,
-          },
-          500,
-        );
-      }
+        if (persistFailureError) {
+          return jsonResponse(
+            {
+              error:
+                `Auth invite failed and link generation failed. ` +
+                `Also failed to persist invitation status: ${persistFailureError.message}`,
+            },
+            500,
+          );
+        }
 
-      if (deliveryStatus === "email_failed_link_failed") {
-        return jsonResponse(
-          {
-            error:
-              `Auth invite failed: ${authInviteError?.message ?? "Unknown error"}. ` +
-              `Fallback link failed: ${linkErrorMessage ?? "Unknown link error"}`,
-          },
-          500,
-        );
+        if (deliveryStatus === "email_failed_link_failed") {
+          return jsonResponse(
+            {
+              error:
+                `Auth invite failed: ${authInviteError?.message ?? "Unknown error"}. ` +
+                `Fallback link failed: ${linkErrorMessage ?? "Unknown link error"}`,
+            },
+            500,
+          );
+        }
+      } else {
+        manualInviteLink = link;
       }
     }
-
-    manualInviteLink = link;
 
     const { error: persistError } = await serviceClient
       .from("partner_invitations")

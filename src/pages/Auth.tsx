@@ -159,7 +159,7 @@ export default function Auth() {
                       <p className="type-display-section mt-1 text-lg text-brand-accent truncate">+€45k</p>
                     </div>
                     <div className="rounded-sm border border-border/40 bg-background px-3 py-2.5 shadow-sm min-w-0">
-                      <p className="type-micro text-[9px] uppercase tracking-widest text-muted-foreground truncate">Accuracy</p>
+                      <p className="type-micro text-[9px] uppercase tracking-widest text-muted-foreground truncate">System Confidence</p>
                       <p className="type-display-section mt-1 text-lg text-primary truncate">99.8%</p>
                     </div>
                   </div>

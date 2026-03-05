@@ -87,6 +87,7 @@ type GeneratedPartnerCode = {
 type PlatformTargetMode = "current" | "existing" | "new";
 
 const roleOptions = ["owner", "admin", "member", "viewer"];
+const bootstrapRoleOptions = ["owner", "admin"];
 const expiryOptions = [7, 14, 30];
 const sponsorMonthOptions = [1, 3, 6, 12];
 
@@ -224,6 +225,16 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       setActiveSection("overview");
     }
   }, [activeSection, onboardingState.isPlatformAdmin]);
+
+  useEffect(() => {
+    if (
+      onboardingState.isPlatformAdmin &&
+      platformTargetMode === "new" &&
+      !bootstrapRoleOptions.includes(inviteRole)
+    ) {
+      setInviteRole("owner");
+    }
+  }, [inviteRole, onboardingState.isPlatformAdmin, platformTargetMode]);
 
   const loadWorkspaceData = async () => {
     if (!schemaReady) return;
@@ -445,6 +456,19 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       return;
     }
 
+    if (
+      onboardingState.isPlatformAdmin &&
+      platformTargetMode === "new" &&
+      !bootstrapRoleOptions.includes(inviteRole)
+    ) {
+      toast({
+        title: "Owner/admin role required",
+        description: "The first invite for a new workspace must be Owner or Admin.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload: Record<string, unknown> = {
       email: inviteEmail.trim(),
       role: inviteRole,
@@ -533,7 +557,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
     }
 
     setInviteEmail("");
-    setInviteRole("member");
+    setInviteRole(onboardingState.isPlatformAdmin && platformTargetMode === "new" ? "owner" : "member");
     setInviteExpiryDays(14);
     if (onboardingState.isPlatformAdmin && platformTargetMode === "new") {
       setNewWorkspaceName("");
@@ -763,7 +787,9 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                   <CardTitle>Plan &amp; Billing</CardTitle>
                 </div>
                 <CardDescription>
-                  Current subscription, usage limits, and billing actions for this workspace.
+                  {subscriptionState.canManageBilling
+                    ? "Current subscription, usage limits, and billing actions for this workspace."
+                    : "Billing is managed by workspace owners/admins."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -772,6 +798,10 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                 ) : !subscriptionState.companyId ? (
                   <p className="text-sm text-muted-foreground">
                     Billing state is available after workspace membership is active.
+                  </p>
+                ) : !subscriptionState.canManageBilling ? (
+                  <p className="text-sm text-muted-foreground">
+                    Your role does not manage billing for this workspace. Contact an owner/admin for billing actions.
                   </p>
                 ) : (
                   <>
@@ -832,7 +862,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
 
                     <div className="flex flex-wrap gap-2">
                       {(subscriptionState.needsActivation ||
-                        subscriptionState.effectiveSubscriptionStatus === "past_due") && (
+                        subscriptionState.effectiveSubscriptionStatus === "past_due") && subscriptionState.canManageBilling && (
                         <Button onClick={() => navigate("/activate")}>Activate Workspace</Button>
                       )}
                       {!subscriptionState.needsActivation &&
@@ -1146,13 +1176,21 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                       <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
-                      {roleOptions.map((value) => (
+                      {(onboardingState.isPlatformAdmin && platformTargetMode === "new"
+                        ? bootstrapRoleOptions
+                        : roleOptions
+                      ).map((value) => (
                         <SelectItem key={value} value={value}>
                           {titleCaseRole(value)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {onboardingState.isPlatformAdmin && platformTargetMode === "new" && (
+                    <p className="text-xs text-muted-foreground">
+                      First invite into a new workspace must be Owner or Admin.
+                    </p>
+                  )}
                 </div>
               </div>
 

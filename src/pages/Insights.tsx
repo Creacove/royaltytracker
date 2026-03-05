@@ -356,7 +356,7 @@ export default function Insights() {
                   ? `No tracks match ${fromDate} to ${toDate} with current filters.`
                   : nonFailedReportCount > 0
                     ? "Reports exist, but no normalized transaction rows are available yet for insights."
-                    : "No tracks match the selected filter scope."
+                    : "Upload and process your first statement to unlock insights."
               }
               action={
                 hasAnyTransactions ? (

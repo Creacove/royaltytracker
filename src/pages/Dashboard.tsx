@@ -612,7 +612,7 @@ export default function Dashboard() {
           />
         </div>
         <div>
-          <p className="type-nav text-xs text-muted-foreground">Avg Extraction Accuracy</p>
+          <p className="type-nav text-xs text-muted-foreground">Avg System Confidence Score</p>
           <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
           <Progress
             value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
@@ -849,7 +849,7 @@ export default function Dashboard() {
                       <TableHead className="text-right">Docs</TableHead>
                       <TableHead className="text-right">Lines</TableHead>
                       <TableHead className="text-right">Net</TableHead>
-                      <TableHead className="text-right">Accuracy</TableHead>
+                      <TableHead className="text-right">Confidence</TableHead>
                       <TableHead>Top Territory</TableHead>
                       <TableHead>Top Platform</TableHead>
                       <TableHead>Last Upload</TableHead>
