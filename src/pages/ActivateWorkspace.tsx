@@ -220,7 +220,7 @@ export default function ActivateWorkspace({
         </CardContent>
       </Card>
 
-      {!subscriptionState.canManageBilling && (
+      {!(subscriptionState.canManageBilling || onboardingState.activeMembershipRole === "owner" || onboardingState.activeMembershipRole === "admin" || onboardingState.isPlatformAdmin) && (
         <Card className="border-border/60">
           <CardHeader>
             <CardTitle>Billing access required</CardTitle>
@@ -236,7 +236,7 @@ export default function ActivateWorkspace({
         </Card>
       )}
 
-      {subscriptionState.canManageBilling && (
+      {(subscriptionState.canManageBilling || onboardingState.activeMembershipRole === "owner" || onboardingState.activeMembershipRole === "admin" || onboardingState.isPlatformAdmin) && (
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             {PLAN_CATALOG.map((plan) => {
