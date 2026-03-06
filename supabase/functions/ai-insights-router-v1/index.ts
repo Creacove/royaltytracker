@@ -212,6 +212,367 @@ function normalizeArtistKey(artistName: string): string {
   return `artist:${normalized || "unknown artist"}`;
 }
 
+type WorkspaceArtistRollup = {
+  artist_name: string;
+  gross_revenue: number;
+  net_revenue: number;
+  quantity: number;
+  track_count: number;
+};
+
+function topNFromQuestion(question: string, fallback = 5): number {
+  const match = question.toLowerCase().match(/\btop\s+(\d{1,2})\b/);
+  if (!match) return fallback;
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(20, parsed));
+}
+
+function buildWorkspaceArtistRollup(rows: InsightRow[]): WorkspaceArtistRollup[] {
+  const map = new Map<string, WorkspaceArtistRollup>();
+  const trackSets = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const artist = (row.artist_name || "Unknown Artist").trim() || "Unknown Artist";
+    if (!map.has(artist)) {
+      map.set(artist, {
+        artist_name: artist,
+        gross_revenue: 0,
+        net_revenue: 0,
+        quantity: 0,
+        track_count: 0,
+      });
+      trackSets.set(artist, new Set<string>());
+    }
+    const item = map.get(artist)!;
+    item.gross_revenue += row.gross_revenue || 0;
+    item.net_revenue += row.net_revenue || 0;
+    item.quantity += row.quantity || 0;
+    trackSets.get(artist)!.add(row.track_key);
+  }
+  for (const [artist, set] of trackSets.entries()) {
+    const item = map.get(artist);
+    if (item) item.track_count = set.size;
+  }
+  return Array.from(map.values());
+}
+
+function parseArtistNeedle(question: string): string | null {
+  const q = question.trim();
+  const patterns = [
+    /\b(?:gross|net)?\s*revenue\s+(?:made\s+)?(?:by|from|for)\s+(.+)$/i,
+    /\bhow\s+much\s+has\s+(.+?)\s+made\b/i,
+    /\bhow\s+much\s+did\s+(.+?)\s+make\b/i,
+  ];
+  for (const p of patterns) {
+    const m = q.match(p);
+    if (!m) continue;
+    const candidate = m[1]
+      .replace(/[?.!,]+$/g, "")
+      .replace(/\b(?:in|on|for)\s+this\s+catalogue\b/gi, "")
+      .replace(/\b(?:catalogue|catalog)\b/gi, "")
+      .trim();
+    if (candidate.length >= 2) return candidate;
+  }
+  return null;
+}
+
+function isArtistRevenueQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  return /\b(revenue|made|make|earn|money|royalt|gross|net)\b/.test(q);
+}
+
+function buildDeterministicFallbackResponse({
+  mode,
+  question,
+  fromDate,
+  toDate,
+  rows,
+  scopedRows,
+  resolvedEntities,
+  conversationId,
+}: {
+  mode: AiInsightsMode;
+  question: string;
+  fromDate: string;
+  toDate: string;
+  rows: InsightRow[];
+  scopedRows: InsightRow[];
+  resolvedEntities: EntityContext;
+  conversationId?: string;
+}) {
+  const safeScopedRows = scopedRows.length > 0 ? scopedRows : topByNet(rows, 12);
+  const totalNet = safeScopedRows.reduce((sum, row) => sum + (row.net_revenue || 0), 0);
+  const totalQty = safeScopedRows.reduce((sum, row) => sum + (row.quantity || 0), 0);
+  const avgTrend = safeScopedRows.length
+    ? safeScopedRows.reduce((sum, row) => sum + (row.trend_3m_pct || 0), 0) / safeScopedRows.length
+    : 0;
+  const topItem = topByNet(safeScopedRows, 1)[0];
+  const confidence = inferConfidence(safeScopedRows);
+  const modeLabel = mode === "track" ? "track" : mode === "artist" ? "artist" : "workspace";
+
+  const executiveAnswer =
+    mode === "track" && topItem
+      ? `${topItem.track_title} by ${topItem.artist_name} generated ${compactMoney(totalNet)} in the selected range.`
+      : mode === "artist" && resolvedEntities.artist_name
+        ? `${resolvedEntities.artist_name} generated ${compactMoney(totalNet)} across ${safeScopedRows.length} tracks in scope.`
+        : `Your workspace generated ${compactMoney(totalNet)} across ${safeScopedRows.length} prioritized tracks in scope.`;
+
+  const whyThisMatters =
+    avgTrend >= 0
+      ? `Momentum is positive (${avgTrend.toFixed(1)}% avg trend), so act now on top performers to compound growth.`
+      : `Momentum is soft (${avgTrend.toFixed(1)}% avg trend), so prioritize recovery actions on leakage and quality risks.`;
+
+  const visualRows = topByNet(safeScopedRows, 8).map((row) => ({
+    track: row.track_title,
+    artist: row.artist_name,
+    net_revenue: Number((row.net_revenue || 0).toFixed(2)),
+    trend_3m_pct: Number((row.trend_3m_pct || 0).toFixed(1)),
+  }));
+
+  const followUp = mode === "track"
+    ? [
+      "Which territories are underperforming for this track?",
+      "What quality blockers are reducing payout confidence?",
+      "Show platform-specific trend changes for this track.",
+    ]
+    : mode === "artist"
+      ? [
+        "Which tracks contribute most to this artist's net revenue?",
+        "Where is this artist losing money by territory?",
+        "Which tracks need review attention first?",
+      ]
+      : [
+        "Which tracks have high opportunity but high data risk?",
+        "Where are we strongest and weakest by territory?",
+        "Which artists should we prioritize this week?",
+      ];
+
+  const actions = mode === "track" && resolvedEntities.track_key
+    ? [
+      { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(resolvedEntities.track_key)}`, kind: "primary" },
+      { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+      { label: "Open Statements", href: "/reports", kind: "ghost" },
+    ]
+    : mode === "artist" && resolvedEntities.artist_name
+      ? [
+        { label: "Open Artist Transactions", href: `/transactions?q=${encodeURIComponent(resolvedEntities.artist_name)}`, kind: "primary" },
+        { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+        { label: "Open Statements", href: "/reports", kind: "ghost" },
+      ]
+      : [
+        { label: "Open Transactions", href: "/transactions", kind: "primary" },
+        { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+        { label: "Open Statements", href: "/reports", kind: "ghost" },
+      ];
+
+  return {
+    conversation_id: conversationId ?? crypto.randomUUID(),
+    resolved_mode: mode,
+    resolved_entities: resolvedEntities,
+    answer_title:
+      mode === "track"
+        ? "Track summary"
+        : mode === "artist"
+          ? "Artist summary"
+          : "Workspace summary",
+    executive_answer: executiveAnswer,
+    why_this_matters: whyThisMatters,
+    evidence: {
+      row_count: safeScopedRows.length,
+      scanned_rows: rows.length,
+      from_date: fromDate,
+      to_date: toDate,
+      provenance: ["get_track_insights_list_v1"],
+      system_confidence: confidence,
+    },
+    kpis: [
+      { label: `${modeLabel} net revenue`, value: compactMoney(totalNet) },
+      { label: "Units in scope", value: Math.round(totalQty).toLocaleString() },
+      { label: "Avg 3M trend", value: `${avgTrend.toFixed(1)}%` },
+    ],
+    visual: {
+      type: "bar",
+      title: "Top Tracks by Net Revenue",
+      x: "track",
+      y: ["net_revenue"],
+      rows: visualRows,
+    },
+    actions,
+    follow_up_questions: followUp,
+    diagnostics: {
+      intent: "fallback_summary",
+      confidence,
+      used_fields: ["track_title", "artist_name", "net_revenue", "quantity", "trend_3m_pct"],
+      missing_fields: [],
+      strict_mode: false,
+      fallback_mode: "router_deterministic_scope_rows",
+      reason: `fallback_applied_for_${mode}`,
+      question,
+    },
+  };
+}
+
+function buildDeterministicTrackFallback({
+  question,
+  fromDate,
+  toDate,
+  rows,
+  scopedRows,
+  resolvedEntities,
+  conversationId,
+}: {
+  question: string;
+  fromDate: string;
+  toDate: string;
+  rows: InsightRow[];
+  scopedRows: InsightRow[];
+  resolvedEntities: EntityContext;
+  conversationId?: string;
+}) {
+  const track = scopedRows[0] ?? rows.find((r) => r.track_key === resolvedEntities.track_key) ?? rows[0];
+  if (!track) {
+    return buildDeterministicFallbackResponse({
+      mode: "track",
+      question,
+      fromDate,
+      toDate,
+      rows,
+      scopedRows,
+      resolvedEntities,
+      conversationId,
+    });
+  }
+
+  const q = question.toLowerCase();
+  const asksTerritory = /\b(territory|country|market|region|geo|geography|tour|touring|concert|live show|shows?|city|cities)\b/.test(q);
+  const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/.test(q);
+  const asksGross = /\bgross\b/.test(q);
+  const asksNet = /\bnet\b/.test(q);
+  const metricLabel = asksGross ? "Gross revenue" : asksNet ? "Net revenue" : "Net revenue";
+  const metricValue = asksGross ? track.gross_revenue || 0 : track.net_revenue || 0;
+
+  if (asksTerritory) {
+    return {
+      conversation_id: conversationId ?? crypto.randomUUID(),
+      resolved_mode: "track" as const,
+      resolved_entities: resolvedEntities,
+      answer_title: "Top Territory",
+      executive_answer: `${track.top_territory || "Unknown"} is the strongest territory for this track in the selected range.`,
+      why_this_matters: "Use top-performing territories to focus marketing and audience expansion where traction is already highest.",
+      evidence: {
+        row_count: 1,
+        scanned_rows: scopedRows.length || 1,
+        from_date: fromDate,
+        to_date: toDate,
+        provenance: ["get_track_insights_list_v1"],
+        system_confidence: "high" as const,
+      },
+      kpis: [
+        { label: metricLabel, value: compactMoney(metricValue) },
+        { label: "Units", value: Math.round(track.quantity || 0).toLocaleString() },
+        { label: "Top territory", value: track.top_territory || "Unknown" },
+      ],
+      visual: {
+        type: "table" as const,
+        title: "Track Territory Snapshot",
+        columns: ["track_title", "artist_name", "top_territory", "net_revenue", "gross_revenue", "quantity"],
+        rows: [{
+          track_title: track.track_title,
+          artist_name: track.artist_name,
+          top_territory: track.top_territory || "Unknown",
+          net_revenue: Number((track.net_revenue || 0).toFixed(2)),
+          gross_revenue: Number((track.gross_revenue || 0).toFixed(2)),
+          quantity: Number((track.quantity || 0).toFixed(2)),
+        }],
+      },
+      actions: [
+        { label: "Open Track Insights", href: `/insights/${encodeURIComponent(track.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(track.track_key)}`, kind: "primary" as const },
+        { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(track.track_key)}`, kind: "secondary" as const },
+        { label: "Open Reviews", href: "/review-queue", kind: "ghost" as const },
+      ],
+      follow_up_questions: [
+        "Which platform is strongest for this track?",
+        "How does this territory compare month over month?",
+        "Where is this track underperforming by territory?",
+      ],
+      diagnostics: {
+        intent: "track_territory_fallback",
+        confidence: "high",
+        used_fields: ["top_territory", "net_revenue", "gross_revenue", "quantity"],
+        missing_fields: [],
+        strict_mode: true,
+        fallback_mode: "router_deterministic_track_intent",
+      },
+    };
+  }
+
+  if (asksPlatform) {
+    return {
+      conversation_id: conversationId ?? crypto.randomUUID(),
+      resolved_mode: "track" as const,
+      resolved_entities: resolvedEntities,
+      answer_title: "Top Platform",
+      executive_answer: `${track.top_platform || "Unknown"} is the strongest platform for this track in the selected range.`,
+      why_this_matters: "Prioritize promotion and negotiation where platform demand is already strongest.",
+      evidence: {
+        row_count: 1,
+        scanned_rows: scopedRows.length || 1,
+        from_date: fromDate,
+        to_date: toDate,
+        provenance: ["get_track_insights_list_v1"],
+        system_confidence: "high" as const,
+      },
+      kpis: [
+        { label: metricLabel, value: compactMoney(metricValue) },
+        { label: "Units", value: Math.round(track.quantity || 0).toLocaleString() },
+        { label: "Top platform", value: track.top_platform || "Unknown" },
+      ],
+      visual: {
+        type: "table" as const,
+        title: "Track Platform Snapshot",
+        columns: ["track_title", "artist_name", "top_platform", "net_revenue", "gross_revenue", "quantity"],
+        rows: [{
+          track_title: track.track_title,
+          artist_name: track.artist_name,
+          top_platform: track.top_platform || "Unknown",
+          net_revenue: Number((track.net_revenue || 0).toFixed(2)),
+          gross_revenue: Number((track.gross_revenue || 0).toFixed(2)),
+          quantity: Number((track.quantity || 0).toFixed(2)),
+        }],
+      },
+      actions: [
+        { label: "Open Track Insights", href: `/insights/${encodeURIComponent(track.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(track.track_key)}`, kind: "primary" as const },
+        { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(track.track_key)}`, kind: "secondary" as const },
+        { label: "Open Reviews", href: "/review-queue", kind: "ghost" as const },
+      ],
+      follow_up_questions: [
+        "Which territory is strongest for this track?",
+        "How does this platform trend month over month?",
+        "Where is this track leaking value by platform?",
+      ],
+      diagnostics: {
+        intent: "track_platform_fallback",
+        confidence: "high",
+        used_fields: ["top_platform", "net_revenue", "gross_revenue", "quantity"],
+        missing_fields: [],
+        strict_mode: true,
+        fallback_mode: "router_deterministic_track_intent",
+      },
+    };
+  }
+
+  return buildDeterministicFallbackResponse({
+    mode: "track",
+    question,
+    fromDate,
+    toDate,
+    rows,
+    scopedRows,
+    resolvedEntities,
+    conversationId,
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
@@ -240,7 +601,12 @@ serve(async (req) => {
     const fromDate = normalizeDate(asString(body.from_date, 20), oneYearAgo);
     const toDate = normalizeDate(asString(body.to_date, 20), today);
     const entityContext: EntityContext = body.entity_context ?? {};
-    const mode = detectMode(question, entityContext);
+    let mode = detectMode(question, entityContext);
+    const hasTrackContext = isNonEmptyString(entityContext.track_key);
+    const hasArtistContext = isNonEmptyString(entityContext.artist_key) || isNonEmptyString(entityContext.artist_name);
+    if ((mode === "artist" && !hasArtistContext) || (mode === "track" && !hasTrackContext)) {
+      mode = "workspace-general";
+    }
 
     const { data, error } = await userClient.rpc("get_track_insights_list_v1", {
       from_date: fromDate,
@@ -675,28 +1041,15 @@ serve(async (req) => {
       };
 
       const { data: sendTurnData, error: sendTurnError } = await userClient.functions.invoke(
-        "insights-natural-chat",
+        "insights-track-chat",
         { body: sendTurnPayload },
       );
 
       if (!sendTurnError) {
         assistantPayload = (sendTurnData ?? {}) as TrackAssistantTurnResponse;
       } else {
-        const sendTurnMessage = toFunctionErrorMessage(sendTurnError as { message?: string }, sendTurnData);
-        const canFallback = /unsupported action/i.test(sendTurnMessage);
-        if (!canFallback) {
-          return jsonResponse(
-            {
-              error: "Failed to generate track insight answer.",
-              detail: sendTurnMessage,
-              code: (sendTurnError as { code?: string } | null)?.code ?? null,
-            },
-            500,
-          );
-        }
-
         const { data: planData, error: planError } = await userClient.functions.invoke(
-          "insights-natural-chat",
+          "insights-track-chat",
           {
             body: {
               action: "plan_query",
@@ -708,65 +1061,38 @@ serve(async (req) => {
           },
         );
 
-        if (planError) {
-          return jsonResponse(
-            {
-              error: "Failed to generate track insight answer.",
-              detail: toFunctionErrorMessage(planError as { message?: string }, planData),
-              code: (planError as { code?: string } | null)?.code ?? null,
-            },
-            500,
-          );
+        if (!planError) {
+          const plan = (planData ?? {}) as TrackNaturalChatPlanResponse;
+          if (isNonEmptyString(plan.plan_id) && isNonEmptyString(plan.sql_preview) && isNonEmptyString(plan.execution_token)) {
+            const { data: runData, error: runError } = await userClient.functions.invoke(
+              "insights-track-chat",
+              {
+                body: {
+                  action: "run_query",
+                  track_key: entityContext.track_key,
+                  from_date: fromDate,
+                  to_date: toDate,
+                  plan_id: plan.plan_id,
+                  sql_preview: plan.sql_preview,
+                  execution_token: plan.execution_token,
+                },
+              },
+            );
+            if (!runError) assistantPayload = (runData ?? {}) as TrackAssistantTurnResponse;
+          }
         }
-
-        const plan = (planData ?? {}) as TrackNaturalChatPlanResponse;
-        if (!isNonEmptyString(plan.plan_id) || !isNonEmptyString(plan.sql_preview) || !isNonEmptyString(plan.execution_token)) {
-          return jsonResponse(
-            { error: "Track assistant planning returned an invalid response." },
-            502,
-          );
-        }
-
-        const { data: runData, error: runError } = await userClient.functions.invoke(
-          "insights-natural-chat",
-          {
-            body: {
-              action: "run_query",
-              track_key: entityContext.track_key,
-              from_date: fromDate,
-              to_date: toDate,
-              plan_id: plan.plan_id,
-              sql_preview: plan.sql_preview,
-              execution_token: plan.execution_token,
-            },
-          },
-        );
-
-        if (runError) {
-          return jsonResponse(
-            {
-              error: "Failed to generate track insight answer.",
-              detail: toFunctionErrorMessage(runError as { message?: string }, runData),
-              code: (runError as { code?: string } | null)?.code ?? null,
-            },
-            500,
-          );
-        }
-        assistantPayload = (runData ?? {}) as TrackAssistantTurnResponse;
       }
 
-      if (!assistantPayload) {
-        return jsonResponse(
-          { error: "Track assistant returned an empty response." },
-          502,
-        );
-      }
-
-      if (!isNonEmptyString(assistantPayload.answer_text)) {
-        return jsonResponse(
-          { error: "Track assistant returned an empty response." },
-          502,
-        );
+      if (!assistantPayload || !isNonEmptyString(assistantPayload.answer_text)) {
+        return jsonResponse(buildDeterministicTrackFallback({
+          question,
+          fromDate,
+          toDate,
+          rows,
+          scopedRows,
+          resolvedEntities,
+          conversationId: body.conversation_id,
+        }));
       }
 
       const rowCount = Number(assistantPayload.evidence?.row_count ?? 0);
@@ -811,108 +1137,247 @@ serve(async (req) => {
       });
     }
 
-    if (scopedRows.length === 0) scopedRows = topByNet(rows, 12);
+    if (mode === "workspace-general") {
+      scopedRows = rows;
+      const q = question.toLowerCase();
+      const artistRollup = buildWorkspaceArtistRollup(rows);
+      const asksArtistLeaderboard =
+        /\b(top|highest|best|most)\b.*\b(artist|artiste)s?\b/.test(q) &&
+        /\b(revenue|money|earning|made|royalt|gross|net)\b/.test(q);
+      const artistNeedle = parseArtistNeedle(question);
+      const asksArtistRevenue = Boolean(artistNeedle) && isArtistRevenueQuestion(question);
 
-    const totalNet = scopedRows.reduce((sum, row) => sum + (row.net_revenue || 0), 0);
-    const totalQty = scopedRows.reduce((sum, row) => sum + (row.quantity || 0), 0);
-    const avgTrend = scopedRows.length
-      ? scopedRows.reduce((sum, row) => sum + (row.trend_3m_pct || 0), 0) / scopedRows.length
-      : 0;
-    const topItem = topByNet(scopedRows, 1)[0];
-    const confidence = inferConfidence(scopedRows);
+      if (asksArtistLeaderboard && artistRollup.length > 0) {
+        const metric = /\bgross\b/.test(q) ? "gross_revenue" : "net_revenue";
+        const topN = topNFromQuestion(question, 5);
+        const ranked = [...artistRollup]
+          .sort((a, b) => (b[metric] || 0) - (a[metric] || 0))
+          .slice(0, topN);
+        const top = ranked[0];
+        return jsonResponse({
+          conversation_id: body.conversation_id ?? crypto.randomUUID(),
+          resolved_mode: "workspace-general",
+          resolved_entities: resolvedEntities,
+          answer_title: `Top ${ranked.length} Artists by ${metric === "gross_revenue" ? "Gross" : "Net"} Revenue`,
+          executive_answer: top
+            ? `${top.artist_name} leads with ${compactMoney(top[metric])} (${metric === "gross_revenue" ? "gross" : "net"} revenue) in the selected range.`
+            : "No artist rows were found for this range.",
+          why_this_matters: "Use this ranking to prioritize budget, release support, and marketing on the artists driving the biggest return.",
+          evidence: {
+            row_count: ranked.length,
+            scanned_rows: artistRollup.length,
+            from_date: fromDate,
+            to_date: toDate,
+            provenance: ["get_track_insights_list_v1"],
+            system_confidence: ranked.length > 0 ? "high" : "low",
+          },
+          kpis: [
+            { label: "Artists in scope", value: artistRollup.length.toLocaleString() },
+            { label: "Rows returned", value: ranked.length.toLocaleString() },
+            { label: "Metric", value: metric === "gross_revenue" ? "Gross revenue" : "Net revenue" },
+          ],
+          visual: {
+            type: "table",
+            title: "Artist Revenue Leaderboard",
+            columns: ["artist_name", "gross_revenue", "net_revenue", "track_count"],
+            rows: ranked.map((r) => ({
+              artist_name: r.artist_name,
+              gross_revenue: Number(r.gross_revenue.toFixed(2)),
+              net_revenue: Number(r.net_revenue.toFixed(2)),
+              track_count: r.track_count,
+            })),
+          },
+          actions: [
+            { label: "Open Transactions", href: "/transactions", kind: "primary" },
+            { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+            { label: "Open Statements", href: "/reports", kind: "ghost" },
+          ],
+          follow_up_questions: [
+            "Show this leaderboard by territory contribution.",
+            "Which of these artists has the biggest data-risk exposure?",
+            "Compare these artists month over month.",
+          ],
+          diagnostics: {
+            intent: "workspace_artist_leaderboard",
+            confidence: "high",
+            used_fields: ["artist_name", metric, "track_key"],
+            missing_fields: [],
+            strict_mode: true,
+            resolver: "router_deterministic_workspace_artist_rollup",
+          },
+        });
+      }
 
-    const modeLabel =
-      mode === "track" ? "track" : mode === "artist" ? "artist" : "workspace";
-    const executiveAnswer =
-      mode === "track" && topItem
-        ? `${topItem.track_title} by ${topItem.artist_name} generated ${compactMoney(totalNet)} in the selected range.`
-        : mode === "artist" && resolvedEntities.artist_name
-          ? `${resolvedEntities.artist_name} generated ${compactMoney(totalNet)} across ${scopedRows.length} tracks in scope.`
-          : `Your workspace generated ${compactMoney(totalNet)} across ${scopedRows.length} prioritized tracks in scope.`;
+      if (asksArtistRevenue && artistNeedle && artistRollup.length > 0) {
+        const metric = /\bgross\b/.test(q) ? "gross_revenue" : /\bnet\b/.test(q) ? "net_revenue" : "net_revenue";
+        const needle = artistNeedle.toLowerCase();
+        const matches = artistRollup
+          .filter((r) => r.artist_name.toLowerCase().includes(needle))
+          .sort((a, b) => (b[metric] || 0) - (a[metric] || 0))
+          .slice(0, 5);
+        if (matches.length > 0) {
+          const primary = matches[0];
+          const primaryLabel = matches.length === 1 ? primary.artist_name : `${matches.length} artists matched "${artistNeedle}"`;
+          return jsonResponse({
+            conversation_id: body.conversation_id ?? crypto.randomUUID(),
+            resolved_mode: "workspace-general",
+            resolved_entities: resolvedEntities,
+            answer_title: `${primaryLabel} Revenue`,
+            executive_answer: matches.length === 1
+              ? `${primary.artist_name} ${metric === "gross_revenue" ? "gross" : "net"} revenue is ${compactMoney(primary[metric])} in the selected range.`
+              : `Found ${matches.length} artist matches for "${artistNeedle}". Highest ${metric === "gross_revenue" ? "gross" : "net"} revenue is ${compactMoney(primary[metric])} (${primary.artist_name}).`,
+            why_this_matters: "This isolates artist-level performance from workspace totals so you can make accurate catalog decisions.",
+            evidence: {
+              row_count: matches.length,
+              scanned_rows: artistRollup.length,
+              from_date: fromDate,
+              to_date: toDate,
+              provenance: ["get_track_insights_list_v1"],
+              system_confidence: "high",
+            },
+            kpis: [
+              { label: "Search needle", value: artistNeedle },
+              { label: "Matches", value: matches.length.toLocaleString() },
+              { label: "Primary metric", value: metric === "gross_revenue" ? "Gross revenue" : "Net revenue" },
+            ],
+            visual: {
+              type: "table",
+              title: "Matched Artists",
+              columns: ["artist_name", "gross_revenue", "net_revenue", "track_count"],
+              rows: matches.map((r) => ({
+                artist_name: r.artist_name,
+                gross_revenue: Number(r.gross_revenue.toFixed(2)),
+                net_revenue: Number(r.net_revenue.toFixed(2)),
+                track_count: r.track_count,
+              })),
+            },
+            actions: [
+              { label: "Open Transactions", href: `/transactions?q=${encodeURIComponent(artistNeedle)}`, kind: "primary" },
+              { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+              { label: "Open Statements", href: "/reports", kind: "ghost" },
+            ],
+            follow_up_questions: [
+              "Show this artist result by territory.",
+              "Show this artist by platform contribution.",
+              "Compare this artist to the next closest match.",
+            ],
+            diagnostics: {
+              intent: "workspace_artist_revenue_lookup",
+              confidence: "high",
+              used_fields: ["artist_name", metric, "track_key"],
+              missing_fields: [],
+              strict_mode: true,
+              resolver: "router_deterministic_workspace_artist_lookup",
+            },
+          });
+        }
+      }
 
-    const whyThisMatters =
-      avgTrend >= 0
-        ? `Momentum is positive (${avgTrend.toFixed(1)}% avg trend), so act now on top performers to compound growth.`
-        : `Momentum is soft (${avgTrend.toFixed(1)}% avg trend), so prioritize recovery actions on leakage and quality risks.`;
+      const { data: sendTurnData, error: sendTurnError } = await userClient.functions.invoke(
+        "insights-workspace-chat",
+        {
+          body: {
+            action: "send_turn",
+            from_date: fromDate,
+            to_date: toDate,
+            question,
+            conversation_id: body.conversation_id,
+          },
+        },
+      );
 
-    const visualRows = topByNet(scopedRows, 8).map((row) => ({
-      track: row.track_title,
-      artist: row.artist_name,
-      net_revenue: Number((row.net_revenue || 0).toFixed(2)),
-      trend_3m_pct: Number((row.trend_3m_pct || 0).toFixed(1)),
-    }));
+      if (sendTurnError) {
+        return jsonResponse(buildDeterministicFallbackResponse({
+          mode: "workspace-general",
+          question,
+          fromDate,
+          toDate,
+          rows,
+          scopedRows,
+          resolvedEntities,
+          conversationId: body.conversation_id,
+        }));
+      }
 
-    const followUp = mode === "track"
-      ? [
-        "Which territories are underperforming for this track?",
-        "What quality blockers are reducing payout confidence?",
-        "Show platform-specific trend changes for this track.",
-      ]
-      : mode === "artist"
-        ? [
-          "Which tracks contribute most to this artist's net revenue?",
-          "Where is this artist losing money by territory?",
-          "Which tracks need review attention first?",
-        ]
-        : [
-          "Which tracks have high opportunity but high data risk?",
-          "Where are we strongest and weakest by territory?",
-          "Which artists should we prioritize this week?",
-        ];
+      const assistantPayload = (sendTurnData ?? {}) as TrackAssistantTurnResponse;
+      if (!assistantPayload || !isNonEmptyString(assistantPayload.answer_text)) {
+        return jsonResponse(buildDeterministicFallbackResponse({
+          mode: "workspace-general",
+          question,
+          fromDate,
+          toDate,
+          rows,
+          scopedRows,
+          resolvedEntities,
+          conversationId: body.conversation_id,
+        }));
+      }
 
-    const actions = mode === "track" && resolvedEntities.track_key
-      ? [
-        { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(resolvedEntities.track_key)}`, kind: "primary" },
-        { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
-        { label: "Open Statements", href: "/reports", kind: "ghost" },
-      ]
-      : mode === "artist" && resolvedEntities.artist_name
-        ? [
-          { label: "Open Artist Transactions", href: `/transactions?q=${encodeURIComponent(resolvedEntities.artist_name)}`, kind: "primary" },
-          { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
-          { label: "Open Statements", href: "/reports", kind: "ghost" },
-        ]
-        : [
+      const rowCount = Number(assistantPayload.evidence?.row_count ?? 0);
+      const kpis = normalizeAssistantKpis(assistantPayload.kpis);
+      const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
+      const visual = toAiVisual(assistantPayload);
+
+      return jsonResponse({
+        conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
+        resolved_mode: "workspace-general",
+        resolved_entities: resolvedEntities,
+        answer_title:
+          (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
+          "Workspace AI answer",
+        executive_answer: assistantPayload.answer_text,
+        why_this_matters:
+          (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
+          (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Workspace-level reviewed evidence in scope."),
+        evidence: {
+          row_count: rowCount,
+          scanned_rows: rowCount,
+          from_date: assistantPayload.evidence?.from_date ?? fromDate,
+          to_date: assistantPayload.evidence?.to_date ?? toDate,
+          provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence?.provenance : ["run_workspace_chat_sql_v1"],
+          system_confidence: rowCount > 0 ? "high" : "low",
+        },
+        kpis,
+        visual,
+        actions: [
           { label: "Open Transactions", href: "/transactions", kind: "primary" },
           { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
           { label: "Open Statements", href: "/reports", kind: "ghost" },
-        ];
+        ],
+        follow_up_questions:
+          followUps.length > 0
+            ? followUps
+            : [
+              "Which artists should we prioritize this week?",
+              "Where are the biggest quality blockers across the workspace?",
+              "Which tracks combine high opportunity with high risk?",
+            ],
+        diagnostics: assistantPayload.diagnostics ?? undefined,
+      });
+    }
 
-    return jsonResponse({
-      conversation_id: body.conversation_id ?? crypto.randomUUID(),
-      resolved_mode: mode,
-      resolved_entities: resolvedEntities,
-      answer_title:
-        mode === "track"
-          ? "Track summary"
-          : mode === "artist"
-            ? "Artist summary"
-            : "Workspace summary",
-      executive_answer: executiveAnswer,
-      why_this_matters: whyThisMatters,
-      evidence: {
-        row_count: scopedRows.length,
-        scanned_rows: rows.length,
-        from_date: fromDate,
-        to_date: toDate,
-        provenance: ["get_track_insights_list_v1"],
-        system_confidence: confidence,
-      },
-      kpis: [
-        { label: `${modeLabel} net revenue`, value: compactMoney(totalNet) },
-        { label: "Units in scope", value: Math.round(totalQty).toLocaleString() },
-        { label: "Avg 3M trend", value: `${avgTrend.toFixed(1)}%` },
-      ],
-      visual: {
-        type: "bar",
-        title: "Top Tracks by Net Revenue",
-        x: "track",
-        y: ["net_revenue"],
-        rows: visualRows,
-      },
-      actions,
-      follow_up_questions: followUp,
-    });
+    if (mode === "track") {
+      return jsonResponse(buildDeterministicTrackFallback({
+        question,
+        fromDate,
+        toDate,
+        rows,
+        scopedRows,
+        resolvedEntities,
+        conversationId: body.conversation_id,
+      }));
+    }
+
+    return jsonResponse(buildDeterministicFallbackResponse({
+      mode,
+      question,
+      fromDate,
+      toDate,
+      rows,
+      scopedRows,
+      resolvedEntities,
+      conversationId: body.conversation_id,
+    }));
   } catch (error) {
     return jsonResponse({ error: error instanceof Error ? error.message : "Unexpected error." }, 500);
   }

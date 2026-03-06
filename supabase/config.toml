@@ -69,6 +69,12 @@ verify_jwt = false
 [functions.insights-artist-chat]
 verify_jwt = false
 
+[functions.insights-track-chat]
+verify_jwt = false
+
+[functions.insights-workspace-chat]
+verify_jwt = false
+
 [functions.create-billing-checkout-session]
 verify_jwt = false
 
