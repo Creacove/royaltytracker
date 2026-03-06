@@ -1,6 +1,7 @@
 export interface RouteMeta {
   title: string;
   subtitle: string;
+  fullWidth?: boolean;
 }
 
 const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: RouteMeta }> = [
@@ -33,17 +34,11 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
-    test: (pathname) => /^\/insights\/[^/]+/.test(pathname),
+    test: (pathname) => pathname === "/ai-insights" || pathname.startsWith("/ai-insights/"),
     meta: {
-      title: "Track Insights",
-      subtitle: "Use AI to ask forward-looking questions and decide next actions for this track.",
-    },
-  },
-  {
-    test: (pathname) => pathname === "/insights",
-    meta: {
-      title: "Insights",
-      subtitle: "Prioritize tracks, understand performance, and open track-level insights.",
+      title: "AI Insights",
+      subtitle: "Chat-first intelligence with evidence, actions, and workspace-aware recommendations.",
+      fullWidth: true,
     },
   },
   {

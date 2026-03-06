@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Tables } from "@/integrations/supabase/types";
 import { useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -381,6 +382,11 @@ export default function Reports() {
       <PageHeader
         title="Reports & Statements"
         subtitle="Upload CMO statements, monitor processing, and inspect normalized payloads."
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link to="/ai-insights">Open AI Insights</Link>
+          </Button>
+        }
       />
 
       <KpiStrip

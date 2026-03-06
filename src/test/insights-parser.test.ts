@@ -26,12 +26,20 @@ describe("insights assistant parser v2", () => {
         provenance: ["track_assistant_scope_v2"],
       },
       follow_up_questions: ["Break this down by platform."],
+      diagnostics: {
+        intent: "top_revenue_track",
+        confidence: "high",
+        used_fields: ["track_title", "net_revenue"],
+        missing_fields: [],
+        strict_mode: true,
+      },
     });
 
     expect(parsed).not.toBeNull();
     expect(parsed?.conversation_id).toBe("conv-1");
     expect(parsed?.kpis[0].label).toBe("Net Revenue");
     expect(parsed?.table?.rows[0].territory).toBe("US");
+    expect(parsed?.diagnostics?.intent).toBe("top_revenue_track");
   });
 
   it("parses export response", () => {

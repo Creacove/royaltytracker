@@ -1,0 +1,1252 @@
+[
+  {
+    "id": "artist-bm-0001",
+    "prompt": "rank artist by platform using net revenue for this month (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0002",
+    "prompt": "rank artist by platform using net revenue for this month (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0003",
+    "prompt": "rank artist by platform using net revenue for this month (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0004",
+    "prompt": "rank artist by platform using net revenue for this month (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0005",
+    "prompt": "rank artist by platform using net revenue for this month (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0006",
+    "prompt": "compare artist by platform using net revenue for this month (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0007",
+    "prompt": "compare artist by platform using net revenue for this month (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0008",
+    "prompt": "compare artist by platform using net revenue for this month (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0009",
+    "prompt": "compare artist by platform using net revenue for this month (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0010",
+    "prompt": "compare artist by platform using net revenue for this month (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0011",
+    "prompt": "break down artist by platform using net revenue for this month (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0012",
+    "prompt": "break down artist by platform using net revenue for this month (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0013",
+    "prompt": "break down artist by platform using net revenue for this month (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0014",
+    "prompt": "break down artist by platform using net revenue for this month (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0015",
+    "prompt": "break down artist by platform using net revenue for this month (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0016",
+    "prompt": "show artist by platform using net revenue for this month (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0017",
+    "prompt": "show artist by platform using net revenue for this month (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0018",
+    "prompt": "show artist by platform using net revenue for this month (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0019",
+    "prompt": "show artist by platform using net revenue for this month (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0020",
+    "prompt": "show artist by platform using net revenue for this month (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0021",
+    "prompt": "analyze artist by platform using net revenue for this month (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0022",
+    "prompt": "analyze artist by platform using net revenue for this month (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0023",
+    "prompt": "analyze artist by platform using net revenue for this month (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0024",
+    "prompt": "analyze artist by platform using net revenue for this month (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0025",
+    "prompt": "analyze artist by platform using net revenue for this month (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0026",
+    "prompt": "rank artist by platform using net revenue for last quarter (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0027",
+    "prompt": "rank artist by platform using net revenue for last quarter (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0028",
+    "prompt": "rank artist by platform using net revenue for last quarter (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0029",
+    "prompt": "rank artist by platform using net revenue for last quarter (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0030",
+    "prompt": "rank artist by platform using net revenue for last quarter (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0031",
+    "prompt": "compare artist by platform using net revenue for last quarter (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0032",
+    "prompt": "compare artist by platform using net revenue for last quarter (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0033",
+    "prompt": "compare artist by platform using net revenue for last quarter (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0034",
+    "prompt": "compare artist by platform using net revenue for last quarter (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0035",
+    "prompt": "compare artist by platform using net revenue for last quarter (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0036",
+    "prompt": "break down artist by platform using net revenue for last quarter (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0037",
+    "prompt": "break down artist by platform using net revenue for last quarter (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0038",
+    "prompt": "break down artist by platform using net revenue for last quarter (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0039",
+    "prompt": "break down artist by platform using net revenue for last quarter (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0040",
+    "prompt": "break down artist by platform using net revenue for last quarter (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0041",
+    "prompt": "show artist by platform using net revenue for last quarter (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0042",
+    "prompt": "show artist by platform using net revenue for last quarter (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0043",
+    "prompt": "show artist by platform using net revenue for last quarter (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0044",
+    "prompt": "show artist by platform using net revenue for last quarter (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0045",
+    "prompt": "show artist by platform using net revenue for last quarter (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0046",
+    "prompt": "analyze artist by platform using net revenue for last quarter (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0047",
+    "prompt": "analyze artist by platform using net revenue for last quarter (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0048",
+    "prompt": "analyze artist by platform using net revenue for last quarter (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0049",
+    "prompt": "analyze artist by platform using net revenue for last quarter (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0050",
+    "prompt": "analyze artist by platform using net revenue for last quarter (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0051",
+    "prompt": "rank artist by platform using net revenue for last 12 months (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0052",
+    "prompt": "rank artist by platform using net revenue for last 12 months (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0053",
+    "prompt": "rank artist by platform using net revenue for last 12 months (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0054",
+    "prompt": "rank artist by platform using net revenue for last 12 months (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0055",
+    "prompt": "rank artist by platform using net revenue for last 12 months (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0056",
+    "prompt": "compare artist by platform using net revenue for last 12 months (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0057",
+    "prompt": "compare artist by platform using net revenue for last 12 months (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0058",
+    "prompt": "compare artist by platform using net revenue for last 12 months (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0059",
+    "prompt": "compare artist by platform using net revenue for last 12 months (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0060",
+    "prompt": "compare artist by platform using net revenue for last 12 months (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0061",
+    "prompt": "break down artist by platform using net revenue for last 12 months (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0062",
+    "prompt": "break down artist by platform using net revenue for last 12 months (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0063",
+    "prompt": "break down artist by platform using net revenue for last 12 months (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0064",
+    "prompt": "break down artist by platform using net revenue for last 12 months (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0065",
+    "prompt": "break down artist by platform using net revenue for last 12 months (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0066",
+    "prompt": "show artist by platform using net revenue for last 12 months (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0067",
+    "prompt": "show artist by platform using net revenue for last 12 months (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0068",
+    "prompt": "show artist by platform using net revenue for last 12 months (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0069",
+    "prompt": "show artist by platform using net revenue for last 12 months (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0070",
+    "prompt": "show artist by platform using net revenue for last 12 months (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0071",
+    "prompt": "analyze artist by platform using net revenue for last 12 months (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0072",
+    "prompt": "analyze artist by platform using net revenue for last 12 months (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0073",
+    "prompt": "analyze artist by platform using net revenue for last 12 months (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0074",
+    "prompt": "analyze artist by platform using net revenue for last 12 months (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0075",
+    "prompt": "analyze artist by platform using net revenue for last 12 months (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0076",
+    "prompt": "rank artist by platform using net revenue for year to date (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0077",
+    "prompt": "rank artist by platform using net revenue for year to date (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0078",
+    "prompt": "rank artist by platform using net revenue for year to date (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0079",
+    "prompt": "rank artist by platform using net revenue for year to date (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0080",
+    "prompt": "rank artist by platform using net revenue for year to date (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0081",
+    "prompt": "compare artist by platform using net revenue for year to date (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0082",
+    "prompt": "compare artist by platform using net revenue for year to date (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0083",
+    "prompt": "compare artist by platform using net revenue for year to date (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0084",
+    "prompt": "compare artist by platform using net revenue for year to date (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0085",
+    "prompt": "compare artist by platform using net revenue for year to date (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0086",
+    "prompt": "break down artist by platform using net revenue for year to date (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0087",
+    "prompt": "break down artist by platform using net revenue for year to date (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0088",
+    "prompt": "break down artist by platform using net revenue for year to date (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0089",
+    "prompt": "break down artist by platform using net revenue for year to date (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0090",
+    "prompt": "break down artist by platform using net revenue for year to date (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0091",
+    "prompt": "show artist by platform using net revenue for year to date (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0092",
+    "prompt": "show artist by platform using net revenue for year to date (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0093",
+    "prompt": "show artist by platform using net revenue for year to date (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0094",
+    "prompt": "show artist by platform using net revenue for year to date (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0095",
+    "prompt": "show artist by platform using net revenue for year to date (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0096",
+    "prompt": "analyze artist by platform using net revenue for year to date (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0097",
+    "prompt": "analyze artist by platform using net revenue for year to date (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0098",
+    "prompt": "analyze artist by platform using net revenue for year to date (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0099",
+    "prompt": "analyze artist by platform using net revenue for year to date (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0100",
+    "prompt": "analyze artist by platform using net revenue for year to date (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0101",
+    "prompt": "rank artist by platform using net revenue for last 90 days (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0102",
+    "prompt": "rank artist by platform using net revenue for last 90 days (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0103",
+    "prompt": "rank artist by platform using net revenue for last 90 days (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0104",
+    "prompt": "rank artist by platform using net revenue for last 90 days (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0105",
+    "prompt": "rank artist by platform using net revenue for last 90 days (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0106",
+    "prompt": "compare artist by platform using net revenue for last 90 days (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0107",
+    "prompt": "compare artist by platform using net revenue for last 90 days (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0108",
+    "prompt": "compare artist by platform using net revenue for last 90 days (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0109",
+    "prompt": "compare artist by platform using net revenue for last 90 days (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0110",
+    "prompt": "compare artist by platform using net revenue for last 90 days (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0111",
+    "prompt": "break down artist by platform using net revenue for last 90 days (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0112",
+    "prompt": "break down artist by platform using net revenue for last 90 days (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0113",
+    "prompt": "break down artist by platform using net revenue for last 90 days (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0114",
+    "prompt": "break down artist by platform using net revenue for last 90 days (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0115",
+    "prompt": "break down artist by platform using net revenue for last 90 days (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0116",
+    "prompt": "show artist by platform using net revenue for last 90 days (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0117",
+    "prompt": "show artist by platform using net revenue for last 90 days (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0118",
+    "prompt": "show artist by platform using net revenue for last 90 days (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0119",
+    "prompt": "show artist by platform using net revenue for last 90 days (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0120",
+    "prompt": "show artist by platform using net revenue for last 90 days (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0121",
+    "prompt": "analyze artist by platform using net revenue for last 90 days (publisher style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0122",
+    "prompt": "analyze artist by platform using net revenue for last 90 days (exec summary style)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0123",
+    "prompt": "analyze artist by platform using net revenue for last 90 days (strict data answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0124",
+    "prompt": "analyze artist by platform using net revenue for last 90 days (short answer)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0125",
+    "prompt": "analyze artist by platform using net revenue for last 90 days (deep audit)",
+    "category": "platform_net_revenue"
+  },
+  {
+    "id": "artist-bm-0126",
+    "prompt": "rank artist by platform using gross revenue for this month (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0127",
+    "prompt": "rank artist by platform using gross revenue for this month (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0128",
+    "prompt": "rank artist by platform using gross revenue for this month (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0129",
+    "prompt": "rank artist by platform using gross revenue for this month (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0130",
+    "prompt": "rank artist by platform using gross revenue for this month (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0131",
+    "prompt": "compare artist by platform using gross revenue for this month (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0132",
+    "prompt": "compare artist by platform using gross revenue for this month (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0133",
+    "prompt": "compare artist by platform using gross revenue for this month (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0134",
+    "prompt": "compare artist by platform using gross revenue for this month (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0135",
+    "prompt": "compare artist by platform using gross revenue for this month (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0136",
+    "prompt": "break down artist by platform using gross revenue for this month (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0137",
+    "prompt": "break down artist by platform using gross revenue for this month (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0138",
+    "prompt": "break down artist by platform using gross revenue for this month (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0139",
+    "prompt": "break down artist by platform using gross revenue for this month (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0140",
+    "prompt": "break down artist by platform using gross revenue for this month (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0141",
+    "prompt": "show artist by platform using gross revenue for this month (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0142",
+    "prompt": "show artist by platform using gross revenue for this month (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0143",
+    "prompt": "show artist by platform using gross revenue for this month (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0144",
+    "prompt": "show artist by platform using gross revenue for this month (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0145",
+    "prompt": "show artist by platform using gross revenue for this month (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0146",
+    "prompt": "analyze artist by platform using gross revenue for this month (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0147",
+    "prompt": "analyze artist by platform using gross revenue for this month (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0148",
+    "prompt": "analyze artist by platform using gross revenue for this month (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0149",
+    "prompt": "analyze artist by platform using gross revenue for this month (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0150",
+    "prompt": "analyze artist by platform using gross revenue for this month (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0151",
+    "prompt": "rank artist by platform using gross revenue for last quarter (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0152",
+    "prompt": "rank artist by platform using gross revenue for last quarter (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0153",
+    "prompt": "rank artist by platform using gross revenue for last quarter (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0154",
+    "prompt": "rank artist by platform using gross revenue for last quarter (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0155",
+    "prompt": "rank artist by platform using gross revenue for last quarter (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0156",
+    "prompt": "compare artist by platform using gross revenue for last quarter (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0157",
+    "prompt": "compare artist by platform using gross revenue for last quarter (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0158",
+    "prompt": "compare artist by platform using gross revenue for last quarter (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0159",
+    "prompt": "compare artist by platform using gross revenue for last quarter (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0160",
+    "prompt": "compare artist by platform using gross revenue for last quarter (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0161",
+    "prompt": "break down artist by platform using gross revenue for last quarter (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0162",
+    "prompt": "break down artist by platform using gross revenue for last quarter (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0163",
+    "prompt": "break down artist by platform using gross revenue for last quarter (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0164",
+    "prompt": "break down artist by platform using gross revenue for last quarter (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0165",
+    "prompt": "break down artist by platform using gross revenue for last quarter (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0166",
+    "prompt": "show artist by platform using gross revenue for last quarter (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0167",
+    "prompt": "show artist by platform using gross revenue for last quarter (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0168",
+    "prompt": "show artist by platform using gross revenue for last quarter (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0169",
+    "prompt": "show artist by platform using gross revenue for last quarter (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0170",
+    "prompt": "show artist by platform using gross revenue for last quarter (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0171",
+    "prompt": "analyze artist by platform using gross revenue for last quarter (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0172",
+    "prompt": "analyze artist by platform using gross revenue for last quarter (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0173",
+    "prompt": "analyze artist by platform using gross revenue for last quarter (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0174",
+    "prompt": "analyze artist by platform using gross revenue for last quarter (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0175",
+    "prompt": "analyze artist by platform using gross revenue for last quarter (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0176",
+    "prompt": "rank artist by platform using gross revenue for last 12 months (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0177",
+    "prompt": "rank artist by platform using gross revenue for last 12 months (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0178",
+    "prompt": "rank artist by platform using gross revenue for last 12 months (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0179",
+    "prompt": "rank artist by platform using gross revenue for last 12 months (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0180",
+    "prompt": "rank artist by platform using gross revenue for last 12 months (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0181",
+    "prompt": "compare artist by platform using gross revenue for last 12 months (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0182",
+    "prompt": "compare artist by platform using gross revenue for last 12 months (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0183",
+    "prompt": "compare artist by platform using gross revenue for last 12 months (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0184",
+    "prompt": "compare artist by platform using gross revenue for last 12 months (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0185",
+    "prompt": "compare artist by platform using gross revenue for last 12 months (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0186",
+    "prompt": "break down artist by platform using gross revenue for last 12 months (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0187",
+    "prompt": "break down artist by platform using gross revenue for last 12 months (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0188",
+    "prompt": "break down artist by platform using gross revenue for last 12 months (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0189",
+    "prompt": "break down artist by platform using gross revenue for last 12 months (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0190",
+    "prompt": "break down artist by platform using gross revenue for last 12 months (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0191",
+    "prompt": "show artist by platform using gross revenue for last 12 months (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0192",
+    "prompt": "show artist by platform using gross revenue for last 12 months (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0193",
+    "prompt": "show artist by platform using gross revenue for last 12 months (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0194",
+    "prompt": "show artist by platform using gross revenue for last 12 months (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0195",
+    "prompt": "show artist by platform using gross revenue for last 12 months (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0196",
+    "prompt": "analyze artist by platform using gross revenue for last 12 months (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0197",
+    "prompt": "analyze artist by platform using gross revenue for last 12 months (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0198",
+    "prompt": "analyze artist by platform using gross revenue for last 12 months (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0199",
+    "prompt": "analyze artist by platform using gross revenue for last 12 months (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0200",
+    "prompt": "analyze artist by platform using gross revenue for last 12 months (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0201",
+    "prompt": "rank artist by platform using gross revenue for year to date (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0202",
+    "prompt": "rank artist by platform using gross revenue for year to date (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0203",
+    "prompt": "rank artist by platform using gross revenue for year to date (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0204",
+    "prompt": "rank artist by platform using gross revenue for year to date (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0205",
+    "prompt": "rank artist by platform using gross revenue for year to date (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0206",
+    "prompt": "compare artist by platform using gross revenue for year to date (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0207",
+    "prompt": "compare artist by platform using gross revenue for year to date (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0208",
+    "prompt": "compare artist by platform using gross revenue for year to date (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0209",
+    "prompt": "compare artist by platform using gross revenue for year to date (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0210",
+    "prompt": "compare artist by platform using gross revenue for year to date (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0211",
+    "prompt": "break down artist by platform using gross revenue for year to date (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0212",
+    "prompt": "break down artist by platform using gross revenue for year to date (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0213",
+    "prompt": "break down artist by platform using gross revenue for year to date (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0214",
+    "prompt": "break down artist by platform using gross revenue for year to date (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0215",
+    "prompt": "break down artist by platform using gross revenue for year to date (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0216",
+    "prompt": "show artist by platform using gross revenue for year to date (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0217",
+    "prompt": "show artist by platform using gross revenue for year to date (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0218",
+    "prompt": "show artist by platform using gross revenue for year to date (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0219",
+    "prompt": "show artist by platform using gross revenue for year to date (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0220",
+    "prompt": "show artist by platform using gross revenue for year to date (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0221",
+    "prompt": "analyze artist by platform using gross revenue for year to date (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0222",
+    "prompt": "analyze artist by platform using gross revenue for year to date (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0223",
+    "prompt": "analyze artist by platform using gross revenue for year to date (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0224",
+    "prompt": "analyze artist by platform using gross revenue for year to date (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0225",
+    "prompt": "analyze artist by platform using gross revenue for year to date (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0226",
+    "prompt": "rank artist by platform using gross revenue for last 90 days (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0227",
+    "prompt": "rank artist by platform using gross revenue for last 90 days (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0228",
+    "prompt": "rank artist by platform using gross revenue for last 90 days (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0229",
+    "prompt": "rank artist by platform using gross revenue for last 90 days (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0230",
+    "prompt": "rank artist by platform using gross revenue for last 90 days (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0231",
+    "prompt": "compare artist by platform using gross revenue for last 90 days (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0232",
+    "prompt": "compare artist by platform using gross revenue for last 90 days (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0233",
+    "prompt": "compare artist by platform using gross revenue for last 90 days (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0234",
+    "prompt": "compare artist by platform using gross revenue for last 90 days (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0235",
+    "prompt": "compare artist by platform using gross revenue for last 90 days (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0236",
+    "prompt": "break down artist by platform using gross revenue for last 90 days (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0237",
+    "prompt": "break down artist by platform using gross revenue for last 90 days (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0238",
+    "prompt": "break down artist by platform using gross revenue for last 90 days (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0239",
+    "prompt": "break down artist by platform using gross revenue for last 90 days (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0240",
+    "prompt": "break down artist by platform using gross revenue for last 90 days (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0241",
+    "prompt": "show artist by platform using gross revenue for last 90 days (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0242",
+    "prompt": "show artist by platform using gross revenue for last 90 days (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0243",
+    "prompt": "show artist by platform using gross revenue for last 90 days (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0244",
+    "prompt": "show artist by platform using gross revenue for last 90 days (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0245",
+    "prompt": "show artist by platform using gross revenue for last 90 days (deep audit)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0246",
+    "prompt": "analyze artist by platform using gross revenue for last 90 days (publisher style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0247",
+    "prompt": "analyze artist by platform using gross revenue for last 90 days (exec summary style)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0248",
+    "prompt": "analyze artist by platform using gross revenue for last 90 days (strict data answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0249",
+    "prompt": "analyze artist by platform using gross revenue for last 90 days (short answer)",
+    "category": "platform_gross_revenue"
+  },
+  {
+    "id": "artist-bm-0250",
+    "prompt": "analyze artist by platform using gross revenue for last 90 days (deep audit)",
+    "category": "platform_gross_revenue"
+  }
+]

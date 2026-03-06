@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -26,6 +27,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
@@ -536,11 +538,16 @@ export default function Dashboard() {
         title="Overview"
         subtitle="Revenue pulse, report progress, and CMO performance at a glance."
         actions={
-          topCmo ? (
-            <p className="rounded-sm border border-border/45 px-3 py-2 font-mono text-xs text-muted-foreground">
-              Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
-            </p>
-          ) : null
+          <>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/ai-insights">Open AI Insights</Link>
+            </Button>
+            {topCmo ? (
+              <p className="rounded-sm border border-border/45 px-3 py-2 font-mono text-xs text-muted-foreground">
+                Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
+              </p>
+            ) : null}
+          </>
         }
       />
 

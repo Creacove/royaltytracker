@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview", requiresUploads: true },
   { to: "/reports", icon: Upload, label: "Statements", requiresUploads: false },
-  { to: "/insights", icon: BarChart3, label: "Insights", requiresUploads: false },
+  { to: "/ai-insights", icon: BarChart3, label: "AI Insights", requiresUploads: false },
   { to: "/review-queue", icon: ShieldAlert, label: "Statement Reviews", requiresUploads: true },
   { to: "/transactions", icon: ArrowRightLeft, label: "Transactions", requiresUploads: false },
 ];
@@ -172,7 +172,7 @@ function AppLayoutContent({
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="min-w-0 overflow-x-hidden">
+      <SidebarInset className={cn("min-w-0", routeMeta.fullWidth ? "h-svh min-h-0 overflow-hidden" : "overflow-x-hidden")}>
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-background focus:px-3 focus:py-2 focus:text-xs"
@@ -188,10 +188,21 @@ function AppLayoutContent({
             </div>
           </div>
         </header>
-        <main id="main-content" tabIndex={-1} className="flex-1 overflow-x-hidden overflow-y-auto focus:outline-none">
-          <div className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-4 md:px-5 md:py-5 lg:px-6 lg:py-6">
-            {children}
-          </div>
+        <main 
+          id="main-content" 
+          tabIndex={-1} 
+          className={cn(
+            "flex-1 focus:outline-none",
+            routeMeta.fullWidth ? "overflow-hidden flex flex-col" : "overflow-x-hidden overflow-y-auto"
+          )}
+        >
+          {routeMeta.fullWidth ? (
+            children
+          ) : (
+            <div className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-4 md:px-5 md:py-5 lg:px-6 lg:py-6">
+              {children}
+            </div>
+          )}
         </main>
       </SidebarInset>
     </>

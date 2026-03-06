@@ -269,6 +269,26 @@ export function parseAssistantTurnResponseV2(input: unknown): AssistantTurnRespo
         options: toStringArray(clarificationObj.options),
       }
     : undefined;
+  const diagnosticsObj = toObject(root.diagnostics);
+  const diagnostics = diagnosticsObj
+    ? {
+        intent: toString(diagnosticsObj.intent) ?? "unknown",
+        confidence: ((toString(diagnosticsObj.confidence) ?? "low") as "high" | "medium" | "low"),
+        used_fields: toStringArray(diagnosticsObj.used_fields),
+        missing_fields: toStringArray(diagnosticsObj.missing_fields),
+        strict_mode: Boolean(diagnosticsObj.strict_mode),
+        analysis_plan: toObject(diagnosticsObj.analysis_plan) ?? undefined,
+        required_columns: toStringArray(diagnosticsObj.required_columns),
+        chosen_columns: toStringArray(diagnosticsObj.chosen_columns),
+        verifier_status: toString(diagnosticsObj.verifier_status) ?? undefined,
+        insufficiency_reason: toString(diagnosticsObj.insufficiency_reason),
+        compiler_source: toString(diagnosticsObj.compiler_source) ?? undefined,
+        top_n: toNumber(diagnosticsObj.top_n) ?? undefined,
+        sort_by: toString(diagnosticsObj.sort_by) ?? undefined,
+        sort_dir: toString(diagnosticsObj.sort_dir) ?? undefined,
+        stage: toString(diagnosticsObj.stage) ?? undefined,
+      }
+    : undefined;
 
   return {
     conversation_id: conversationId,
@@ -287,6 +307,7 @@ export function parseAssistantTurnResponseV2(input: unknown): AssistantTurnRespo
     },
     follow_up_questions: toStringArray(root.follow_up_questions),
     clarification,
+    diagnostics,
   };
 }
 

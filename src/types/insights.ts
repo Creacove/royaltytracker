@@ -210,6 +210,24 @@ export type AssistantClarificationV2 = {
   options: string[];
 };
 
+export type AssistantDiagnostics = {
+  intent: string;
+  confidence: "high" | "medium" | "low";
+  used_fields: string[];
+  missing_fields: string[];
+  strict_mode: boolean;
+  analysis_plan?: Record<string, unknown>;
+  required_columns?: string[];
+  chosen_columns?: string[];
+  verifier_status?: "passed" | "failed" | "pending" | string;
+  insufficiency_reason?: string | null;
+  compiler_source?: "model" | "fallback" | string;
+  top_n?: number;
+  sort_by?: string;
+  sort_dir?: "asc" | "desc" | string;
+  stage?: "catalog" | "parse" | "plan" | "compile" | "execute" | "verify" | string;
+};
+
 export type AssistantTurnRequestV2 = {
   action: "send_turn";
   track_key: string;
@@ -230,6 +248,7 @@ export type AssistantTurnResponseV2 = {
   evidence: TrackChatEvidence;
   follow_up_questions: string[];
   clarification?: AssistantClarificationV2;
+  diagnostics?: AssistantDiagnostics;
 };
 
 export type AssistantExportRequestV1 = {
@@ -245,4 +264,60 @@ export type AssistantExportResponseV1 = {
   xlsx_url?: string;
   job_id?: string;
   status?: string;
+};
+
+export type AiInsightsMode = "workspace-general" | "artist" | "track";
+
+export type AiInsightsEntityContext = {
+  track_key?: string;
+  track_title?: string;
+  artist_key?: string;
+  artist_name?: string;
+};
+
+export type AiInsightsEvidence = {
+  row_count: number;
+  scanned_rows: number;
+  from_date: string;
+  to_date: string;
+  provenance: string[];
+  system_confidence: "high" | "medium" | "low";
+};
+
+export type AiInsightsAction = {
+  label: string;
+  href: string;
+  kind?: "primary" | "secondary" | "ghost";
+};
+
+export type AiInsightsVisual = {
+  type: "bar" | "line" | "table" | "none";
+  title?: string;
+  x?: string;
+  y?: string[];
+  rows?: Array<Record<string, string | number | null>>;
+  columns?: string[];
+};
+
+export type AiInsightsTurnRequest = {
+  question: string;
+  from_date: string;
+  to_date: string;
+  conversation_id?: string;
+  entity_context?: AiInsightsEntityContext;
+};
+
+export type AiInsightsTurnResponse = {
+  conversation_id: string;
+  resolved_mode: AiInsightsMode;
+  resolved_entities: AiInsightsEntityContext;
+  answer_title?: string;
+  executive_answer: string;
+  why_this_matters: string;
+  evidence: AiInsightsEvidence;
+  actions: AiInsightsAction[];
+  follow_up_questions: string[];
+  visual: AiInsightsVisual;
+  kpis: Array<{ label: string; value: string }>;
+  diagnostics?: AssistantDiagnostics;
 };

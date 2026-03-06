@@ -422,7 +422,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
       return;
     }
 
-    const shouldValidateCurrentWorkspaceLimits = !onboardingState.isPlatformAdmin || platformTargetMode === "current";
+    const shouldValidateCurrentWorkspaceLimits = !onboardingState.isPlatformAdmin;
 
     if (shouldValidateCurrentWorkspaceLimits && subscriptionLoaded && subscriptionState.needsActivation) {
       toast({

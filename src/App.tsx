@@ -17,8 +17,7 @@ import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
 import Transactions from "@/pages/Transactions";
 import DataQualityQueue from "@/pages/DataQualityQueue";
-import Insights from "@/pages/Insights";
-import TrackInsightsDetail from "@/pages/TrackInsightsDetail";
+import AiInsights from "@/pages/AiInsights";
 import Onboarding from "@/pages/Onboarding";
 import AcceptInvite from "@/pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
@@ -173,7 +172,7 @@ function AppRoutes() {
   }
 
   if (location.pathname === "/onboarding" && onboardingState.onboardingComplete) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/ai-insights" replace />;
   }
 
   const hasAnyUploads = reportCountErrored ? true : reportCount > 0;
@@ -232,8 +231,9 @@ function AppRoutes() {
         <Route path="/" element={hasAnyUploads ? <Dashboard /> : <Navigate to="/reports?setup=upload-first" replace />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
-        <Route path="/insights" element={<Insights />} />
-        <Route path="/insights/:trackKey" element={<TrackInsightsDetail />} />
+        <Route path="/ai-insights" element={<AiInsights />} />
+        <Route path="/insights" element={<Navigate to="/ai-insights" replace />} />
+        <Route path="/insights/:trackKey" element={<Navigate to="/ai-insights" replace />} />
         <Route
           path="/activate"
           element={
@@ -280,7 +280,7 @@ function AppRoutes() {
           path="/quality-queue"
           element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports?setup=upload-first"} replace />}
         />
-        <Route path="/analytics" element={<Navigate to="/insights" replace />} />
+        <Route path="/analytics" element={<Navigate to="/ai-insights" replace />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
