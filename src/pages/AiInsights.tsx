@@ -367,9 +367,9 @@ export default function AiInsights() {
         </header>
 
         {/* Chat Content */}
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
           <ScrollArea className="flex-1 px-3 md:px-6">
-            <div className="mx-auto w-full max-w-4xl py-8 md:py-12">
+            <div className="mx-auto w-full min-w-0 max-w-4xl py-4 md:py-12">
               {turns.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-sm bg-[hsl(var(--brand-accent))] shadow-lg">
@@ -425,7 +425,7 @@ export default function AiInsights() {
                           </div>
 
                           {turn.payload ? (
-                            <div className="min-w-0 flex-1 space-y-8">
+                            <div className="min-w-0 flex-1 space-y-8 overflow-hidden">
                               <div className="w-full max-w-full md:max-w-[90%]">
                                 <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
                                   {turn.payload.answer_title}
@@ -435,7 +435,7 @@ export default function AiInsights() {
                                 </p>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-y-3 gap-x-6 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4">
+                              <div className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
                                 {turn.payload.kpis.map((kpi) => (
                                   <div key={kpi.label} className="min-w-0 overflow-hidden">
                                     <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{kpi.label}</p>
@@ -465,14 +465,14 @@ export default function AiInsights() {
                                       {turn.payload.visual.type}
                                     </Badge>
                                   </div>
-                                  <div className="p-3 md:p-6">
+                                  <div className="min-w-0 p-3 md:p-6">
                                     {turn.payload.visual.type === "table" ? (
-                                      <div className="overflow-x-auto">
+                                      <div className="w-full min-w-0 overflow-x-auto">
                                         <Table>
                                           <TableHeader>
                                             <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
                                               {(turn.payload.visual.columns ?? []).map((column) => (
-                                                <TableHead key={column} className="type-table-head h-12 text-[10px] font-bold text-black border-none">
+                                                <TableHead key={column} className="type-table-head h-12 whitespace-nowrap text-[10px] font-bold text-black border-none">
                                                   {toAssistantLabel(column)}
                                                 </TableHead>
                                               ))}
@@ -482,7 +482,7 @@ export default function AiInsights() {
                                             {turn.payload.visual.rows?.slice(0, 10).map((row, rIdx) => (
                                               <TableRow key={rIdx} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
                                                 {(turn.payload.visual.columns ?? []).map((column) => (
-                                                  <TableCell key={column} className="py-3 font-mono text-[10px] font-bold text-black/90">
+                                                  <TableCell key={column} className="py-3 whitespace-nowrap font-mono text-[10px] font-bold text-black/90">
                                                     {formatAssistantValue(column, row[column])}
                                                   </TableCell>
                                                 ))}
