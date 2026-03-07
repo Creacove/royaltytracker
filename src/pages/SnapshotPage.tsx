@@ -776,20 +776,20 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
             data-export-only="true"
             className="overflow-hidden rounded-sm border border-black/10 bg-[linear-gradient(135deg,hsl(var(--brand-accent-ghost))/92,white_62%)] shadow-[0_18px_35px_rgba(0,0,0,0.05)]"
           >
-            <div className="flex items-start justify-between gap-6 px-6 py-5">
-              <div className="min-w-0 flex flex-1 items-center gap-4">
-                <div className="flex h-14 w-14 items-center justify-center rounded-sm border border-black/10 bg-white/90 p-2 shadow-sm">
+            <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
+              <div className="min-w-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm border border-black/10 bg-white/90 p-2 shadow-sm sm:h-14 sm:w-14">
                   <img src="/logo-icon.png" alt="OrderSounds" className="h-full w-full object-contain" />
                 </div>
                 <div className="min-w-0">
                   <p className="type-micro text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--brand-accent))]">OrderSounds</p>
-                  <h2 className="type-display-section text-lg text-black">Publisher Snapshot Report</h2>
-                  <p className="text-sm text-black/60">
+                  <h2 className="type-display-section text-base text-black sm:text-lg">Publisher Snapshot Report</h2>
+                  <p className="text-sm leading-5 text-black/60">
                     {scope === "track" ? "Track performance snapshot" : "Artist performance snapshot"} for {formatDateWindow(fromDate, toDate)}
                   </p>
                 </div>
               </div>
-              <div className="shrink-0 rounded-sm border border-black/10 bg-white/80 px-4 py-3 text-xs text-black/60">
+              <div className="w-full rounded-sm border border-black/10 bg-white/80 px-3 py-3 text-xs text-black/60 sm:px-4 lg:w-auto lg:shrink-0">
                 <p className="font-mono uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">Prepared by OrderSounds</p>
                 <p className="mt-1">Exported {exportStamp}</p>
               </div>

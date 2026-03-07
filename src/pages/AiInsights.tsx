@@ -721,7 +721,7 @@ function ContextRail({
           </div>
 
           <div className="mt-4 rounded-sm border border-black/10 bg-black/[0.02] p-3">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="type-micro text-[9px] text-black/45">Current selection</p>
                 <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-black/35">
@@ -732,21 +732,21 @@ function ContextRail({
                 <button
                   type="button"
                   onClick={onClearScope}
-                  className="shrink-0 rounded-sm border border-black/10 bg-white px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-black/65 transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:text-[hsl(var(--brand-accent))]"
+                  className="w-full rounded-sm border border-black/10 bg-white px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-black/65 transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:text-[hsl(var(--brand-accent))] sm:w-auto sm:shrink-0"
                 >
                   Clear scope
                 </button>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold tracking-tight text-black">{activeScopeLabel}</p>
+                <p className="break-words text-sm font-bold tracking-tight text-black sm:truncate">{activeScopeLabel}</p>
                 <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]/80">
                   {activeScopeType}
                 </p>
               </div>
               {(selectedContext.track_key || selectedContext.artist_key) && (
-                <div className="rounded-sm bg-[hsl(var(--brand-accent))] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
+                <div className="inline-flex w-fit rounded-sm bg-[hsl(var(--brand-accent))] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
                   Active
                 </div>
               )}
