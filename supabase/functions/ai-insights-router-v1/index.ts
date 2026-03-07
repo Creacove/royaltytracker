@@ -220,6 +220,177 @@ type WorkspaceArtistRollup = {
   track_count: number;
 };
 
+type TrackSnapshotDetail = {
+  summary: {
+    track_key: string;
+    track_title: string;
+    artist_name: string;
+    net_revenue: number;
+    gross_revenue: number;
+    quantity: number;
+    net_per_unit: number;
+    failed_line_count: number;
+  };
+  platform_mix: Array<{ platform: string; net_revenue: number; quantity: number }>;
+  territory_mix: Array<{ territory: string; net_revenue: number; quantity: number }>;
+  usage_mix: Array<{ usage_type: string; net_revenue: number; quantity: number }>;
+  high_usage_low_payout: Array<{
+    territory: string;
+    quantity: number;
+    net_revenue: number;
+    usage_share: number;
+    payout_share: number;
+  }>;
+  quality: {
+    failed_line_count: number;
+    open_critical_task_count: number;
+  };
+};
+
+function isTrackSnapshotQuestion(question: string): boolean {
+  return /\bpublisher snapshot for this track\b/i.test(question) || /\bconcise publisher snapshot\b/i.test(question);
+}
+
+function percent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+function computeShare(total: number, amount: number): number {
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return (amount / total) * 100;
+}
+
+async function fetchTrackSnapshotDetail(
+  userClient: ReturnType<typeof createClient>,
+  trackKey: string,
+  fromDate: string,
+  toDate: string,
+): Promise<TrackSnapshotDetail | null> {
+  const { data, error } = await userClient.rpc("get_track_insight_detail_v1", {
+    p_track_key: trackKey,
+    from_date: fromDate,
+    to_date: toDate,
+    filters_json: {},
+  });
+  if (error || !data || typeof data !== "object" || Array.isArray(data)) return null;
+  return data as TrackSnapshotDetail;
+}
+
+function buildTrackSnapshotSummaryResponse({
+  detail,
+  row,
+  fromDate,
+  toDate,
+  resolvedEntities,
+  conversationId,
+}: {
+  detail: TrackSnapshotDetail;
+  row: InsightRow | undefined;
+  fromDate: string;
+  toDate: string;
+  resolvedEntities: EntityContext;
+  conversationId?: string;
+}) {
+  const summary = detail.summary;
+  const topPlatform = detail.platform_mix[0];
+  const topTerritory = detail.territory_mix[0];
+  const underMonetized = detail.high_usage_low_payout[0];
+  const totalPlatformRevenue = detail.platform_mix.reduce((sum, item) => sum + (item.net_revenue || 0), 0);
+  const totalTerritoryRevenue = detail.territory_mix.reduce((sum, item) => sum + (item.net_revenue || 0), 0);
+  const topPlatformShare = computeShare(totalPlatformRevenue, topPlatform?.net_revenue ?? 0);
+  const topTerritoryShare = computeShare(totalTerritoryRevenue, topTerritory?.net_revenue ?? 0);
+  const trend = row?.trend_3m_pct ?? 0;
+
+  const summaryParts = [
+    `${summary.track_title} generated ${compactMoney(summary.net_revenue)} from ${Math.round(summary.quantity || 0).toLocaleString()} units in the selected window.`,
+  ];
+
+  if (trend >= 15) {
+    summaryParts.push(`Momentum is building, with the track up ${percent(trend)} over the last 3 months.`);
+  } else if (trend <= -10) {
+    summaryParts.push(`Recent momentum has softened, with the track down ${percent(Math.abs(trend))} over the last 3 months.`);
+  }
+
+  if (underMonetized) {
+    summaryParts.push(
+      `${underMonetized.territory} shows the clearest monetization gap, carrying ${percent((underMonetized.usage_share ?? 0) * 100)} of usage but only ${percent((underMonetized.payout_share ?? 0) * 100)} of payout.`,
+    );
+  } else if (topPlatform && topPlatformShare >= 55) {
+    summaryParts.push(`${topPlatform.platform} is carrying ${percent(topPlatformShare)} of revenue, so performance is strong but concentrated.`);
+  } else if (topTerritory && topTerritoryShare >= 40) {
+    summaryParts.push(`${topTerritory.territory} is carrying ${percent(topTerritoryShare)} of revenue, making that market the clearest driver right now.`);
+  }
+
+  if ((detail.quality.open_critical_task_count ?? 0) > 0 || (detail.quality.failed_line_count ?? 0) > 0) {
+    summaryParts.push(
+      `Data confidence needs attention because this track still has ${detail.quality.failed_line_count ?? 0} failed lines and ${detail.quality.open_critical_task_count ?? 0} open critical review tasks.`,
+    );
+  }
+
+  let whyThisMatters = "Use this snapshot to decide where to push the track next and where revenue quality needs review.";
+  if (underMonetized) {
+    whyThisMatters = `The biggest immediate action is to inspect rights coverage and payout mechanics in ${underMonetized.territory}, where usage is materially outrunning payout.`;
+  } else if ((detail.quality.open_critical_task_count ?? 0) > 0) {
+    whyThisMatters = "Revenue may be understated until the open critical review items are resolved, so cleanup can directly improve payout confidence.";
+  } else if (trend >= 15) {
+    whyThisMatters = "Positive momentum makes this a strong candidate for another marketing or playlist push while demand is rising.";
+  }
+
+  return {
+    conversation_id: conversationId ?? crypto.randomUUID(),
+    resolved_mode: "track" as const,
+    resolved_entities: resolvedEntities,
+    answer_title: "Track Snapshot",
+    executive_answer: summaryParts.join(" "),
+    why_this_matters: whyThisMatters,
+    evidence: {
+      row_count: 1,
+      scanned_rows: 1,
+      from_date: fromDate,
+      to_date: toDate,
+      provenance: ["get_track_insight_detail_v1"],
+      system_confidence: "high" as const,
+    },
+    kpis: [
+      { label: "Net revenue", value: compactMoney(summary.net_revenue) },
+      { label: "Units", value: Math.round(summary.quantity || 0).toLocaleString() },
+      { label: "3M trend", value: percent(trend) },
+      { label: "Top platform", value: topPlatform?.platform ?? row?.top_platform ?? "Unknown" },
+    ],
+    visual: {
+      type: "table" as const,
+      title: "Track Snapshot Anchors",
+      columns: ["track_title", "artist_name", "net_revenue", "quantity", "top_territory", "top_platform"],
+      rows: [{
+        track_title: summary.track_title,
+        artist_name: summary.artist_name,
+        net_revenue: Number((summary.net_revenue || 0).toFixed(2)),
+        quantity: Math.round(summary.quantity || 0),
+        top_territory: topTerritory?.territory ?? row?.top_territory ?? "Unknown",
+        top_platform: topPlatform?.platform ?? row?.top_platform ?? "Unknown",
+      }],
+    },
+    actions: [
+      { label: "Open Track Insights", href: `/insights/${encodeURIComponent(summary.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(summary.track_key)}`, kind: "primary" as const },
+      { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(summary.track_key)}`, kind: "secondary" as const },
+      { label: "Open Reviews", href: "/review-queue", kind: "ghost" as const },
+    ],
+    follow_up_questions: [
+      "Which territories show the biggest payout leakage for this track?",
+      "How is this track trending month over month?",
+      "Which platform should get the next push for this track?",
+    ],
+    diagnostics: {
+      intent: "track_snapshot_summary",
+      confidence: "high",
+      used_fields: ["net_revenue", "quantity", "platform_mix", "territory_mix", "high_usage_low_payout", "quality"],
+      missing_fields: [],
+      strict_mode: false,
+      fallback_mode: "router_track_snapshot_detail",
+    },
+  };
+}
+
 function topNFromQuestion(question: string, fallback = 5): number {
   const match = question.toLowerCase().match(/\btop\s+(\d{1,2})\b/);
   if (!match) return fallback;
@@ -1140,6 +1311,22 @@ serve(async (req) => {
         resolvedEntities.artist_name = trackRow.artist_name;
       } else {
         resolvedEntities.track_key = entityContext.track_key;
+      }
+
+      if (isTrackSnapshotQuestion(question)) {
+        const snapshotDetail = await fetchTrackSnapshotDetail(userClient, entityContext.track_key, fromDate, toDate);
+        if (snapshotDetail?.summary) {
+          return jsonResponse(
+            buildTrackSnapshotSummaryResponse({
+              detail: snapshotDetail,
+              row: track,
+              fromDate,
+              toDate,
+              resolvedEntities,
+              conversationId: body.conversation_id,
+            }),
+          );
+        }
       }
 
       let assistantPayload: TrackAssistantTurnResponse | null = null;

@@ -235,6 +235,18 @@
     text-transform: uppercase;
   }
 
+  [data-export-only="true"] {
+    display: none !important;
+  }
+
+  [data-exporting-pdf="true"] [data-export-only="true"] {
+    display: block !important;
+  }
+
+  [data-exporting-pdf="true"] [data-export-only="true"].export-flex {
+    display: flex !important;
+  }
+
   .type-table {
     font-family: var(--font-table-ui);
   }

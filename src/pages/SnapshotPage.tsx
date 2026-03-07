@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   ArrowLeft,
   ArrowUpRight,
   CalendarRange,
+  Download,
   Sparkles,
   Target,
 } from "lucide-react";
@@ -29,7 +30,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { buildSnapshotPdfFilename, exportElementToPdf } from "@/lib/pdf";
 import { defaultDateRange, parseArtistSnapshotDetail, parseDetail } from "@/lib/insights";
 import { toCompactMoney, toMoney, safePercent } from "@/lib/royalty";
 import { cn } from "@/lib/utils";
@@ -78,6 +81,10 @@ function formatDateWindow(fromDate: string, toDate: string): string {
   const to = new Date(`${toDate}T00:00:00`);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return `${fromDate} - ${toDate}`;
   return `${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function formatExportStamp(value: Date): string {
+  return format(value, "MMM d, yyyy 'at' h:mm a");
 }
 
 function toMonthLabel(value: string): string {
@@ -280,13 +287,17 @@ function EmptySnapshotState({
 export default function SnapshotPage({ scope }: SnapshotPageProps) {
   const navigate = useNavigate();
   const params = useParams<{ trackKey?: string; artistKey?: string }>();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const snapshotExportRef = useRef<HTMLDivElement | null>(null);
   const defaults = defaultDateRange();
   const [fromDate, setFromDate] = useState(() => normalizeDateParam(searchParams.get("from"), defaults.fromDate));
   const [toDate, setToDate] = useState(() => normalizeDateParam(searchParams.get("to"), defaults.toDate));
   const [draftFromDate, setDraftFromDate] = useState(fromDate);
   const [draftToDate, setDraftToDate] = useState(toDate);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [exportStamp] = useState(() => formatExportStamp(new Date()));
 
   const trackKey = (params.trackKey ?? "").trim();
   const artistKey = (params.artistKey ?? "").trim();
@@ -723,79 +734,141 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
   const summaryWhy = summaryResponse?.why_this_matters;
   const fallbackBadge = snapshotSummaryQuery.isError ? "Deterministic view" : undefined;
 
+  const handleExportPdf = async () => {
+    if (isExportingPdf) return;
+
+    const exportNode = snapshotExportRef.current;
+    if (!exportNode) {
+      toast({
+        title: "Export failed",
+        description: "The snapshot view is not ready to export yet.",
+      });
+      return;
+    }
+
+    try {
+      setIsExportingPdf(true);
+      await exportElementToPdf(exportNode, {
+        filename: buildSnapshotPdfFilename(title, fromDate, toDate),
+      });
+      toast({
+        title: "PDF ready",
+        description: "The snapshot PDF has been downloaded.",
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      toast({
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Unable to create the snapshot PDF.",
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   return (
     <div className="min-h-full overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
-        <PageHeader
-          title={title}
-          subtitle={subtitle}
-          actions={
-            <>
-              <Button variant="outline" size="sm" onClick={backToAi}>
-                <ArrowLeft className="h-4 w-4" />
-                Back to AI Insights
-              </Button>
-              <Button variant="outline" size="sm" onClick={openTransactions}>
-                <ArrowUpRight className="h-4 w-4" />
-                Transactions
-              </Button>
-            </>
-          }
-        />
-
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
-            <PopoverTrigger asChild>
-              <button className="flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/45">
-                <CalendarRange className="h-3.5 w-3.5 text-[hsl(var(--brand-accent))] opacity-60" />
-                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
-                  {formatDateWindow(fromDate, toDate)}
-                </span>
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-sm border-2 border-black p-6 shadow-2xl" align="start">
-              <div className="grid gap-6">
-                <div className="space-y-2">
-                  <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: FROM</p>
-                  <Input
-                    type="date"
-                    value={draftFromDate}
-                    onChange={(e) => setDraftFromDate(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") applyDateWindow();
-                    }}
-                    className="h-10 rounded-sm border-black font-mono md:text-xs"
-                  />
+        <div ref={snapshotExportRef} className="space-y-6">
+          <section
+            data-export-only="true"
+            className="overflow-hidden rounded-sm border border-black/10 bg-[linear-gradient(135deg,hsl(var(--brand-accent-ghost))/92,white_62%)] shadow-[0_18px_35px_rgba(0,0,0,0.05)]"
+          >
+            <div className="flex items-start justify-between gap-6 px-6 py-5">
+              <div className="min-w-0 flex flex-1 items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-sm border border-black/10 bg-white/90 p-2 shadow-sm">
+                  <img src="/logo-icon.png" alt="OrderSounds" className="h-full w-full object-contain" />
                 </div>
-                <div className="space-y-2">
-                  <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: TO</p>
-                  <Input
-                    type="date"
-                    value={draftToDate}
-                    onChange={(e) => setDraftToDate(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") applyDateWindow();
-                    }}
-                    className="h-10 rounded-sm border-black font-mono md:text-xs"
-                  />
-                </div>
-                <div className="flex items-center justify-end gap-2">
-                  <Button variant="outline" size="sm" onClick={resetDraftDateWindow}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" onClick={applyDateWindow}>
-                    Apply
-                  </Button>
+                <div className="min-w-0">
+                  <p className="type-micro text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--brand-accent))]">OrderSounds</p>
+                  <h2 className="type-display-section text-lg text-black">Publisher Snapshot Report</h2>
+                  <p className="text-sm text-black/60">
+                    {scope === "track" ? "Track performance snapshot" : "Artist performance snapshot"} for {formatDateWindow(fromDate, toDate)}
+                  </p>
                 </div>
               </div>
-            </PopoverContent>
-          </Popover>
-          <Badge variant="outline" className="border-black/15 bg-white/70 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-black/60">
-            {scope === "track" ? "Track Snapshot" : "Artist Snapshot"}
-          </Badge>
-        </div>
+              <div className="shrink-0 rounded-sm border border-black/10 bg-white/80 px-4 py-3 text-xs text-black/60">
+                <p className="font-mono uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">Prepared by OrderSounds</p>
+                <p className="mt-1">Exported {exportStamp}</p>
+              </div>
+            </div>
+          </section>
 
-        <div className="mt-6 space-y-6">
+          <PageHeader
+            title={title}
+            subtitle={subtitle}
+            actions={
+              <div data-export-ignore="true" className="flex shrink-0 items-center gap-2">
+                <Button variant="outline" size="sm" onClick={backToAi}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to AI Insights
+                </Button>
+                <Button variant="outline" size="sm" onClick={openTransactions}>
+                  <ArrowUpRight className="h-4 w-4" />
+                  Transactions
+                </Button>
+                <Button variant="default" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>
+                  <Download className="h-4 w-4" />
+                  {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
+                </Button>
+              </div>
+            }
+          />
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/45">
+                  <CalendarRange className="h-3.5 w-3.5 text-[hsl(var(--brand-accent))] opacity-60" />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+                    {formatDateWindow(fromDate, toDate)}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-sm border-2 border-black p-6 shadow-2xl" align="start">
+                <div className="grid gap-6">
+                  <div className="space-y-2">
+                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: FROM</p>
+                    <Input
+                      type="date"
+                      value={draftFromDate}
+                      onChange={(e) => setDraftFromDate(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyDateWindow();
+                      }}
+                      className="h-10 rounded-sm border-black font-mono md:text-xs"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: TO</p>
+                    <Input
+                      type="date"
+                      value={draftToDate}
+                      onChange={(e) => setDraftToDate(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyDateWindow();
+                      }}
+                      className="h-10 rounded-sm border-black font-mono md:text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={resetDraftDateWindow}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" onClick={applyDateWindow}>
+                      Apply
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <Badge variant="outline" className="border-black/15 bg-white/70 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-black/60">
+              {scope === "track" ? "Track Snapshot" : "Artist Snapshot"}
+            </Badge>
+          </div>
+
           <SnapshotSummaryCard
             title="AI summary"
             summary={summaryText}

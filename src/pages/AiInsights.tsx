@@ -467,7 +467,7 @@ export default function AiInsights() {
                                   </div>
                                   <div className="min-w-0 p-3 md:p-6">
                                     {turn.payload.visual.type === "table" ? (
-                                      <div className="w-full min-w-0 overflow-x-auto">
+                                      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
                                         <Table>
                                           <TableHeader>
                                             <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
@@ -724,8 +724,24 @@ function ContextRail({
           </div>
 
           <div className="mt-4 rounded-sm border border-black/10 bg-black/[0.02] p-3">
-            <p className="type-micro text-[9px] text-black/45">Current selection</p>
-            <div className="mt-2 flex items-center justify-between gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="type-micro text-[9px] text-black/45">Current selection</p>
+                <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-black/35">
+                  This controls the AI answer scope.
+                </p>
+              </div>
+              {(selectedContext.track_key || selectedContext.artist_key) && (
+                <button
+                  type="button"
+                  onClick={onClearScope}
+                  className="shrink-0 rounded-sm border border-black/10 bg-white px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-black/65 transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:text-[hsl(var(--brand-accent))]"
+                >
+                  Clear scope
+                </button>
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold tracking-tight text-black">{activeScopeLabel}</p>
                 <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]/80">
@@ -913,16 +929,6 @@ function ContextRail({
         </ScrollArea>
       </div>
 
-      <div className="border-t border-black/10 bg-white/45 p-5">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onClearScope}
-          className="h-9 w-full border border-black/15 bg-background text-[10px] font-bold uppercase tracking-[0.2em] shadow-sm transition-all hover:border-black hover:bg-black hover:text-white"
-        >
-          RESET TO WORKSPACE
-        </Button>
-      </div>
     </div>
   );
 }

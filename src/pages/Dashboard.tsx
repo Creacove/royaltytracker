@@ -528,7 +528,6 @@ export default function Dashboard() {
       }));
   }, [reports]);
 
-  const topCmo = cmoScorecard[0];
   const loading = reportsLoading || txLoading || extractorLoading;
   const criticalError = reportsError || txError || extractorError;
 
@@ -538,16 +537,13 @@ export default function Dashboard() {
         title="Overview"
         subtitle="Revenue pulse, report progress, and CMO performance at a glance."
         actions={
-          <>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/ai-insights">Open AI Insights</Link>
-            </Button>
-            {topCmo ? (
-              <p className="rounded-sm border border-border/45 px-3 py-2 font-mono text-xs text-muted-foreground">
-                Top CMO: {topCmo.cmo} ({toCompactMoney(topCmo.net)})
-              </p>
-            ) : null}
-          </>
+          <Button
+            asChild
+            size="sm"
+            className="border border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent))] text-white hover:bg-[hsl(var(--brand-accent-soft))] hover:text-white"
+          >
+            <Link to="/ai-insights">View AI Insights</Link>
+          </Button>
         }
       />
 
