@@ -43,7 +43,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -221,7 +220,6 @@ export default function AiInsights() {
           payload: response,
         },
       ]);
-      setQuestion("");
     },
     onError: (error: Error) => {
       toast({ title: "AI request failed", description: error.message, variant: "destructive" });
@@ -247,6 +245,7 @@ export default function AiInsights() {
     const trimmed = question.trim();
     if (!trimmed) return;
     setTurns((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text: trimmed }]);
+    setQuestion("");
     sendMutation.mutate({
       question: trimmed,
       from_date: fromDate,
@@ -315,20 +314,6 @@ export default function AiInsights() {
             <h1 className="hidden lg:block type-display-section text-sm font-normal tracking-[0.2em] text-foreground">
               AI INSIGHTS
             </h1>
-            <div className="hidden md:block">
-              <Tabs
-                value={entityContext.track_key ? "track" : entityContext.artist_name ? "artist" : "workspace"}
-                onValueChange={(v) => {
-                  if (v === "workspace") setEntityContext({});
-                }}
-              >
-                <TabsList className="h-8 border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 p-0.5">
-                  <TabsTrigger value="workspace" className="h-7 px-3 text-[9px] font-bold uppercase tracking-widest data-[state=active]:bg-[hsl(var(--brand-accent))] data-[state=active]:text-white">Workspace</TabsTrigger>
-                  <TabsTrigger value="artist" disabled={!entityContext.artist_name} className="h-7 px-3 text-[9px] font-bold uppercase tracking-widest data-[state=active]:bg-[hsl(var(--brand-accent))] data-[state=active]:text-white">Artist</TabsTrigger>
-                  <TabsTrigger value="track" disabled={!entityContext.track_key} className="h-7 px-3 text-[9px] font-bold uppercase tracking-widest data-[state=active]:bg-[hsl(var(--brand-accent))] data-[state=active]:text-white">Track</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
           </div>
           <div className="flex min-w-0 items-center gap-2 md:gap-3">
             <Popover>
@@ -376,10 +361,10 @@ export default function AiInsights() {
                     <Sparkles className="h-6 w-6 text-white" />
                   </div>
                   <h2 className="type-display-section text-4xl tracking-tight text-black">
-                    AI ASSISTANT
+                    ROYALTY INTELLIGENCE
                   </h2>
                   <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground">
-                    Ask questions about your tracks, artists, and royalty performance to uncover strategic growth opportunities.
+                    Ask about tracks, artists, and royalty performance to get a clear answer backed by your workspace data.
                   </p>
                   <div className="mt-10 flex flex-wrap justify-center gap-2">
                     {[
@@ -417,7 +402,7 @@ export default function AiInsights() {
                         <div className="flex-1 space-y-4">
                           <div className="flex items-center justify-between">
                               <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))]">
-                                {turn.role === "assistant" ? "ANALYSIS // ORDERSOUNDS" : "INTENT // SOURCE"}
+                                {turn.role === "assistant" ? "AI ANSWER" : "YOUR QUESTION"}
                               </p>
                             <p className="font-mono text-[9px] text-muted-foreground opacity-40 uppercase">
                               {format(new Date(), "HH:mm:ss")}
@@ -532,7 +517,9 @@ export default function AiInsights() {
                               {/* Removed metadata, actions, and follow-up questions per user request */}
                             </div>
                           ) : (
-                            <p className="text-xl font-bold leading-relaxed tracking-tight">{turn.text}</p>
+                            <div className="max-w-[90%] rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3">
+                              <p className="text-lg font-bold leading-relaxed tracking-tight text-black">{turn.text}</p>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -548,7 +535,7 @@ export default function AiInsights() {
                         <div className="flex items-center gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--brand-accent))] animate-pulse"></span>
                           <p className="type-micro text-[9px] font-bold tracking-[0.3em] text-[hsl(var(--brand-accent))] animate-pulse">
-                            STRATEGIC ANALYSIS IN PROGRESS
+                            AI IS REVIEWING YOUR DATA
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -571,15 +558,7 @@ export default function AiInsights() {
 
         {/* Chat Input */}
         <footer className="border-t border-black/10 bg-background p-4 md:p-8 z-10 transition-all focus-within:border-black">
-          <div className="mx-auto max-w-4xl space-y-4 md:space-y-6">
-            <div className="hidden md:flex flex-wrap items-center gap-3">
-              <div className="hidden lg:flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--brand-accent))]">
-                <Target className="h-3.5 w-3.5" />
-                {getContextLabel(entityContext)}
-              </div>
-
-            </div>
-
+          <div className="mx-auto max-w-4xl">
             <div className="relative group">
               <Textarea
                 value={question}
