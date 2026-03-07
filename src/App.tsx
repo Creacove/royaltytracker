@@ -172,7 +172,7 @@ function AppRoutes() {
   }
 
   if (location.pathname === "/onboarding" && onboardingState.onboardingComplete) {
-    return <Navigate to="/ai-insights" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const hasAnyUploads = reportCountErrored ? true : reportCount > 0;
