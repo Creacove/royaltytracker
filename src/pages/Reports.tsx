@@ -225,18 +225,8 @@ export default function Reports() {
   const hasAnyReports = reports.length > 0;
   const emptyReportDescription = hasAnyReports
     ? "No statements match your current filters."
-    : "Upload your first statement to unlock Overview and Statement Reviews.";
+    : "Upload your first statement to get started with royalty analysis.";
 
-  useEffect(() => {
-    if (searchParams.get("setup") !== "upload-first") return;
-    toast({
-      title: "Upload your first statement",
-      description: "Overview and Statement Reviews unlock after your first upload.",
-    });
-    const next = new URLSearchParams(searchParams);
-    next.delete("setup");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, toast]);
 
   const uploadMutation = useMutation({
     mutationFn: async () => {

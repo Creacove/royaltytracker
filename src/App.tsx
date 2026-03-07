@@ -202,7 +202,7 @@ function AppRoutes() {
   }
 
   if (shouldGateForFirstUpload) {
-    return <Navigate to="/reports?setup=upload-first" replace />;
+    return <Navigate to="/reports" replace />;
   }
 
   if (enforceSubscriptionGate) {
@@ -229,7 +229,7 @@ function AppRoutes() {
       hasAnyUploads={hasAnyUploads}
     >
       <Routes>
-        <Route path="/" element={hasAnyUploads ? <Dashboard /> : <Navigate to="/reports?setup=upload-first" replace />} />
+        <Route path="/" element={hasAnyUploads ? <Dashboard /> : <Navigate to="/reports" replace />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/ai-insights" element={<AiInsights />} />
@@ -273,15 +273,15 @@ function AppRoutes() {
         <Route path="/admin/invites" element={<Navigate to="/workspace" replace />} />
         <Route
           path="/validation"
-          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports?setup=upload-first"} replace />}
+          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports"} replace />}
         />
         <Route
           path="/review-queue"
-          element={hasAnyUploads ? <DataQualityQueue /> : <Navigate to="/reports?setup=upload-first" replace />}
+          element={hasAnyUploads ? <DataQualityQueue /> : <Navigate to="/reports" replace />}
         />
         <Route
           path="/quality-queue"
-          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports?setup=upload-first"} replace />}
+          element={<Navigate to={hasAnyUploads ? "/review-queue" : "/reports"} replace />}
         />
         <Route path="/analytics" element={<Navigate to="/ai-insights" replace />} />
         <Route path="*" element={<NotFound />} />
