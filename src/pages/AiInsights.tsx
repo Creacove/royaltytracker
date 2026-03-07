@@ -281,9 +281,9 @@ export default function AiInsights() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-x-hidden overflow-y-hidden bg-background font-ui">
+    <div className="flex h-full w-full overflow-hidden bg-background font-ui">
       {/* Main: Chat Channel */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
         {/* Chat Header */}
         <header className="flex h-14 md:h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6 shadow-sm z-10">
           <div className="flex items-center gap-3 md:gap-6">
@@ -367,9 +367,9 @@ export default function AiInsights() {
         </header>
 
         {/* Chat Content */}
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden bg-background">
-          <ScrollArea className="flex-1 overflow-x-hidden px-3 md:px-6">
-            <div className="mx-auto w-full min-w-0 max-w-4xl py-8 md:py-12">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+          <ScrollArea className="flex-1 px-3 md:px-6">
+            <div className="mx-auto w-full max-w-4xl py-8 md:py-12">
               {turns.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-sm bg-[hsl(var(--brand-accent))] shadow-lg">
@@ -425,8 +425,8 @@ export default function AiInsights() {
                           </div>
 
                           {turn.payload ? (
-                            <div className="min-w-0 space-y-8 overflow-x-hidden">
-                              <div className="w-full min-w-0 md:max-w-[90%]">
+                            <div className="min-w-0 flex-1 space-y-8">
+                              <div className="w-full max-w-full md:max-w-[90%]">
                                 <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
                                   {turn.payload.answer_title}
                                 </h3>
@@ -435,9 +435,9 @@ export default function AiInsights() {
                                 </p>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-y-3 gap-x-6 md:grid-cols-4 border-l-2 border-[hsl(var(--brand-accent))]/20 pl-6 py-0.5">
+                              <div className="grid grid-cols-2 gap-y-3 gap-x-6 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4">
                                 {turn.payload.kpis.map((kpi) => (
-                                  <div key={kpi.label} className="min-w-0">
+                                  <div key={kpi.label} className="min-w-0 overflow-hidden">
                                     <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{kpi.label}</p>
                                     <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={kpi.value}>
                                       {kpi.value}
@@ -446,7 +446,7 @@ export default function AiInsights() {
                                 ))}
                               </div>
 
-                              <div className="group relative w-full min-w-0 overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
+                              <div className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
                                 <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 translate-y-[-16px] rounded-full bg-white/5 blur-3xl group-hover:bg-white/10 transition-all"></div>
                                 <div className="flex items-center gap-3 text-white/40">
                                   <TrendingUp className="h-4 w-4" />
@@ -456,8 +456,8 @@ export default function AiInsights() {
                               </div>
 
                               {turn.payload.visual.type !== "none" && (
-                                <div className="min-w-0 overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
-                                  <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-6 py-2.5">
+                                <div className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
+                                  <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
                                     <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
                                       {turn.payload.visual.title || "EVIDENCE VISUALIZATION"}
                                     </p>
@@ -465,7 +465,7 @@ export default function AiInsights() {
                                       {turn.payload.visual.type}
                                     </Badge>
                                   </div>
-                                  <div className="p-6">
+                                  <div className="p-3 md:p-6">
                                     {turn.payload.visual.type === "table" ? (
                                       <div className="overflow-x-auto">
                                         <Table>
@@ -532,7 +532,7 @@ export default function AiInsights() {
                               {/* Removed metadata, actions, and follow-up questions per user request */}
                             </div>
                           ) : (
-                            <div className="w-full min-w-0 rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
+                            <div className="w-full max-w-full rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
                               <p className="break-words text-lg font-bold leading-relaxed tracking-tight text-black [overflow-wrap:anywhere]">{turn.text}</p>
                             </div>
                           )}
@@ -540,7 +540,7 @@ export default function AiInsights() {
                       </div>
                     </div>
                   ))}
-                  {sendMutation.isPending && (
+                  {sendMutation.isPending && turns[turns.length - 1]?.role === "user" && (
                     <div className="flex items-start gap-6 opacity-60">
                       <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-black bg-black text-white shadow-lg relative overflow-hidden">
                         <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite] -translate-y-full"></div>
