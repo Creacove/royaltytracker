@@ -15,20 +15,15 @@ import {
 import {
   Bot,
   CalendarRange,
-  Compass,
   Copy,
-  PanelRightOpen,
   Search,
   Send,
   Sparkles,
   Target,
   TrendingUp,
   User,
-  Check,
-  ChevronDown,
-  ChevronsUpDown,
 } from "lucide-react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 import { supabase } from "@/integrations/supabase/client";
 import { defaultDateRange } from "@/lib/insights";
@@ -50,7 +45,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { PageHeader } from "@/components/layout";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -155,6 +149,23 @@ function normalizeArtistKey(artistName: string): string {
   return `artist:${normalized || "unknown artist"}`;
 }
 
+function getContextLabel(entityContext: AiInsightsEntityContext): string {
+  if (entityContext.track_key) return `CONTEXT: ${entityContext.track_key}`;
+  if (entityContext.artist_name) return `CONTEXT: ${entityContext.artist_name}`;
+  return "CONTEXT: WORKSPACE";
+}
+
+function formatDateWindow(fromDate: string, toDate: string): string {
+  const from = new Date(`${fromDate}T00:00:00`);
+  const to = new Date(`${toDate}T00:00:00`);
+
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return `${fromDate} - ${toDate}`;
+  }
+
+  return `${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
 export default function AiInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
@@ -187,19 +198,6 @@ export default function AiInsights() {
       return (data ?? []) as TrackInsightListRow[];
     },
   });
-
-  const topTracks = useMemo(() => trackRows.slice(0, 8), [trackRows]);
-  const topArtists = useMemo(() => {
-    const map = new Map<string, { artist: string; artist_key: string; net: number }>();
-    for (const row of trackRows) {
-      const key = row.artist_name || "Unknown Artist";
-      if (!map.has(key)) map.set(key, { artist: key, artist_key: normalizeArtistKey(key), net: 0 });
-      map.get(key)!.net += row.net_revenue ?? 0;
-    }
-    return Array.from(map.values())
-      .sort((a, b) => b.net - a.net)
-      .slice(0, 8);
-  }, [trackRows]);
 
   const sendMutation = useMutation({
     mutationFn: async (payload: AiInsightsTurnRequest): Promise<AiInsightsTurnResponse> => {
@@ -272,44 +270,13 @@ export default function AiInsights() {
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background font-ui">
-      {/* Sidebar: Context Rail */}
-      <aside className="hidden w-[320px] flex-shrink-0 lg:block">
-        <ContextRail
-          trackRows={trackRows}
-          onTrackSelect={(track) =>
-            setEntityContext({
-              track_key: track.track_key,
-              track_title: track.track_title,
-              artist_name: track.artist_name,
-              artist_key: normalizeArtistKey(track.artist_name || "Unknown Artist"),
-            })
-          }
-          onArtistSelect={(artistName, artistKey) =>
-            setEntityContext({ artist_name: artistName, artist_key: artistKey })
-          }
-          onClearScope={() => setEntityContext({})}
-          trackSearch={trackSearch}
-          setTrackSearch={setTrackSearch}
-          artistSearch={artistSearch}
-          setArtistSearch={setArtistSearch}
-          activeTab={activeRailTab}
-          setActiveTab={setActiveRailTab}
-          selectedContext={entityContext}
-        />
-      </aside>
-
       {/* Main: Chat Channel */}
       <main className="flex flex-1 flex-col bg-background">
         {/* Chat Header */}
         <header className="flex h-14 md:h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6 shadow-sm z-10">
           <div className="flex items-center gap-3 md:gap-6">
             <Sheet open={isRailOpen} onOpenChange={setIsRailOpen}>
-              <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="lg:hidden h-9 w-9 text-[hsl(var(--brand-accent))]">
-                  <PanelRightOpen className="h-5 w-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[300px] p-0 border-r-0">
+              <SheetContent side="right" className="w-[300px] p-0 border-l-0">
                 <ContextRail
                   trackRows={trackRows}
                   onArtistSelect={(artistName, artistKey) => {
@@ -338,17 +305,13 @@ export default function AiInsights() {
                   selectedContext={entityContext}
                 />
               </SheetContent>
+              <SheetTrigger asChild>
+                <button className="flex max-w-[220px] items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--brand-accent))] transition-all active:scale-95 md:hidden">
+                  <Target className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{getContextLabel(entityContext)}</span>
+                </button>
+              </SheetTrigger>
             </Sheet>
-
-            <button 
-              onClick={() => setIsRailOpen(true)}
-              className="lg:hidden flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-2 py-1 transition-all active:scale-95"
-            >
-              <h1 className="type-display-section text-[9px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))] uppercase">
-                {entityContext.track_key ? "TRACK // " + entityContext.track_key : entityContext.artist_name ? "ARTIST // " + entityContext.artist_name : "WORKSPACE"}
-              </h1>
-              <ChevronDown className="h-2.5 w-2.5 text-[hsl(var(--brand-accent))] opacity-40" />
-            </button>
             <h1 className="hidden lg:block type-display-section text-sm font-normal tracking-[0.2em] text-foreground">
               AI INSIGHTS
             </h1>
@@ -367,14 +330,36 @@ export default function AiInsights() {
               </Tabs>
             </div>
           </div>
-          <div className="flex items-center gap-2 md:gap-3">
-            <div className="flex h-7 md:h-8 items-center gap-1.5 md:gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-2 md:px-3">
+          <div className="flex min-w-0 items-center gap-2 md:gap-3">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-2 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/45 md:h-8 md:flex-none md:px-3">
+                  <CalendarRange className="h-3 w-3 shrink-0 text-[hsl(var(--brand-accent))] opacity-60 md:h-3.5 md:w-3.5" />
+                  <span className="truncate font-mono text-[9px] md:text-[10px] uppercase text-[hsl(var(--brand-accent))]">
+                    {formatDateWindow(fromDate, toDate)}
+                  </span>
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-sm border-2 border-black p-6 shadow-2xl" align="end">
+                <div className="grid gap-6">
+                  <div className="space-y-2">
+                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: FROM</p>
+                    <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-sm border-black font-mono md:text-xs" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: TO</p>
+                    <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-sm border-black font-mono md:text-xs" />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            <div className="hidden">
               <CalendarRange className="h-3 w-3 md:h-3.5 md:w-3.5 text-[hsl(var(--brand-accent))] opacity-60" />
               <span className="font-mono text-[9px] md:text-[10px] uppercase text-[hsl(var(--brand-accent))]">
                 {fromDate.split('-').reverse().slice(0, 2).join('.')} — {toDate.split('-').reverse().slice(0, 2).join('.')}
               </span>
             </div>
-            <Button variant="outline" size="sm" onClick={copyShareLink} className="h-7 md:h-8 border-[hsl(var(--brand-accent))]/20 bg-background px-2 md:px-3 text-[hsl(var(--brand-accent))] hover:bg-[hsl(var(--brand-accent))] hover:text-white transition-all">
+            <Button variant="outline" size="sm" onClick={copyShareLink} className="hidden h-7 border-[hsl(var(--brand-accent))]/20 bg-background px-2 text-[hsl(var(--brand-accent))] transition-all hover:bg-[hsl(var(--brand-accent))] hover:text-white md:inline-flex md:h-8 md:px-3">
               <Copy className="h-3 w-3" />
               <span className="ml-1.5 md:ml-2 text-[8px] md:text-[9px] font-bold uppercase tracking-widest">Share</span>
             </Button>
@@ -587,39 +572,12 @@ export default function AiInsights() {
         {/* Chat Input */}
         <footer className="border-t border-black/10 bg-background p-4 md:p-8 z-10 transition-all focus-within:border-black">
           <div className="mx-auto max-w-4xl space-y-4 md:space-y-6">
-            <div className="flex flex-wrap items-center gap-3">
-              <button 
-                onClick={() => setIsRailOpen(true)}
-                className="lg:hidden flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--brand-accent))] transition-all active:scale-95"
-              >
-                <Target className="h-3.5 w-3.5" />
-                {entityContext.track_key ? "CONTEXT: " + entityContext.track_key : entityContext.artist_name ? "CONTEXT: " + entityContext.artist_name : "CONTEXT: WORKSPACE"}
-              </button>
+            <div className="hidden md:flex flex-wrap items-center gap-3">
               <div className="hidden lg:flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--brand-accent))]">
                 <Target className="h-3.5 w-3.5" />
-                {entityContext.track_key ? "CONTEXT: " + entityContext.track_key : entityContext.artist_name ? "CONTEXT: " + entityContext.artist_name : "CONTEXT: WORKSPACE"}
+                {getContextLabel(entityContext)}
               </div>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="flex items-center gap-2 rounded-sm border border-black/20 bg-white px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-all">
-                    <CalendarRange className="h-3.5 w-3.5" />
-                    WINDOW: {fromDate.split('-').join('.')} - {toDate.split('-').join('.')}
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-6 rounded-sm border-2 border-black shadow-2xl" align="start">
-                  <div className="grid gap-6">
-                    <div className="space-y-2">
-                      <p className="type-micro text-[11px] font-bold text-black tracking-widest">TIME HORIZON: FROM</p>
-                      <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-sm border-black font-mono text-xs" />
-                    </div>
-                    <div className="space-y-2">
-                      <p className="type-micro text-[11px] font-bold text-black tracking-widest">TIME HORIZON: TO</p>
-                      <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-sm border-black font-mono text-xs" />
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
             </div>
 
             <div className="relative group">
@@ -650,6 +608,32 @@ export default function AiInsights() {
           </div>
         </footer>
       </main>
+
+      {/* Sidebar: Context Rail */}
+      <aside className="hidden w-[320px] flex-shrink-0 lg:block">
+        <ContextRail
+          trackRows={trackRows}
+          onTrackSelect={(track) =>
+            setEntityContext({
+              track_key: track.track_key,
+              track_title: track.track_title,
+              artist_name: track.artist_name,
+              artist_key: normalizeArtistKey(track.artist_name || "Unknown Artist"),
+            })
+          }
+          onArtistSelect={(artistName, artistKey) =>
+            setEntityContext({ artist_name: artistName, artist_key: artistKey })
+          }
+          onClearScope={() => setEntityContext({})}
+          trackSearch={trackSearch}
+          setTrackSearch={setTrackSearch}
+          artistSearch={artistSearch}
+          setArtistSearch={setArtistSearch}
+          activeTab={activeRailTab}
+          setActiveTab={setActiveRailTab}
+          selectedContext={entityContext}
+        />
+      </aside>
     </div>
   );
 }
@@ -709,18 +693,62 @@ function ContextRail({
     return allArtists.filter((a) => a.artist.toLowerCase().includes(term));
   }, [allArtists, artistSearch]);
 
+  const activeScopeLabel = selectedContext.track_key
+    ? selectedContext.track_key
+    : selectedContext.artist_name
+      ? selectedContext.artist_name
+      : "Workspace-wide";
+
+  const activeScopeType = selectedContext.track_key
+    ? "Track scope"
+    : selectedContext.artist_name
+      ? "Artist scope"
+      : "Default scope";
+
   return (
-    <div className="flex h-full flex-col border-r border-black/5 bg-[hsl(var(--brand-accent-ghost))]/30 backdrop-blur-md">
+    <div className="flex h-full flex-col border-l border-black/10 bg-[linear-gradient(180deg,rgba(236,232,242,0.95)_0%,rgba(244,240,232,0.92)_100%)] backdrop-blur-md">
       <div className="border-b border-black/10 p-5">
-        <h2 className="type-display-section text-[10px] font-normal tracking-[0.25em] text-[hsl(var(--brand-accent))] opacity-70">
-          DATA CONTEXT
-        </h2>
-        <div className="mt-5 flex rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/40 p-0.5">
+        <div className="rounded-sm border border-black/10 bg-white/75 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="type-display-section text-[10px] font-normal tracking-[0.25em] text-[hsl(var(--brand-accent))]">
+                DATA CONTEXT
+              </h2>
+              <p className="mt-2 text-[12px] leading-[1.45] text-black/65">
+                Pick the track or artist you want the AI to analyze. Leave it on workspace to ask broader portfolio questions.
+              </p>
+            </div>
+            <div className="shrink-0 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/70 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--brand-accent))]">
+              Scope
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-sm border border-black/10 bg-black/[0.02] p-3">
+            <p className="type-micro text-[9px] text-black/45">Current selection</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold tracking-tight text-black">{activeScopeLabel}</p>
+                <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]/80">
+                  {activeScopeType}
+                </p>
+              </div>
+              {(selectedContext.track_key || selectedContext.artist_key) && (
+                <div className="rounded-sm bg-[hsl(var(--brand-accent))] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
+                  Active
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex rounded-sm border border-black/10 bg-white/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
           <button
             onClick={() => setActiveTab("tracks")}
             className={cn(
-              "flex-1 rounded-sm px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.15em] transition-all",
-              activeTab === "tracks" ? "bg-[hsl(var(--brand-accent))] text-white shadow-md" : "text-[hsl(var(--brand-accent))]/60 hover:bg-[hsl(var(--brand-accent))]/10"
+              "flex-1 rounded-sm px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
+              activeTab === "tracks"
+                ? "bg-black text-white shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
+                : "text-black/45 hover:bg-black/[0.04] hover:text-black"
             )}
           >
             Tracks
@@ -728,8 +756,10 @@ function ContextRail({
           <button
             onClick={() => setActiveTab("artists")}
             className={cn(
-              "flex-1 rounded-sm px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.15em] transition-all",
-              activeTab === "artists" ? "bg-[hsl(var(--brand-accent))] text-white shadow-md" : "text-[hsl(var(--brand-accent))]/60 hover:bg-[hsl(var(--brand-accent))]/10"
+              "flex-1 rounded-sm px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
+              activeTab === "artists"
+                ? "bg-black text-white shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
+                : "text-black/45 hover:bg-black/[0.04] hover:text-black"
             )}
           >
             Artists
@@ -745,7 +775,7 @@ function ContextRail({
               value={activeTab === "tracks" ? trackSearch : artistSearch}
               onChange={(e) => activeTab === "tracks" ? setTrackSearch(e.target.value) : setArtistSearch(e.target.value)}
               placeholder={`Search ${activeTab}...`}
-              className="h-9 border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/50 pl-9 text-[11px] font-medium tracking-tight transition-all focus-visible:bg-white/80 focus-visible:ring-1 focus-visible:ring-[hsl(var(--brand-accent))]/30"
+              className="h-10 border border-black/10 bg-white/80 pl-9 text-[11px] font-medium tracking-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] transition-all focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-[hsl(var(--brand-accent))]/30"
             />
           </div>
         </div>
@@ -761,27 +791,39 @@ function ContextRail({
                       key={track.track_key}
                       onClick={() => onTrackSelect(track)}
                       className={cn(
-                        "group w-full border-l-2 py-3 pl-4 pr-3 text-left transition-all hover:bg-black/5 active:bg-black/10",
+                        "group w-full rounded-sm border px-4 py-3 text-left transition-all",
                         isActive 
-                          ? "border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent-ghost))]/50" 
-                          : "border-transparent"
+                          ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
+                          : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
                       )}
                     >
-                      <p className={cn(
-                        "truncate text-xs font-bold tracking-tight",
-                        isActive ? "text-[hsl(var(--brand-accent))]" : "text-black"
-                      )}>
-                        {track.track_title}
-                      </p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <p className="truncate text-[10px] font-medium text-black/40 uppercase tracking-widest">{track.artist_name}</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className={cn(
+                            "truncate text-xs font-bold tracking-tight",
+                            isActive ? "text-white" : "text-black"
+                          )}>
+                            {track.track_title}
+                          </p>
+                          <p className={cn(
+                            "mt-1 truncate text-[10px] font-medium uppercase tracking-widest",
+                            isActive ? "text-white/65" : "text-black/40"
+                          )}>
+                            {track.artist_name}
+                          </p>
+                        </div>
                         <p className={cn(
-                          "font-mono text-[10px] font-bold text-black/60 group-hover:text-black",
-                          isActive && "text-[hsl(var(--brand-accent))]/80"
+                          "shrink-0 font-mono text-[10px] font-bold",
+                          isActive ? "text-white" : "text-black/60 group-hover:text-black"
                         )}>
                           {toMoney(track.net_revenue)}
                         </p>
                       </div>
+                      {isActive && (
+                        <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
+                          AI will answer in this track context
+                        </div>
+                      )}
                     </button>
                   );
                 })
@@ -797,26 +839,31 @@ function ContextRail({
                       key={artist.artist_key}
                       onClick={() => onArtistSelect(artist.artist, artist.artist_key)}
                       className={cn(
-                        "group w-full border-l-2 py-3 pl-4 pr-3 text-left transition-all hover:bg-black/5 active:bg-black/10",
+                        "group w-full rounded-sm border px-4 py-3 text-left transition-all",
                         isActive 
-                          ? "border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent-ghost))]/50" 
-                          : "border-transparent"
+                          ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
+                          : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className={cn(
                           "truncate text-xs font-bold tracking-tight",
-                          isActive ? "text-[hsl(var(--brand-accent))]" : "text-black"
+                          isActive ? "text-white" : "text-black"
                         )}>
                           {artist.artist}
                         </p>
                         <p className={cn(
-                          "font-mono text-[10px] font-bold text-black/60 group-hover:text-black",
-                          isActive && "text-[hsl(var(--brand-accent))]/80"
+                          "font-mono text-[10px] font-bold",
+                          isActive ? "text-white" : "text-black/60 group-hover:text-black"
                         )}>
                           {toMoney(artist.net)}
                         </p>
                       </div>
+                      {isActive && (
+                        <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
+                          AI will answer in this artist context
+                        </div>
+                      )}
                     </button>
                   );
                 })
@@ -828,12 +875,12 @@ function ContextRail({
         </ScrollArea>
       </div>
 
-      <div className="border-t border-black/5 p-5 bg-[hsl(var(--brand-accent-ghost))]/20">
+      <div className="border-t border-black/10 bg-white/45 p-5">
         <Button
           variant="outline"
           size="sm"
           onClick={onClearScope}
-          className="w-full h-9 border border-[hsl(var(--brand-accent))]/20 bg-background text-[10px] font-bold uppercase tracking-[0.2em] shadow-sm hover:bg-[hsl(var(--brand-accent))] hover:text-white transition-all"
+          className="h-9 w-full border border-black/15 bg-background text-[10px] font-bold uppercase tracking-[0.2em] shadow-sm transition-all hover:border-black hover:bg-black hover:text-white"
         >
           RESET TO WORKSPACE
         </Button>

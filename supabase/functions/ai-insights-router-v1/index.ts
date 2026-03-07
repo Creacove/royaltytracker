@@ -451,6 +451,118 @@ function buildDeterministicTrackFallback({
   const metricLabel = asksGross ? "Gross revenue" : asksNet ? "Net revenue" : "Net revenue";
   const metricValue = asksGross ? track.gross_revenue || 0 : track.net_revenue || 0;
 
+  const asksOpportunityRisk = /\b(opportunity|potential)\b.*\b(risk|data risk|quality risk)\b|\b(highest opportunity)\b.*\b(highest data risk)\b/.test(q);
+  const asksRevenuePerformance = /\b(revenue|performance|earning|royalty|money|gross|net)\b/.test(q) && !asksTerritory && !asksPlatform;
+
+  if (asksOpportunityRisk) {
+    return {
+      conversation_id: conversationId ?? crypto.randomUUID(),
+      resolved_mode: "track" as const,
+      resolved_entities: resolvedEntities,
+      answer_title: "Track Opportunity + Risk",
+      executive_answer: `I analyzed the risk profile for "${track.track_title}". It has an opportunity score of ${track.opportunity_score}/100 and is flagged as ${track.quality_flag} risk.`,
+      why_this_matters: "A high opportunity score combined with quality flags suggests this track needs cleanup to ensure you aren't leaking revenue or under-reporting earnings.",
+      evidence: {
+        row_count: 1,
+        scanned_rows: scopedRows.length || 1,
+        from_date: fromDate,
+        to_date: toDate,
+        provenance: ["get_track_insights_list_v1"],
+        system_confidence: "high" as const,
+      },
+      kpis: [
+        { label: "Opportunity Score", value: String(track.opportunity_score) },
+        { label: "Quality Flag", value: track.quality_flag || "unknown" },
+        { label: "Critical Tasks", value: String(track.open_critical_task_count || 0) },
+      ],
+      visual: {
+        type: "table" as const,
+        title: "Track Data Quality Risk",
+        columns: ["track_title", "opportunity_score", "quality_flag", "failed_line_count", "open_critical_task_count"],
+        rows: [{
+          track_title: track.track_title,
+          opportunity_score: track.opportunity_score,
+          quality_flag: track.quality_flag,
+          failed_line_count: track.failed_line_count,
+          open_critical_task_count: track.open_critical_task_count,
+        }],
+      },
+      actions: [
+        { label: "Open Track Insights", href: `/insights/${encodeURIComponent(track.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(track.track_key)}`, kind: "primary" as const },
+        { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(track.track_key)}`, kind: "secondary" as const },
+        { label: "Open Reviews", href: "/review-queue", kind: "ghost" as const },
+      ],
+      follow_up_questions: [
+        "Which territories are driving this risk?",
+        "Show platform breakdown for this track.",
+        "How can I resolve the open critical tasks?",
+      ],
+      diagnostics: {
+        intent: "track_quality_fallback",
+        confidence: "high",
+        used_fields: ["opportunity_score", "quality_flag", "failed_line_count", "open_critical_task_count"],
+        missing_fields: [],
+        strict_mode: true,
+        fallback_mode: "router_deterministic_track_intent",
+      },
+    };
+  }
+
+  if (asksRevenuePerformance || (!asksTerritory && !asksPlatform)) {
+    return {
+      conversation_id: conversationId ?? crypto.randomUUID(),
+      resolved_mode: "track" as const,
+      resolved_entities: resolvedEntities,
+      answer_title: "Track Performance Snapshot",
+      executive_answer: `"${track.track_title}" by ${track.artist_name} generated ${compactMoney(metricValue)} in ${metricLabel.toLowerCase()} within the selected period.`,
+      why_this_matters: "Monitoring performance at the track level allows for precise promotion adjustments and accurate royalty forecasting.",
+      evidence: {
+        row_count: 1,
+        scanned_rows: scopedRows.length || 1,
+        from_date: fromDate,
+        to_date: toDate,
+        provenance: ["get_track_insights_list_v1"],
+        system_confidence: "high" as const,
+      },
+      kpis: [
+        { label: metricLabel, value: compactMoney(metricValue) },
+        { label: "Quantity", value: Math.round(track.quantity || 0).toLocaleString() },
+        { label: "Opportunity", value: String(track.opportunity_score) },
+      ],
+      visual: {
+        type: "table" as const,
+        title: "Track Key Metrics",
+        columns: ["track_title", "net_revenue", "gross_revenue", "quantity", "top_territory", "top_platform"],
+        rows: [{
+          track_title: track.track_title,
+          net_revenue: Number((track.net_revenue || 0).toFixed(2)),
+          gross_revenue: Number((track.gross_revenue || 0).toFixed(2)),
+          quantity: Number((track.quantity || 0).toFixed(2)),
+          top_territory: track.top_territory || "Unknown",
+          top_platform: track.top_platform || "Unknown",
+        }],
+      },
+      actions: [
+        { label: "Open Track Insights", href: `/insights/${encodeURIComponent(track.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(track.track_key)}`, kind: "primary" as const },
+        { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(track.track_key)}`, kind: "secondary" as const },
+        { label: "Open Reviews", href: "/review-queue", kind: "ghost" as const },
+      ],
+      follow_up_questions: [
+        "Which territory is strongest for this track?",
+        "Which platform drives the most revenue?",
+        "Is there any data-risk for this track?",
+      ],
+      diagnostics: {
+        intent: "track_revenue_fallback",
+        confidence: "high",
+        used_fields: ["net_revenue", "gross_revenue", "quantity", "top_territory", "top_platform"],
+        missing_fields: [],
+        strict_mode: true,
+        fallback_mode: "router_deterministic_track_intent",
+      },
+    };
+  }
+
   if (asksTerritory) {
     return {
       conversation_id: conversationId ?? crypto.randomUUID(),
