@@ -1,6 +1,7 @@
 import type { Json } from "@/integrations/supabase/types";
 import type {
   AssistantExportResponseV1,
+  ArtistSnapshotDetail,
   AssistantTurnResponseV2,
   TrackAssistantResult,
   TrackInsightDetail,
@@ -41,6 +42,11 @@ export function parseListRows(input: Json | null): TrackInsightListRow[] {
 export function parseDetail(input: Json | null): TrackInsightDetail | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   return input as unknown as TrackInsightDetail;
+}
+
+export function parseArtistSnapshotDetail(input: Json | null): ArtistSnapshotDetail | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  return input as unknown as ArtistSnapshotDetail;
 }
 
 export function parseAssistantResult(input: Json | null): TrackAssistantResult | null {

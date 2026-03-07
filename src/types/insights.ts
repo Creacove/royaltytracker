@@ -99,6 +99,46 @@ export type TrackInsightDetail = {
   };
 };
 
+export type ArtistSnapshotDetail = {
+  summary: {
+    artist_key: string;
+    artist_name: string;
+    track_count: number;
+    net_revenue: number;
+    gross_revenue: number;
+    quantity: number;
+    net_per_unit: number;
+    avg_track_revenue: number;
+    top_track_title: string | null;
+    top_track_revenue: number;
+    top_territory: string | null;
+    top_platform: string | null;
+  };
+  monthly_trend: Array<{
+    month_start: string;
+    net_revenue: number;
+    quantity: number;
+    gross_revenue: number;
+  }>;
+  territory_mix: Array<{ territory: string; net_revenue: number; quantity: number }>;
+  platform_mix: Array<{ platform: string; net_revenue: number; quantity: number }>;
+  usage_mix: Array<{ usage_type: string; net_revenue: number; quantity: number }>;
+  top_tracks: Array<{
+    track_key: string;
+    track_title: string;
+    isrc: string | null;
+    net_revenue: number;
+    gross_revenue: number;
+    quantity: number;
+    net_per_unit: number;
+  }>;
+  query_meta: {
+    from_date: string;
+    to_date: string;
+    artist_key: string;
+  };
+};
+
 export type TrackAssistantResult = {
   prompt_id: string;
   title?: string;

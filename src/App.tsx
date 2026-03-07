@@ -18,6 +18,7 @@ import Reports from "@/pages/Reports";
 import Transactions from "@/pages/Transactions";
 import DataQualityQueue from "@/pages/DataQualityQueue";
 import AiInsights from "@/pages/AiInsights";
+import SnapshotPage from "@/pages/SnapshotPage";
 import Onboarding from "@/pages/Onboarding";
 import AcceptInvite from "@/pages/AcceptInvite";
 import NotFound from "./pages/NotFound";
@@ -232,6 +233,8 @@ function AppRoutes() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/ai-insights" element={<AiInsights />} />
+        <Route path="/ai-insights/snapshots/track/:trackKey" element={<SnapshotPage scope="track" />} />
+        <Route path="/ai-insights/snapshots/artist/:artistKey" element={<SnapshotPage scope="artist" />} />
         <Route path="/insights" element={<Navigate to="/ai-insights" replace />} />
         <Route path="/insights/:trackKey" element={<Navigate to="/ai-insights" replace />} />
         <Route

@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  ArrowUpRight,
   Bot,
   CalendarRange,
   Copy,
@@ -23,7 +24,7 @@ import {
   TrendingUp,
   User,
 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { supabase } from "@/integrations/supabase/client";
 import { defaultDateRange } from "@/lib/insights";
@@ -166,6 +167,7 @@ function formatDateWindow(fromDate: string, toDate: string): string {
 }
 
 export default function AiInsights() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const defaults = defaultDateRange();
@@ -267,10 +269,21 @@ export default function AiInsights() {
     toast({ title: "Link copied", description: "Share link copied to clipboard." });
   };
 
+  const openTrackSnapshot = (track: TrackInsightListRow) => {
+    const next = new URLSearchParams({ from: fromDate, to: toDate });
+    if (track.artist_name) next.set("artist", track.artist_name);
+    navigate(`/ai-insights/snapshots/track/${encodeURIComponent(track.track_key)}?${next.toString()}`);
+  };
+
+  const openArtistSnapshot = (artistName: string, artistKey: string) => {
+    const next = new URLSearchParams({ from: fromDate, to: toDate, artist: artistName });
+    navigate(`/ai-insights/snapshots/artist/${encodeURIComponent(artistKey)}?${next.toString()}`);
+  };
+
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background font-ui">
+    <div className="flex h-full w-full overflow-x-hidden overflow-y-hidden bg-background font-ui">
       {/* Main: Chat Channel */}
-      <main className="flex flex-1 flex-col bg-background">
+      <main className="flex min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         {/* Chat Header */}
         <header className="flex h-14 md:h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6 shadow-sm z-10">
           <div className="flex items-center gap-3 md:gap-6">
@@ -278,6 +291,8 @@ export default function AiInsights() {
               <SheetContent side="right" className="w-[300px] p-0 border-l-0">
                 <ContextRail
                   trackRows={trackRows}
+                  onOpenTrackSnapshot={openTrackSnapshot}
+                  onOpenArtistSnapshot={openArtistSnapshot}
                   onArtistSelect={(artistName, artistKey) => {
                     setEntityContext({ artist_name: artistName, artist_key: artistKey });
                     setIsRailOpen(false);
@@ -352,9 +367,9 @@ export default function AiInsights() {
         </header>
 
         {/* Chat Content */}
-        <div className="flex-1 overflow-hidden flex flex-col relative bg-background">
-          <ScrollArea className="flex-1 px-6">
-            <div className="mx-auto max-w-4xl py-12">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-hidden bg-background">
+          <ScrollArea className="flex-1 overflow-x-hidden px-3 md:px-6">
+            <div className="mx-auto w-full min-w-0 max-w-4xl py-8 md:py-12">
               {turns.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
                   <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-sm bg-[hsl(var(--brand-accent))] shadow-lg">
@@ -388,34 +403,34 @@ export default function AiInsights() {
                     <div
                       key={turn.id}
                       className={cn(
-                        "flex flex-col gap-3 md:gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500",
+                        "flex w-full min-w-0 flex-col gap-3 md:gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500",
                         idx > 0 && "border-t border-black/5 pt-6 md:pt-10"
                       )}
                     >
-                      <div className="flex items-start gap-4">
+                      <div className="flex w-full min-w-0 items-start gap-3 md:gap-4">
                         <div className={cn(
-                          "flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border-2 border-black shadow-lg",
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border-2 border-black shadow-lg md:h-9 md:w-9",
                           turn.role === "assistant" ? "bg-black text-white" : "bg-card text-black"
                         )}>
                           {turn.role === "assistant" ? <Target className="h-4 w-4" /> : <User className="h-4 w-4" />}
                         </div>
-                        <div className="flex-1 space-y-4">
-                          <div className="flex items-center justify-between">
+                        <div className="w-full min-w-0 flex-1 space-y-4 overflow-x-hidden">
+                          <div className="flex min-w-0 items-center justify-between gap-3">
                               <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))]">
                                 {turn.role === "assistant" ? "AI ANSWER" : "YOUR QUESTION"}
                               </p>
-                            <p className="font-mono text-[9px] text-muted-foreground opacity-40 uppercase">
+                            <p className="shrink-0 font-mono text-[9px] text-muted-foreground opacity-40 uppercase">
                               {format(new Date(), "HH:mm:ss")}
                             </p>
                           </div>
 
                           {turn.payload ? (
-                            <div className="space-y-8">
-                              <div className="max-w-[90%]">
-                                <h3 className="type-display-section text-2xl md:text-3xl leading-[1.1] tracking-tight">
+                            <div className="min-w-0 space-y-8 overflow-x-hidden">
+                              <div className="w-full min-w-0 md:max-w-[90%]">
+                                <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
                                   {turn.payload.answer_title}
                                 </h3>
-                                <p className="mt-4 text-base leading-relaxed text-foreground/[0.85] font-medium">
+                                <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
                                   {turn.payload.executive_answer}
                                 </p>
                               </div>
@@ -431,17 +446,17 @@ export default function AiInsights() {
                                 ))}
                               </div>
 
-                              <div className="group relative overflow-hidden rounded-sm bg-black p-6 text-white shadow-2xl transition-all hover:shadow-black/20">
+                              <div className="group relative w-full min-w-0 overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
                                 <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 translate-y-[-16px] rounded-full bg-white/5 blur-3xl group-hover:bg-white/10 transition-all"></div>
                                 <div className="flex items-center gap-3 text-white/40">
                                   <TrendingUp className="h-4 w-4" />
                                   <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">BUSINESS STRATEGY</p>
                                 </div>
-                                <p className="mt-3 text-[13px] font-medium leading-[1.6] text-white/90">{turn.payload.why_this_matters}</p>
+                                <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">{turn.payload.why_this_matters}</p>
                               </div>
 
                               {turn.payload.visual.type !== "none" && (
-                                <div className="overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
+                                <div className="min-w-0 overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
                                   <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-6 py-2.5">
                                     <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
                                       {turn.payload.visual.title || "EVIDENCE VISUALIZATION"}
@@ -477,7 +492,7 @@ export default function AiInsights() {
                                         </Table>
                                       </div>
                                     ) : (
-                                      <div className="h-[360px] w-full pt-4">
+                                      <div className="h-[280px] min-w-0 w-full overflow-hidden pt-4 md:h-[360px]">
                                         <ResponsiveContainer width="100%" height="100%">
                                           {turn.payload.visual.type === "bar" ? (
                                             <BarChart data={turn.payload.visual.rows}>
@@ -517,8 +532,8 @@ export default function AiInsights() {
                               {/* Removed metadata, actions, and follow-up questions per user request */}
                             </div>
                           ) : (
-                            <div className="max-w-[90%] rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3">
-                              <p className="text-lg font-bold leading-relaxed tracking-tight text-black">{turn.text}</p>
+                            <div className="w-full min-w-0 rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
+                              <p className="break-words text-lg font-bold leading-relaxed tracking-tight text-black [overflow-wrap:anywhere]">{turn.text}</p>
                             </div>
                           )}
                         </div>
@@ -592,6 +607,8 @@ export default function AiInsights() {
       <aside className="hidden w-[320px] flex-shrink-0 lg:block">
         <ContextRail
           trackRows={trackRows}
+          onOpenTrackSnapshot={openTrackSnapshot}
+          onOpenArtistSnapshot={openArtistSnapshot}
           onTrackSelect={(track) =>
             setEntityContext({
               track_key: track.track_key,
@@ -619,6 +636,8 @@ export default function AiInsights() {
 
 function ContextRail({
   trackRows,
+  onOpenTrackSnapshot,
+  onOpenArtistSnapshot,
   onTrackSelect,
   onArtistSelect,
   onClearScope,
@@ -631,6 +650,8 @@ function ContextRail({
   selectedContext,
 }: {
   trackRows: TrackInsightListRow[];
+  onOpenTrackSnapshot: (track: TrackInsightListRow) => void;
+  onOpenArtistSnapshot: (artistName: string, artistKey: string) => void;
   onTrackSelect: (track: TrackInsightListRow) => void;
   onArtistSelect: (artistName: string, artistKey: string) => void;
   onClearScope: () => void;
@@ -766,44 +787,63 @@ function ContextRail({
                 filteredTracks.map((track) => {
                   const isActive = selectedContext.track_key === track.track_key;
                   return (
-                    <button
+                    <div
                       key={track.track_key}
-                      onClick={() => onTrackSelect(track)}
                       className={cn(
-                        "group w-full rounded-sm border px-4 py-3 text-left transition-all",
+                        "group rounded-sm border p-3 transition-all",
                         isActive 
                           ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
                           : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
                       )}
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
+                      <button
+                        onClick={() => onTrackSelect(track)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className={cn(
+                              "truncate text-xs font-bold tracking-tight",
+                              isActive ? "text-white" : "text-black"
+                            )}>
+                              {track.track_title}
+                            </p>
+                            <p className={cn(
+                              "mt-1 truncate text-[10px] font-medium uppercase tracking-widest",
+                              isActive ? "text-white/65" : "text-black/40"
+                            )}>
+                              {track.artist_name}
+                            </p>
+                          </div>
                           <p className={cn(
-                            "truncate text-xs font-bold tracking-tight",
-                            isActive ? "text-white" : "text-black"
+                            "shrink-0 pl-2 text-right font-mono text-[10px] font-bold",
+                            isActive ? "text-white" : "text-black/60 group-hover:text-black"
                           )}>
-                            {track.track_title}
-                          </p>
-                          <p className={cn(
-                            "mt-1 truncate text-[10px] font-medium uppercase tracking-widest",
-                            isActive ? "text-white/65" : "text-black/40"
-                          )}>
-                            {track.artist_name}
+                            {toMoney(track.net_revenue)}
                           </p>
                         </div>
-                        <p className={cn(
-                          "shrink-0 font-mono text-[10px] font-bold",
-                          isActive ? "text-white" : "text-black/60 group-hover:text-black"
-                        )}>
-                          {toMoney(track.net_revenue)}
-                        </p>
+                      </button>
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => onOpenTrackSnapshot(track)}
+                          className={cn(
+                            "flex h-8 items-center gap-1 rounded-sm border px-2.5 text-[9px] font-bold uppercase tracking-[0.14em] transition-all",
+                            isActive
+                              ? "border-white/15 bg-white/10 text-white hover:bg-white/15"
+                              : "border-black/10 bg-white/85 text-black/60 hover:border-black/20 hover:text-black"
+                          )}
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                          <span>Snapshot</span>
+                        </button>
                       </div>
                       {isActive && (
                         <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
                           AI will answer in this track context
                         </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })
               ) : (
@@ -814,36 +854,55 @@ function ContextRail({
                 filteredArtists.map((artist) => {
                   const isActive = selectedContext.artist_key === artist.artist_key;
                   return (
-                    <button
+                    <div
                       key={artist.artist_key}
-                      onClick={() => onArtistSelect(artist.artist, artist.artist_key)}
                       className={cn(
-                        "group w-full rounded-sm border px-4 py-3 text-left transition-all",
+                        "group rounded-sm border p-3 transition-all",
                         isActive 
                           ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
                           : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
                       )}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className={cn(
-                          "truncate text-xs font-bold tracking-tight",
-                          isActive ? "text-white" : "text-black"
-                        )}>
-                          {artist.artist}
-                        </p>
-                        <p className={cn(
-                          "font-mono text-[10px] font-bold",
-                          isActive ? "text-white" : "text-black/60 group-hover:text-black"
-                        )}>
-                          {toMoney(artist.net)}
-                        </p>
+                      <button
+                        onClick={() => onArtistSelect(artist.artist, artist.artist_key)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={cn(
+                            "min-w-0 flex-1 truncate text-xs font-bold tracking-tight",
+                            isActive ? "text-white" : "text-black"
+                          )}>
+                            {artist.artist}
+                          </p>
+                          <p className={cn(
+                            "shrink-0 pl-2 text-right font-mono text-[10px] font-bold",
+                            isActive ? "text-white" : "text-black/60 group-hover:text-black"
+                          )}>
+                            {toMoney(artist.net)}
+                          </p>
+                        </div>
+                      </button>
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => onOpenArtistSnapshot(artist.artist, artist.artist_key)}
+                          className={cn(
+                            "flex h-8 items-center gap-1 rounded-sm border px-2.5 text-[9px] font-bold uppercase tracking-[0.14em] transition-all",
+                            isActive
+                              ? "border-white/15 bg-white/10 text-white hover:bg-white/15"
+                              : "border-black/10 bg-white/85 text-black/60 hover:border-black/20 hover:text-black"
+                          )}
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                          <span>Snapshot</span>
+                        </button>
                       </div>
                       {isActive && (
                         <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
                           AI will answer in this artist context
                         </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })
               ) : (

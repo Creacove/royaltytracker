@@ -34,6 +34,22 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
+    test: (pathname) => pathname.startsWith("/ai-insights/snapshots/track/"),
+    meta: {
+      title: "Track Snapshot",
+      subtitle: "A fast publisher view of track performance, opportunity, and risk.",
+      fullWidth: true,
+    },
+  },
+  {
+    test: (pathname) => pathname.startsWith("/ai-insights/snapshots/artist/"),
+    meta: {
+      title: "Artist Snapshot",
+      subtitle: "A concise artist portfolio brief for revenue, momentum, and next decisions.",
+      fullWidth: true,
+    },
+  },
+  {
     test: (pathname) => pathname === "/ai-insights" || pathname.startsWith("/ai-insights/"),
     meta: {
       title: "AI Insights",
