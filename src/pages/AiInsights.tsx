@@ -295,7 +295,6 @@ export default function AiInsights() {
                   onOpenArtistSnapshot={openArtistSnapshot}
                   onArtistSelect={(artistName, artistKey) => {
                     setEntityContext({ artist_name: artistName, artist_key: artistKey });
-                    setIsRailOpen(false);
                   }}
                   onTrackSelect={(track) => {
                     setEntityContext({
@@ -304,11 +303,9 @@ export default function AiInsights() {
                       artist_name: track.artist_name,
                       artist_key: normalizeArtistKey(track.artist_name || "Unknown Artist"),
                     });
-                    setIsRailOpen(false);
                   }}
                   onClearScope={() => {
                     setEntityContext({});
-                    setIsRailOpen(false);
                   }}
                   trackSearch={trackSearch}
                   setTrackSearch={setTrackSearch}
