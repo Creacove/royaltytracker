@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -25,6 +26,7 @@ import NotFound from "./pages/NotFound";
 import { resolveRouteMeta } from "@/lib/route-meta";
 
 const queryClient = new QueryClient();
+const Animations = lazy(() => import("@/pages/Animations"));
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -233,6 +235,20 @@ function AppRoutes() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/ai-insights" element={<AiInsights />} />
+        <Route
+          path="/animations"
+          element={
+            <Suspense
+              fallback={
+                <div className="flex min-h-[60vh] items-center justify-center bg-background">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                </div>
+              }
+            >
+              <Animations />
+            </Suspense>
+          }
+        />
         <Route path="/ai-insights/snapshots/track/:trackKey" element={<SnapshotPage scope="track" />} />
         <Route path="/ai-insights/snapshots/artist/:artistKey" element={<SnapshotPage scope="artist" />} />
         <Route path="/insights" element={<Navigate to="/ai-insights" replace />} />

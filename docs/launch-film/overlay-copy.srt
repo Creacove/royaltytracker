@@ -1,0 +1,47 @@
+1
+00:00:00,000 --> 00:00:03,900
+Royalty intelligence, finally clear.
+
+2
+00:00:04,000 --> 00:00:07,900
+From statements to signal.
+
+3
+00:00:08,000 --> 00:00:11,900
+Ask across your catalog.
+
+4
+00:00:12,000 --> 00:00:16,900
+Find the leak.
+
+5
+00:00:17,000 --> 00:00:21,900
+Then narrow the lens.
+
+6
+00:00:22,000 --> 00:00:26,900
+Drill into artists.
+
+7
+00:00:27,000 --> 00:00:31,900
+Open the track.
+
+8
+00:00:32,000 --> 00:00:34,900
+Trust the trail.
+
+9
+00:00:35,000 --> 00:00:37,900
+See every line.
+
+10
+00:00:38,000 --> 00:00:41,900
+Export the snapshot.
+
+11
+00:00:40,000 --> 00:00:42,000
+RoyaltyTracker
+
+12
+00:00:40,200 --> 00:00:42,000
+Instant decisions from royalty data.

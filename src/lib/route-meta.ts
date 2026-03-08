@@ -27,6 +27,14 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
+    test: (pathname) => pathname.startsWith("/animations"),
+    meta: {
+      title: "Animations",
+      subtitle: "Coded motion scenes and launch-film compositions built with React.",
+      fullWidth: true,
+    },
+  },
+  {
     test: (pathname) => pathname.startsWith("/review-queue"),
     meta: {
       title: "Statement Reviews",

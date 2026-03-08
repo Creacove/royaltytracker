@@ -1,0 +1,158 @@
+{
+  "brand": {
+    "product_name": "RoyaltyTracker",
+    "tagline": "Instant decisions from royalty data."
+  },
+  "workspace": {
+    "name": "Northline Publishing",
+    "date_window": {
+      "from": "2025-01-01",
+      "to": "2025-12-31"
+    }
+  },
+  "reports": [
+    {
+      "cmo_name": "SAMRO",
+      "file_name": "SAMRO_Q4_2025_statement.pdf",
+      "report_period": "Q4 2025",
+      "status": "completed_with_warnings",
+      "transaction_count": 1482,
+      "total_revenue": 184320.44
+    },
+    {
+      "cmo_name": "PRS",
+      "file_name": "PRS_H2_2025_catalog.xlsx",
+      "report_period": "H2 2025",
+      "status": "completed",
+      "transaction_count": 1094,
+      "total_revenue": 131884.1
+    },
+    {
+      "cmo_name": "BMI",
+      "file_name": "BMI_Q4_2025_performance.csv",
+      "report_period": "Q4 2025",
+      "status": "completed",
+      "transaction_count": 962,
+      "total_revenue": 103417.92
+    }
+  ],
+  "dashboard_targets": {
+    "net_revenue": 326441.78,
+    "gross_revenue": 411992.54,
+    "commission": 85550.76,
+    "processing_success_percent": 96.0,
+    "confidence_percent": 93.0,
+    "top_platforms": [
+      "Spotify",
+      "YouTube",
+      "TikTok",
+      "Apple Music"
+    ],
+    "top_territories": [
+      "United States",
+      "United Kingdom",
+      "Germany",
+      "South Africa"
+    ]
+  },
+  "artists": [
+    {
+      "artist_name": "Avery Lane",
+      "artist_key": "artist:avery lane",
+      "net_revenue": 118420.35,
+      "top_territory": "United States",
+      "top_platform": "Spotify",
+      "track_count": 6
+    },
+    {
+      "artist_name": "Juno Vale",
+      "artist_key": "artist:juno vale",
+      "net_revenue": 86441.22,
+      "top_territory": "United Kingdom",
+      "top_platform": "YouTube",
+      "track_count": 4
+    }
+  ],
+  "tracks": [
+    {
+      "track_title": "Midnight Receiver",
+      "track_key": "isrc:GBAHS250001",
+      "artist_name": "Avery Lane",
+      "isrc": "GBAHS250001",
+      "net_revenue": 42610.14,
+      "top_territory": "United States",
+      "top_platform": "Spotify"
+    },
+    {
+      "track_title": "Glass District",
+      "track_key": "isrc:GBAHS250014",
+      "artist_name": "Juno Vale",
+      "isrc": "GBAHS250014",
+      "net_revenue": 31774.55,
+      "top_territory": "United Kingdom",
+      "top_platform": "YouTube"
+    }
+  ],
+  "ai_sequence": [
+    {
+      "prompt": "Where is revenue leaking the most?",
+      "answer_title": "Revenue leakage is concentrated in Germany.",
+      "executive_answer": "Germany is generating strong usage but under-indexing on payout quality. Commission drag is highest there, which makes it the fastest place to recover net revenue."
+    },
+    {
+      "prompt": "Which artists should we prioritize this quarter?",
+      "answer_title": "Prioritize Avery Lane first.",
+      "executive_answer": "Avery Lane is leading net revenue and showing the cleanest momentum across Spotify and U.S. territory performance. Juno Vale is the secondary push if video-led growth is the priority."
+    },
+    {
+      "prompt": "Show tracks with highest opportunity.",
+      "answer_title": "Midnight Receiver is the clearest upside play.",
+      "executive_answer": "Midnight Receiver already carries strong volume, and its payout mix suggests more upside if Germany and YouTube monetization are tightened."
+    }
+  ],
+  "artist_snapshot": {
+    "artist_name": "Avery Lane",
+    "summary": "Avery Lane generated 118.4K in net revenue across six tracks in the selected window. Spotify is carrying the upside, but payout concentration in the U.S. and Germany should be watched.",
+    "signals": [
+      "Momentum is strongest in Spotify-led catalog performance.",
+      "Germany shows strong activity with thinner payout efficiency.",
+      "Midnight Receiver is the lead expansion track."
+    ]
+  },
+  "track_snapshot": {
+    "track_title": "Midnight Receiver",
+    "artist_name": "Avery Lane",
+    "summary": "Midnight Receiver is a high-volume track with clear room to improve net return. Usage is broad, but monetization quality is uneven across Germany and YouTube-heavy activity.",
+    "signals": [
+      "Top territory: United States",
+      "Top platform: Spotify",
+      "Biggest risk: Germany payout quality",
+      "Biggest opportunity: YouTube monetization uplift"
+    ]
+  },
+  "quality_queue": {
+    "issue_title": "Revenue mismatch",
+    "issue_message": "Net revenue does not match gross minus commission. Expected 421.80, got 396.20.",
+    "source_evidence_fields": [
+      "track_title",
+      "artist_name",
+      "territory",
+      "platform",
+      "gross_revenue",
+      "commission",
+      "net_revenue"
+    ]
+  },
+  "transaction_detail": {
+    "artist_name": "Avery Lane",
+    "track_title": "Midnight Receiver",
+    "isrc": "GBAHS250001",
+    "territory": "Germany",
+    "platform": "YouTube",
+    "quantity": 14220,
+    "gross_revenue": 1124.8,
+    "commission": 228.6,
+    "net_revenue": 896.2,
+    "source_page": 4
+  }
+}
