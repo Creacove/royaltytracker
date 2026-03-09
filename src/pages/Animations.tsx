@@ -1,5 +1,5 @@
 import { Player } from "@remotion/player";
-import { ExternalLink, Film, Sparkles } from "lucide-react";
+import { Download, ExternalLink, Film, Sparkles } from "lucide-react";
 
 import { LaunchFilmComposition } from "@/components/animations/LaunchFilmComposition";
 import {
@@ -29,9 +29,20 @@ export default function Animations() {
                   timed beats, and transitions that map directly to the launch-film storyboard.
                 </p>
               </div>
-              <div className="flex items-center gap-2 rounded-full border border-black/10 bg-black px-4 py-2 text-white">
-                <Film className="h-4 w-4" />
-                <span className="font-mono text-xs uppercase tracking-[0.18em]">54s composition</span>
+              <div className="flex items-center gap-3">
+                <a
+                  href="/launch-film.mp4"
+                  download="launch-film.mp4"
+                  className="flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-black transition-colors hover:bg-black/5"
+                  title="Download Video"
+                >
+                  <Download className="h-4 w-4 opacity-70" />
+                  <span className="font-mono text-xs uppercase tracking-[0.18em]">Download</span>
+                </a>
+                <div className="flex items-center gap-2 rounded-full border border-black/10 bg-black px-4 py-2 text-white">
+                  <Film className="h-4 w-4 opacity-70" />
+                  <span className="font-mono text-xs uppercase tracking-[0.18em]">54s composition</span>
+                </div>
               </div>
             </div>
 

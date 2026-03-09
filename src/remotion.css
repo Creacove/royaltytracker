@@ -5177,6 +5177,10 @@ code,
   background-color: hsl(var(--background));
 }
 
+.hover\:bg-black\/5:hover{
+  background-color: rgb(0 0 0 / 0.05);
+}
+
 .hover\:bg-black\/85:hover{
   background-color: rgb(0 0 0 / 0.85);
 }

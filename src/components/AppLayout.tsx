@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
-import { ArrowRightLeft, BarChart3, ChevronRight, Clapperboard, LayoutDashboard, LogOut, Settings2, ShieldAlert, Upload } from "lucide-react";
+import { ArrowRightLeft, BarChart3, ChevronRight, LayoutDashboard, LogOut, Settings2, ShieldAlert, Upload } from "lucide-react";
 
 import type { RouteMeta } from "@/lib/route-meta";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,7 +25,6 @@ const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview", requiresUploads: true },
   { to: "/reports", icon: Upload, label: "Statements", requiresUploads: false },
   { to: "/ai-insights", icon: BarChart3, label: "AI Insights", requiresUploads: false },
-  { to: "/animations", icon: Clapperboard, label: "Animations", requiresUploads: false },
   { to: "/review-queue", icon: ShieldAlert, label: "Statement Reviews", requiresUploads: true },
   { to: "/transactions", icon: ArrowRightLeft, label: "Transactions", requiresUploads: false },
 ];
