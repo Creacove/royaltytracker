@@ -1,0 +1,829 @@
+[
+  {
+    "prompt_id": "intent-fix-1",
+    "question": "show tracks with highest opportunity",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2025-12-31",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 7.24,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 5,
+      "actionability": 8,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "ranking",
+    "quality_outcome": "unknown",
+    "response_excerpt": "The track 'We are Golden' has the highest opportunity with a gross revenue of $83,008,680.75. In contrast, 'Wish Was Heather' and 'King Me Slowly' have minimal revenues of $0.03 and $0.01 respectively.",
+    "diagnostics": {
+      "intent": "ranking",
+      "confidence": "medium",
+      "used_fields": [
+        "track_title",
+        "gross_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "anomaly_flags": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "analysis_plan": {
+        "intent": "ranking",
+        "metrics": [
+          "gross_revenue"
+        ],
+        "dimensions": [
+          "track_title"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "gross_revenue",
+          "track_title"
+        ],
+        "top_n": 10,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "gross_revenue",
+        "track_title"
+      ],
+      "chosen_columns": [
+        "track_title",
+        "gross_revenue"
+      ],
+      "top_n": 10,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "exploration",
+        "decision_type": "ranking",
+        "horizon": "unspecified",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-intent-fix-1",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Top Revenue Tracks Identified",
+      "executive_answer": "The track 'We are Golden' has the highest opportunity with a gross revenue of $83,008,680.75. In contrast, 'Wish Was Heather' and 'King Me Slowly' have minimal revenues of $0.03 and $0.01 respectively.",
+      "why_this_matters": "Focus marketing and sync efforts on 'We are Golden' to maximize revenue potential, while investigating the low performance of the other tracks for potential improvements.",
+      "evidence": {
+        "row_count": 3,
+        "scanned_rows": 3,
+        "from_date": "2000-03-11",
+        "to_date": "2025-12-31",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "track_title"
+        ],
+        "rows": [
+          {
+            "track_title": "We are Golden",
+            "gross_revenue": 83008680.7526
+          },
+          {
+            "track_title": "Wish Was Heather",
+            "gross_revenue": 0.0275
+          },
+          {
+            "track_title": "King Me Slowly",
+            "gross_revenue": 0.0084
+          }
+        ],
+        "title": "Top Revenue Tracks Identified"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What marketing strategies are in place for 'We are Golden'?",
+        "Can we analyze the demographics of listeners for the top track?",
+        "What factors are contributing to the low revenue of the other tracks?"
+      ],
+      "recommendations": [
+        {
+          "action": "Run a track-level growth plan for We are Golden: playlist outreach, creator content, and sync shortlist in parallel.",
+          "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+          "impact": "Accelerates monetization of the strongest current asset.",
+          "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+        },
+        {
+          "action": "Define one validation checkpoint for the next 14 days to confirm this direction before scaling spend.",
+          "rationale": "Fast validation prevents low-signal strategy lock-in.",
+          "impact": "Improves decision confidence before major allocation changes.",
+          "risk": "Skipping validation increases probability of expensive misallocation."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Top Revenue Tracks Identified",
+            "text": "The track 'We are Golden' has the highest opportunity with a gross revenue of $83,008,680.75. In contrast, 'Wish Was Heather' and 'King Me Slowly' have minimal revenues of $0.03 and $0.01 respectively."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "Focus marketing and sync efforts on 'We are Golden' to maximize revenue potential, while investigating the low performance of the other tracks for potential improvements."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Top Revenue Tracks Identified",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "track_title"
+            ],
+            "rows": [
+              {
+                "track_title": "We are Golden",
+                "gross_revenue": 83008680.7526
+              },
+              {
+                "track_title": "Wish Was Heather",
+                "gross_revenue": 0.0275
+              },
+              {
+                "track_title": "King Me Slowly",
+                "gross_revenue": 0.0084
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Run a track-level growth plan for We are Golden: playlist outreach, creator content, and sync shortlist in parallel.",
+                "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+                "impact": "Accelerates monetization of the strongest current asset.",
+                "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+              },
+              {
+                "action": "Define one validation checkpoint for the next 14 days to confirm this direction before scaling spend.",
+                "rationale": "Fast validation prevents low-signal strategy lock-in.",
+                "impact": "Improves decision confidence before major allocation changes.",
+                "risk": "Skipping validation increases probability of expensive misallocation."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "ranking",
+        "confidence": "medium",
+        "used_fields": [
+          "track_title",
+          "gross_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "anomaly_flags": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "analysis_plan": {
+          "intent": "ranking",
+          "metrics": [
+            "gross_revenue"
+          ],
+          "dimensions": [
+            "track_title"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "gross_revenue",
+            "track_title"
+          ],
+          "top_n": 10,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "gross_revenue",
+          "track_title"
+        ],
+        "chosen_columns": [
+          "track_title",
+          "gross_revenue"
+        ],
+        "top_n": 10,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "exploration",
+          "decision_type": "ranking",
+          "horizon": "unspecified",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "ranking",
+      "detected_persona": "marketer",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "intent-fix-2",
+    "question": "show the highest revenue track this year and compare it to the highest revenue track last year",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2025-12-31",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 9.39,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 10,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "period_comparison",
+    "quality_outcome": "unknown",
+    "response_excerpt": "The highest revenue track this year is 'We are Golden' with a net revenue of $45.47. Last year, the highest revenue track was also 'We are Golden' but generated $0.00 in net revenue. This indicates a significant increase in revenue for the track this year.",
+    "diagnostics": {
+      "intent": "period_comparison",
+      "confidence": "medium",
+      "used_fields": [
+        "track_title",
+        "gross_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "anomaly_flags": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "analysis_plan": {
+        "intent": "period_comparison",
+        "metrics": [
+          "gross_revenue"
+        ],
+        "dimensions": [
+          "track_title"
+        ],
+        "filters": [
+          {
+            "column": "__period_compare__",
+            "op": "=",
+            "value": "365:day"
+          },
+          {
+            "column": "__relative_window__",
+            "op": "=",
+            "value": "1:year"
+          }
+        ],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "gross_revenue",
+          "track_title"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "gross_revenue",
+        "track_title"
+      ],
+      "chosen_columns": [
+        "period_bucket",
+        "period_start",
+        "period_end",
+        "track_title",
+        "net_revenue",
+        "gross_revenue",
+        "quantity"
+      ],
+      "top_n": 1,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "exploration",
+        "decision_type": "ranking",
+        "horizon": "annual",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": true
+      },
+      "evidence_fit": {
+        "score": 0.75,
+        "reasons": [
+          "missing_territory_dimension"
+        ]
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-intent-fix-2",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Highest Revenue Track Comparison",
+      "executive_answer": "The highest revenue track this year is 'We are Golden' with a net revenue of $45.47. Last year, the highest revenue track was also 'We are Golden' but generated $0.00 in net revenue. This indicates a significant increase in revenue for the track this year.",
+      "why_this_matters": "Given the substantial revenue increase for 'We are Golden', consider prioritizing marketing efforts and sync opportunities for this track to maximize its potential.",
+      "evidence": {
+        "row_count": 6,
+        "scanned_rows": 6,
+        "from_date": "2000-03-11",
+        "to_date": "2025-12-31",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "net_revenue",
+          "period_bucket",
+          "period_end",
+          "period_start",
+          "quantity",
+          "track_title"
+        ],
+        "rows": [
+          {
+            "quantity": 0,
+            "period_end": "2023-05-31",
+            "net_revenue": 45.4704,
+            "track_title": "King Me Slowly",
+            "period_start": "2022-06-01",
+            "gross_revenue": 0.0048,
+            "period_bucket": "last_365_days"
+          },
+          {
+            "quantity": 0,
+            "period_end": "2023-05-31",
+            "net_revenue": 0.011,
+            "track_title": "Wish Was Heather",
+            "period_start": "2022-06-01",
+            "gross_revenue": 0.011,
+            "period_bucket": "last_365_days"
+          },
+          {
+            "quantity": 0,
+            "period_end": "2023-05-31",
+            "net_revenue": 0.0054,
+            "track_title": "We are Golden",
+            "period_start": "2022-06-01",
+            "gross_revenue": 83008680.692,
+            "period_bucket": "last_365_days"
+          },
+          {
+            "quantity": 0,
+            "period_end": "2022-05-31",
+            "net_revenue": 0,
+            "track_title": "King Me Slowly",
+            "period_start": "2022-06-01",
+            "gross_revenue": 0,
+            "period_bucket": "prior_365_days"
+          },
+          {
+            "quantity": 0,
+            "period_end": "2022-05-31",
+            "net_revenue": 0,
+            "track_title": "We are Golden",
+            "period_start": "2022-06-01",
+            "gross_revenue": 0,
+            "period_bucket": "prior_365_days"
+          },
+          {
+            "quantity": 0,
+            "period_end": "2022-05-31",
+            "net_revenue": 0,
+            "track_title": "Wish Was Heather",
+            "period_start": "2022-06-01",
+            "gross_revenue": 0,
+            "period_bucket": "prior_365_days"
+          }
+        ],
+        "title": "Highest Revenue Track Comparison"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What factors contributed to this revenue increase?",
+        "Are there specific marketing strategies that were implemented this year?",
+        "How does this track perform in different territories?"
+      ],
+      "recommendations": [
+        {
+          "action": "Set a 2026 primary growth bet on King Me Slowly, with explicit weekly KPIs (streams, saves, conversion, revenue).",
+          "rationale": "King Me Slowly is currently the strongest observed revenue driver in this scope.",
+          "impact": "Creates a clear execution focus and improves budget efficiency versus broad untargeted spend.",
+          "risk": "If top-driver revenue is anomaly-inflated, strategy may over-concentrate; validate source and mapping first."
+        },
+        {
+          "action": "Create a second-priority pipeline of 2-3 emerging tracks and allocate test budget to reduce concentration risk.",
+          "rationale": "Portfolio balance is required when one asset dominates current revenue.",
+          "impact": "Builds downside protection while preserving upside from the top asset.",
+          "risk": "Without disciplined test criteria, pipeline spend can dilute returns."
+        },
+        {
+          "action": "Run a track-level growth plan for King Me Slowly: playlist outreach, creator content, and sync shortlist in parallel.",
+          "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+          "impact": "Accelerates monetization of the strongest current asset.",
+          "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Highest Revenue Track Comparison",
+            "text": "The highest revenue track this year is 'We are Golden' with a net revenue of $45.47. Last year, the highest revenue track was also 'We are Golden' but generated $0.00 in net revenue. This indicates a significant increase in revenue for the track this year."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "Given the substantial revenue increase for 'We are Golden', consider prioritizing marketing efforts and sync opportunities for this track to maximize its potential."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Highest Revenue Track Comparison",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "net_revenue",
+              "period_bucket",
+              "period_end",
+              "period_start",
+              "quantity",
+              "track_title"
+            ],
+            "rows": [
+              {
+                "quantity": 0,
+                "period_end": "2023-05-31",
+                "net_revenue": 45.4704,
+                "track_title": "King Me Slowly",
+                "period_start": "2022-06-01",
+                "gross_revenue": 0.0048,
+                "period_bucket": "last_365_days"
+              },
+              {
+                "quantity": 0,
+                "period_end": "2023-05-31",
+                "net_revenue": 0.011,
+                "track_title": "Wish Was Heather",
+                "period_start": "2022-06-01",
+                "gross_revenue": 0.011,
+                "period_bucket": "last_365_days"
+              },
+              {
+                "quantity": 0,
+                "period_end": "2023-05-31",
+                "net_revenue": 0.0054,
+                "track_title": "We are Golden",
+                "period_start": "2022-06-01",
+                "gross_revenue": 83008680.692,
+                "period_bucket": "last_365_days"
+              },
+              {
+                "quantity": 0,
+                "period_end": "2022-05-31",
+                "net_revenue": 0,
+                "track_title": "King Me Slowly",
+                "period_start": "2022-06-01",
+                "gross_revenue": 0,
+                "period_bucket": "prior_365_days"
+              },
+              {
+                "quantity": 0,
+                "period_end": "2022-05-31",
+                "net_revenue": 0,
+                "track_title": "We are Golden",
+                "period_start": "2022-06-01",
+                "gross_revenue": 0,
+                "period_bucket": "prior_365_days"
+              },
+              {
+                "quantity": 0,
+                "period_end": "2022-05-31",
+                "net_revenue": 0,
+                "track_title": "Wish Was Heather",
+                "period_start": "2022-06-01",
+                "gross_revenue": 0,
+                "period_bucket": "prior_365_days"
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Set a 2026 primary growth bet on King Me Slowly, with explicit weekly KPIs (streams, saves, conversion, revenue).",
+                "rationale": "King Me Slowly is currently the strongest observed revenue driver in this scope.",
+                "impact": "Creates a clear execution focus and improves budget efficiency versus broad untargeted spend.",
+                "risk": "If top-driver revenue is anomaly-inflated, strategy may over-concentrate; validate source and mapping first."
+              },
+              {
+                "action": "Create a second-priority pipeline of 2-3 emerging tracks and allocate test budget to reduce concentration risk.",
+                "rationale": "Portfolio balance is required when one asset dominates current revenue.",
+                "impact": "Builds downside protection while preserving upside from the top asset.",
+                "risk": "Without disciplined test criteria, pipeline spend can dilute returns."
+              },
+              {
+                "action": "Run a track-level growth plan for King Me Slowly: playlist outreach, creator content, and sync shortlist in parallel.",
+                "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+                "impact": "Accelerates monetization of the strongest current asset.",
+                "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "period_comparison",
+        "confidence": "medium",
+        "used_fields": [
+          "track_title",
+          "gross_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "anomaly_flags": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "analysis_plan": {
+          "intent": "period_comparison",
+          "metrics": [
+            "gross_revenue"
+          ],
+          "dimensions": [
+            "track_title"
+          ],
+          "filters": [
+            {
+              "column": "__period_compare__",
+              "op": "=",
+              "value": "365:day"
+            },
+            {
+              "column": "__relative_window__",
+              "op": "=",
+              "value": "1:year"
+            }
+          ],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "gross_revenue",
+            "track_title"
+          ],
+          "top_n": 1,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "gross_revenue",
+          "track_title"
+        ],
+        "chosen_columns": [
+          "period_bucket",
+          "period_start",
+          "period_end",
+          "track_title",
+          "net_revenue",
+          "gross_revenue",
+          "quantity"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "exploration",
+          "decision_type": "ranking",
+          "horizon": "annual",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": true
+        },
+        "evidence_fit": {
+          "score": 0.75,
+          "reasons": [
+            "missing_territory_dimension"
+          ]
+        }
+      },
+      "detected_intent": "period_comparison",
+      "detected_persona": "marketer",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  }
+]

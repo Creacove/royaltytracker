@@ -367,7 +367,7 @@ function parseAnalysisPlanModel(input: AnalysisPlanModelResponse | null): Analys
 function normalizePlan(plan: AnalysisPlan, question: string, catalog: ArtistCatalog): AnalysisPlan {
   const q = question.toLowerCase();
   const isStrategyQuestion = /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate|plan)\b/i.test(q);
-  const isTourQuestion = /\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|booking dates?|where should .* tour)\b/i.test(q);
+  const isTourQuestion = /\b(?:tour|touring|live\s+show|live\s+shows|concert|venue|venues|city|cities|routing|route|booking|booking\s+dates?|tour\s+dates?|where should .* tour)\b/i.test(q);
   const asksTimeSeries = /\b(compare|comparison|trend|over time|week by week|month by month|day by day|quarter by quarter|last\s+\d+|past\s+\d+|vs|versus|prior|previous)\b/i.test(q);
   const isFuturePlanning = /\b(next|upcoming|coming)\s+(week|month|quarter|year)\b/i.test(q);
   const forceQualityRiskIntent = /\b(attribution|mapping|validation|confidence risk|quality risk|rights|rights-related|payout leak|payout leakage|leakage)\b/i.test(q);

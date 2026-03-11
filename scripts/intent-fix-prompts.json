@@ -1,0 +1,22 @@
+[
+  {
+    "id": "intent-fix-1",
+    "question": "show tracks with highest opportunity",
+    "persona": "label_head",
+    "intent": "opportunity_risk_tracks",
+    "required_evidence": ["track_title", "net_revenue"],
+    "expected_depth": "decision",
+    "requires_external": false,
+    "expect_answerable": true
+  },
+  {
+    "id": "intent-fix-2",
+    "question": "show the highest revenue track this year and compare it to the highest revenue track last year",
+    "persona": "executive",
+    "intent": "year_over_year",
+    "required_evidence": ["track_title", "period_bucket", "net_revenue"],
+    "expected_depth": "decision",
+    "requires_external": false,
+    "expect_answerable": true
+  }
+]

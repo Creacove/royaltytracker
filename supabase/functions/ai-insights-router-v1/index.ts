@@ -167,7 +167,7 @@ function isAdaptiveCandidate(body: unknown): body is AdaptiveAnswerResponse {
 
 function detectPersonaFromText(text: string): AdaptivePersona {
   const q = text.toLowerCase();
-  if (/\b(tour|venue|city|route|booking|festival|show)\b/.test(q)) return "tour_manager";
+  if (/\b(tour|touring|venue|city|route|routing|booking|festival|concert|live show|booking dates?)\b/.test(q)) return "tour_manager";
   if (/\b(campaign|audience|creative|channel|content|marketing|acquisition)\b/.test(q)) return "marketer";
   if (/\b(catalog|portfolio|signing|release strategy|a&r|label)\b/.test(q)) return "label_head";
   if (/\b(publish|rights|sync|royalty leak|leakage|cmo)\b/.test(q)) return "publisher";
@@ -189,7 +189,7 @@ function detectIntentFromBody(body: AdaptiveAnswerResponse): string {
 }
 
 function isTouringQuestion(question: string): boolean {
-  return /\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|dates?)\b/.test(question.toLowerCase());
+  return /\b(?:tour|touring|live\s+show|live\s+shows|concert|venue|venues|city|cities|routing|route|booking|booking\s+dates?|tour\s+dates?)\b/.test(question.toLowerCase());
 }
 
 type TourTerritoryAggregate = {
@@ -1000,7 +1000,7 @@ function buildDataDrivenRecommendations(
     });
   }
 
-  if (/\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|dates?)\b/.test(q) && hasTerritory && !rightsOnlyMode) {
+  if (/\b(?:tour|touring|live\s+show|live\s+shows|concert|venue|venues|city|cities|routing|route|booking|booking\s+dates?|tour\s+dates?)\b/.test(q) && hasTerritory && !rightsOnlyMode) {
     const topTerritories = topTerritoriesForTour.map((t) => t.territory);
     if (topTerritories.length > 0) {
       const topValue = toNum((topRow as Record<string, unknown>)[moneyKey]) ?? 0;
@@ -1757,7 +1757,7 @@ function buildDeterministicTrackFallback({
   }
 
   const q = question.toLowerCase();
-  const asksTerritory = /\b(territory|country|market|region|geo|geography|tour|touring|concert|live show|shows?|city|cities)\b/.test(q);
+  const asksTerritory = /\b(territory|country|market|region|geo|geography|tour|touring|concert|live show|city|cities)\b/.test(q);
   const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/.test(q);
   const asksGross = /\bgross\b/.test(q);
   const asksNet = /\bnet\b/.test(q);
