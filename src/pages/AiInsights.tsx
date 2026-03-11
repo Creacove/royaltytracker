@@ -15,6 +15,7 @@ import {
 import {
   AlertTriangle,
   ArrowUpRight,
+  MoveHorizontal,
   Bot,
   CalendarRange,
   Copy,
@@ -254,7 +255,7 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
                 </Badge>
               </div>
               <div className="min-w-0 p-3 md:p-6">
-                <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+                <div className="relative w-full min-w-0 max-w-[calc(100vw-5.25rem)] overflow-hidden md:max-w-full">
                   <Table>
                     <TableHeader>
                       <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
@@ -277,6 +278,15 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
                       ))}
                     </TableBody>
                   </Table>
+                  {columns.length > 3 && (
+                    <>
+                      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white via-white/90 to-transparent md:hidden" />
+                      <div className="mt-2 flex items-center justify-end gap-1 text-[10px] font-mono uppercase tracking-wider text-black/55 md:hidden">
+                        <MoveHorizontal className="h-3 w-3" />
+                        <span>Swipe table</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -725,7 +735,9 @@ export default function AiInsights() {
                           </div>
 
                           {turn.payload ? (
-                            <AdaptiveAnswerStack payload={turn.payload} />
+                            <div className="w-full max-w-[calc(100vw-4.75rem)] overflow-x-hidden md:max-w-full">
+                              <AdaptiveAnswerStack payload={turn.payload} />
+                            </div>
                           ) : (
                             <div className="w-full max-w-full rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
                               <p className="break-words text-lg font-bold leading-relaxed tracking-tight text-black [overflow-wrap:anywhere]">{turn.text}</p>
