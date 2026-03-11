@@ -339,6 +339,56 @@ export type AiInsightsVisual = {
   columns?: string[];
 };
 
+export type AiInsightsCitation = {
+  title: string;
+  url?: string;
+  publisher?: string;
+  retrieved_at?: string;
+  claim_ids?: string[];
+  source_type?: "workspace_data" | "external";
+};
+
+export type AiInsightsRecommendation = {
+  action: string;
+  rationale: string;
+  impact?: string;
+  risk?: string;
+  horizon?: "now" | "this_quarter" | "next_quarter";
+  confidence?: "high" | "medium" | "low";
+  citations?: string[];
+};
+
+export type AiInsightsAnswerBlockType =
+  | "direct_answer"
+  | "deep_summary"
+  | "kpi_strip"
+  | "table"
+  | "bar_chart"
+  | "line_chart"
+  | "recommendations"
+  | "scenario_options"
+  | "risk_flags"
+  | "past_pattern_inference"
+  | "action_plan"
+  | "citations";
+
+export type AiInsightsAnswerBlock = {
+  id: string;
+  type: AiInsightsAnswerBlockType;
+  priority: number;
+  title?: string;
+  source: "workspace_data" | "external";
+  confidence?: "high" | "medium" | "low";
+  payload: Record<string, unknown>;
+};
+
+export type AiInsightsRenderHints = {
+  layout: "adaptive_card_stack";
+  density: "compact" | "expanded";
+  visual_preference: "chart" | "table" | "none";
+  show_confidence_badges: boolean;
+};
+
 export type AiInsightsTurnRequest = {
   question: string;
   from_date: string;
@@ -360,4 +410,43 @@ export type AiInsightsTurnResponse = {
   visual: AiInsightsVisual;
   kpis: Array<{ label: string; value: string }>;
   diagnostics?: AssistantDiagnostics;
+  quality_outcome?: "pass" | "clarify" | "constrained";
+  clarification?: {
+    question: string;
+    reason: string;
+    options?: string[];
+  };
+  resolved_scope?: {
+    mode: "track" | "artist" | "workspace-general";
+    entity_context: AiInsightsEntityContext;
+    from_date: string;
+    to_date: string;
+    scope_token: string;
+    scope_epoch: number;
+  };
+  plan_trace?: {
+    intent?: string;
+    selected_columns?: string[];
+    missing_columns?: string[];
+    column_requirements?: {
+      required: string[];
+      optional: string[];
+      missing_requested: string[];
+    };
+    constraints?: Record<string, unknown>;
+  };
+  claims?: Array<{
+    claim_id: string;
+    text: string;
+    supporting_fields: string[];
+    source_ref: string;
+  }>;
+  detected_intent?: string;
+  detected_persona?: "publisher" | "marketer" | "tour_manager" | "label_head" | "executive_decision_maker";
+  answer_blocks?: AiInsightsAnswerBlock[];
+  render_hints?: AiInsightsRenderHints;
+  evidence_map?: Record<string, "workspace_data" | "external">;
+  recommendations?: AiInsightsRecommendation[];
+  citations?: AiInsightsCitation[];
+  unknowns?: string[];
 };

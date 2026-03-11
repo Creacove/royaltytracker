@@ -12,7 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark:artist:generate": "node scripts/artist-benchmark.mjs generate",
+    "benchmark:artist:run": "node scripts/artist-benchmark.mjs run",
     "benchmark:artist:score": "node scripts/artist-benchmark.mjs score",
+    "benchmark:artist:cycle": "node scripts/artist-benchmark.mjs cycle",
+    "benchmark:artist:autoloop": "node scripts/artist-benchmark.mjs autoloop",
     "build:video": "remotion render remotion.index.tsx LaunchFilm out/video.mp4"
   },
   "dependencies": {

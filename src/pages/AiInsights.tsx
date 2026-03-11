@@ -13,12 +13,16 @@ import {
   YAxis,
 } from "recharts";
 import {
+  AlertTriangle,
   ArrowUpRight,
   Bot,
   CalendarRange,
   Copy,
+  Lightbulb,
+  ListChecks,
   Search,
   Send,
+  ShieldAlert,
   Sparkles,
   Target,
   TrendingUp,
@@ -30,6 +34,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { defaultDateRange } from "@/lib/insights";
 import { toMoney } from "@/lib/royalty";
 import type {
+  AiInsightsAnswerBlock,
   AiInsightsEntityContext,
   AiInsightsMode,
   AiInsightsTurnRequest,
@@ -164,6 +169,304 @@ function formatDateWindow(fromDate: string, toDate: string): string {
   }
 
   return `${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function blockItems(block: AiInsightsAnswerBlock): Record<string, unknown>[] {
+  const items = (block.payload as { items?: unknown }).items;
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+}
+
+function blockText(block: AiInsightsAnswerBlock, key = "text"): string | null {
+  const value = (block.payload as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
+  const blocks = Array.isArray(payload.answer_blocks) ? [...payload.answer_blocks].sort((a, b) => a.priority - b.priority) : [];
+  if (blocks.length === 0) return <LegacyAnswerView payload={payload} />;
+
+  return (
+    <div className="min-w-0 flex-1 space-y-5 overflow-hidden">
+      {blocks.map((block) => {
+        if (block.type === "direct_answer") {
+          const title = typeof block.payload.title === "string" ? block.payload.title : payload.answer_title;
+          const text = blockText(block) ?? payload.executive_answer;
+          return (
+            <div key={block.id} className="w-full max-w-full md:max-w-[92%]">
+              <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
+                {title}
+              </h3>
+              <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
+                {text}
+              </p>
+            </div>
+          );
+        }
+
+        if (block.type === "deep_summary") {
+          return (
+            <div key={block.id} className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl md:p-6">
+              <div className="flex items-center gap-3 text-white/40">
+                <TrendingUp className="h-4 w-4" />
+                <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">STRATEGIC TAKE</p>
+              </div>
+              <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">
+                {blockText(block) ?? payload.why_this_matters}
+              </p>
+            </div>
+          );
+        }
+
+        if (block.type === "kpi_strip") {
+          const items = blockItems(block).slice(0, 6);
+          if (items.length === 0) return null;
+          return (
+            <div key={block.id} className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
+              {items.map((item, idx) => {
+                const label = typeof item.label === "string" ? item.label : `Metric ${idx + 1}`;
+                const value = typeof item.value === "string" ? item.value : "-";
+                return (
+                  <div key={`${block.id}-${idx}`} className="min-w-0 overflow-hidden">
+                    <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{label}</p>
+                    <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={value}>
+                      {value}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+
+        if (block.type === "table") {
+          const columns = ((block.payload as { columns?: unknown }).columns ?? []) as string[];
+          const rows = ((block.payload as { rows?: unknown }).rows ?? []) as Array<Record<string, string | number | null>>;
+          if (!Array.isArray(columns) || !Array.isArray(rows) || columns.length === 0 || rows.length === 0) return null;
+          return (
+            <div key={block.id} className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
+                <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
+                  {block.title ?? "Evidence Table"}
+                </p>
+                <Badge variant="outline" className="border-black/20 font-mono text-[9px] uppercase tracking-widest">
+                  table
+                </Badge>
+              </div>
+              <div className="min-w-0 p-3 md:p-6">
+                <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
+                        {columns.map((column) => (
+                          <TableHead key={column} className="type-table-head h-12 whitespace-nowrap text-[10px] font-bold text-black border-none">
+                            {toAssistantLabel(column)}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.slice(0, 12).map((row, rIdx) => (
+                        <TableRow key={`${block.id}-${rIdx}`} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
+                          {columns.map((column) => (
+                            <TableCell key={`${block.id}-${rIdx}-${column}`} className="py-3 whitespace-nowrap font-mono text-[10px] font-bold text-black/90">
+                              {formatAssistantValue(column, row[column])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        if (block.type === "bar_chart" || block.type === "line_chart") {
+          const x = typeof (block.payload as { x?: unknown }).x === "string" ? (block.payload as { x: string }).x : "";
+          const y = ((block.payload as { y?: unknown }).y ?? []) as string[];
+          const rows = ((block.payload as { rows?: unknown }).rows ?? []) as Array<Record<string, string | number | null>>;
+          if (!x || !Array.isArray(y) || y.length === 0 || !Array.isArray(rows) || rows.length === 0) return null;
+          return (
+            <div key={block.id} className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
+              <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
+                <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
+                  {block.title ?? "Evidence Chart"}
+                </p>
+                <Badge variant="outline" className="border-black/20 font-mono text-[9px] uppercase tracking-widest">
+                  {block.type === "bar_chart" ? "bar" : "line"}
+                </Badge>
+              </div>
+              <div className="h-[280px] min-w-0 w-full overflow-hidden p-3 pt-6 md:h-[360px] md:p-6">
+                <ResponsiveContainer width="100%" height="100%">
+                  {block.type === "bar_chart" ? (
+                    <BarChart data={rows}>
+                      <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
+                      <XAxis dataKey={x} hide />
+                      <YAxis tick={{ fontSize: 10, fontFamily: "monospace", fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
+                      <Tooltip contentStyle={{ backgroundColor: "black", border: "none", borderRadius: "2px", fontSize: "11px", padding: "12px" }} itemStyle={{ color: "white", fontWeight: 700 }} />
+                      {y.map((col, cIdx) => (
+                        <Bar key={`${block.id}-${col}`} dataKey={col} fill={CHART_COLORS[cIdx % CHART_COLORS.length]} radius={[1, 1, 0, 0]} barSize={32} />
+                      ))}
+                    </BarChart>
+                  ) : (
+                    <LineChart data={rows}>
+                      <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
+                      <XAxis dataKey={x} hide />
+                      <YAxis tick={{ fontSize: 10, fontFamily: "monospace", fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
+                      <Tooltip contentStyle={{ backgroundColor: "black", border: "none", borderRadius: "2px", fontSize: "11px", padding: "12px" }} itemStyle={{ color: "white", fontWeight: 700 }} />
+                      {y.map((col, cIdx) => (
+                        <Line key={`${block.id}-${col}`} type="monotone" dataKey={col} stroke={CHART_COLORS[cIdx % CHART_COLORS.length]} strokeWidth={3} dot={{ r: 3, strokeWidth: 2, fill: "white" }} activeDot={{ r: 5 }} />
+                      ))}
+                    </LineChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        }
+
+        if (block.type === "recommendations" || block.type === "action_plan" || block.type === "scenario_options") {
+          const items = blockItems(block);
+          const questionPrompt = typeof (block.payload as { question?: unknown }).question === "string"
+            ? ((block.payload as { question: string }).question)
+            : null;
+          if (items.length === 0 && !questionPrompt) return null;
+          const heading = block.type === "recommendations" ? "Recommendations" : block.type === "action_plan" ? "Action Plan" : "Scenario Options";
+          const Icon = block.type === "recommendations" ? Lightbulb : ListChecks;
+          return (
+            <Card key={block.id} className="rounded-sm border-black/15">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest">
+                  <Icon className="h-4 w-4" />
+                  {heading}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {questionPrompt && (
+                  <p className="text-sm font-medium text-black/80">{questionPrompt}</p>
+                )}
+                {items.map((item, idx) => (
+                  <div key={`${block.id}-${idx}`} className="rounded-sm border border-black/10 bg-black/[0.015] p-3">
+                    <p className="text-sm font-bold text-black">{String(item.action ?? item.label ?? `Option ${idx + 1}`)}</p>
+                    {typeof item.rationale === "string" && <p className="mt-1 text-xs text-black/70">{item.rationale}</p>}
+                    {typeof item.impact === "string" && <p className="mt-1 text-[11px] font-mono text-black/65">Impact: {item.impact}</p>}
+                    {typeof item.risk === "string" && <p className="mt-1 text-[11px] font-mono text-black/65">Risk: {item.risk}</p>}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        }
+
+        if (block.type === "risk_flags") {
+          const items = blockItems(block);
+          const normalized = items.length > 0 ? items.map((item) => String(item.text ?? item.label ?? JSON.stringify(item))) : [];
+          const fallback = ((block.payload as { items?: unknown }).items ?? []) as unknown[];
+          const risks = normalized.length > 0 ? normalized : fallback.filter((item): item is string => typeof item === "string");
+          if (risks.length === 0) return null;
+          return (
+            <Card key={block.id} className="rounded-sm border-amber-300/80 bg-amber-50/60">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest text-amber-900">
+                  <ShieldAlert className="h-4 w-4" />
+                  Risk Flags
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {risks.map((risk, idx) => (
+                  <div key={`${block.id}-${idx}`} className="flex items-start gap-2 text-sm text-amber-900">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <p>{risk}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          );
+        }
+
+        if (block.type === "past_pattern_inference") {
+          return (
+            <Card key={block.id} className="rounded-sm border-black/15">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm uppercase tracking-widest">Past Pattern Inference</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-black/75">{blockText(block) ?? "Pattern inference available from historical data."}</p>
+              </CardContent>
+            </Card>
+          );
+        }
+
+        if (block.type === "citations") {
+          const items = blockItems(block);
+          if (items.length === 0) return null;
+          return (
+            <Card key={block.id} className="rounded-sm border-black/15">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm uppercase tracking-widest">Evidence Sources</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {items.map((item, idx) => {
+                  const title = typeof item.title === "string" ? item.title : `Source ${idx + 1}`;
+                  const url = typeof item.url === "string" ? item.url : null;
+                  return (
+                    <div key={`${block.id}-${idx}`} className="text-xs text-black/70">
+                      {url ? (
+                        <a href={url} target="_blank" rel="noreferrer" className="font-medium text-[hsl(var(--brand-accent))] hover:underline">
+                          {title}
+                        </a>
+                      ) : (
+                        <span>{title}</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          );
+        }
+
+        return null;
+      })}
+    </div>
+  );
+}
+
+function LegacyAnswerView({ payload }: { payload: AiInsightsTurnResponse }) {
+  return (
+    <div className="min-w-0 flex-1 space-y-8 overflow-hidden">
+      <div className="w-full max-w-full md:max-w-[90%]">
+        <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
+          {payload.answer_title}
+        </h3>
+        <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
+          {payload.executive_answer}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
+        {payload.kpis.map((kpi) => (
+          <div key={kpi.label} className="min-w-0 overflow-hidden">
+            <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{kpi.label}</p>
+            <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={kpi.value}>
+              {kpi.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
+        <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 translate-y-[-16px] rounded-full bg-white/5 blur-3xl group-hover:bg-white/10 transition-all"></div>
+        <div className="flex items-center gap-3 text-white/40">
+          <TrendingUp className="h-4 w-4" />
+          <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">BUSINESS STRATEGY</p>
+        </div>
+        <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">{payload.why_this_matters}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function AiInsights() {
@@ -422,112 +725,7 @@ export default function AiInsights() {
                           </div>
 
                           {turn.payload ? (
-                            <div className="min-w-0 flex-1 space-y-8 overflow-hidden">
-                              <div className="w-full max-w-full md:max-w-[90%]">
-                                <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
-                                  {turn.payload.answer_title}
-                                </h3>
-                                <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
-                                  {turn.payload.executive_answer}
-                                </p>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
-                                {turn.payload.kpis.map((kpi) => (
-                                  <div key={kpi.label} className="min-w-0 overflow-hidden">
-                                    <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{kpi.label}</p>
-                                    <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={kpi.value}>
-                                      {kpi.value}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-
-                              <div className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
-                                <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 translate-y-[-16px] rounded-full bg-white/5 blur-3xl group-hover:bg-white/10 transition-all"></div>
-                                <div className="flex items-center gap-3 text-white/40">
-                                  <TrendingUp className="h-4 w-4" />
-                                  <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">BUSINESS STRATEGY</p>
-                                </div>
-                                <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">{turn.payload.why_this_matters}</p>
-                              </div>
-
-                              {turn.payload.visual.type !== "none" && (
-                                <div className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
-                                  <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
-                                    <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
-                                      {turn.payload.visual.title || "EVIDENCE VISUALIZATION"}
-                                    </p>
-                                    <Badge variant="outline" className="border-black/20 font-mono text-[9px] uppercase tracking-widest">
-                                      {turn.payload.visual.type}
-                                    </Badge>
-                                  </div>
-                                  <div className="min-w-0 p-3 md:p-6">
-                                    {turn.payload.visual.type === "table" ? (
-                                      <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch]">
-                                        <Table>
-                                          <TableHeader>
-                                            <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
-                                              {(turn.payload.visual.columns ?? []).map((column) => (
-                                                <TableHead key={column} className="type-table-head h-12 whitespace-nowrap text-[10px] font-bold text-black border-none">
-                                                  {toAssistantLabel(column)}
-                                                </TableHead>
-                                              ))}
-                                            </TableRow>
-                                          </TableHeader>
-                                          <TableBody>
-                                            {turn.payload.visual.rows?.slice(0, 10).map((row, rIdx) => (
-                                              <TableRow key={rIdx} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
-                                                {(turn.payload.visual.columns ?? []).map((column) => (
-                                                  <TableCell key={column} className="py-3 whitespace-nowrap font-mono text-[10px] font-bold text-black/90">
-                                                    {formatAssistantValue(column, row[column])}
-                                                  </TableCell>
-                                                ))}
-                                              </TableRow>
-                                            ))}
-                                          </TableBody>
-                                        </Table>
-                                      </div>
-                                    ) : (
-                                      <div className="h-[280px] min-w-0 w-full overflow-hidden pt-4 md:h-[360px]">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                          {turn.payload.visual.type === "bar" ? (
-                                            <BarChart data={turn.payload.visual.rows}>
-                                              <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
-                                              <XAxis dataKey={turn.payload.visual.x} hide />
-                                              <YAxis tick={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
-                                              <Tooltip
-                                                contentStyle={{ backgroundColor: 'black', border: 'none', borderRadius: '2px', fontSize: '11px', padding: '12px' }}
-                                                itemStyle={{ color: 'white', fontWeight: 700 }}
-                                                cursor={{ fill: 'rgba(0,0,0,0.03)' }}
-                                              />
-                                              {turn.payload.visual.y?.map((col, cIdx) => (
-                                                <Bar key={col} dataKey={col} fill={CHART_COLORS[cIdx % CHART_COLORS.length]} radius={[1, 1, 0, 0]} barSize={32} />
-                                              ))}
-                                            </BarChart>
-                                          ) : (
-                                            <LineChart data={turn.payload.visual.rows}>
-                                              <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
-                                              <XAxis dataKey={turn.payload.visual.x} hide />
-                                              <YAxis tick={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
-                                              <Tooltip
-                                                contentStyle={{ backgroundColor: 'black', border: 'none', borderRadius: '2px', fontSize: '11px', padding: '12px' }}
-                                                itemStyle={{ color: 'white', fontWeight: 700 }}
-                                              />
-                                              {turn.payload.visual.y?.map((col, cIdx) => (
-                                                <Line key={col} type="montone" dataKey={col} stroke={CHART_COLORS[cIdx % CHART_COLORS.length]} strokeWidth={3} dot={{ r: 3, strokeWidth: 2, fill: 'white' }} activeDot={{ r: 5 }} />
-                                              ))}
-                                            </LineChart>
-                                          )}
-                                        </ResponsiveContainer>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Removed metadata, actions, and follow-up questions per user request */}
-                            </div>
+                            <AdaptiveAnswerStack payload={turn.payload} />
                           ) : (
                             <div className="w-full max-w-full rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
                               <p className="break-words text-lg font-bold leading-relaxed tracking-tight text-black [overflow-wrap:anywhere]">{turn.text}</p>

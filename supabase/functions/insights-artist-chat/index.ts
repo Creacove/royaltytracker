@@ -3,9 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
   AnalysisPlan,
   ArtistCatalog,
+  buildAliasLookup,
   buildCatalog,
   compileSqlFromPlan,
   deriveAnalysisPlanFallback,
+  parseRelativeWindow,
+  resolveColumnByAlias,
   validatePlannedSql,
   verifyQueryResult,
 } from "./query_engine.ts";
@@ -19,6 +22,7 @@ const corsHeaders = {
 const PLAN_TOKEN_TTL_MINUTES = 15;
 const SQL_ROW_LIMIT = 200;
 const SQL_TIMEOUT_MS = 4000;
+const ARTIST_RUNTIME_PATCH = "artist-hotfix-2026-03-12-0210z";
 
 type Action = "plan_query" | "run_query" | "send_turn";
 
@@ -262,9 +266,11 @@ function sanitizeKpis(input: unknown): Array<{ label: string; value: string; cha
       const label = asString(record.label);
       const value = asString(record.value);
       if (!label || !value) return null;
-      return { label, value, change: asString(record.change) ?? undefined };
+      const change = asString(record.change);
+      if (!change) return { label, value };
+      return { label, value, change };
     })
-    .filter((kpi): kpi is { label: string; value: string; change?: string } => !!kpi)
+    .filter((kpi): kpi is { label: string; value: string; change?: string } => kpi !== null)
     .slice(0, 6);
 }
 
@@ -278,6 +284,35 @@ function toEvidence(sqlResult: SqlExecutionResponse, fromDate: string, toDate: s
       ? sqlResult.query_provenance.filter((item) => typeof item === "string")
       : ["run_artist_chat_sql_v1"],
   };
+}
+
+function numericOrNull(value: string | number | null | undefined): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function computeRevenueAnomalyWarnings(rows: Array<Record<string, string | number | null>>): string[] {
+  const values = rows
+    .map((row) => numericOrNull(row.net_revenue) ?? numericOrNull(row.gross_revenue))
+    .filter((value): value is number => value !== null)
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (values.length === 0) return [];
+
+  const warnings: string[] = [];
+  const maxValue = values[values.length - 1];
+  const medianValue = values[Math.floor(values.length / 2)];
+  if (maxValue >= 100_000_000) {
+    warnings.push("An unusually large revenue value was detected; confirm source mapping and currency normalization.");
+  }
+  if (medianValue > 0 && maxValue / medianValue >= 500) {
+    warnings.push("Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated.");
+  }
+  return warnings;
 }
 
 function stableHash(input: string): string {
@@ -310,7 +345,7 @@ function parseAnalysisPlanModel(input: AnalysisPlanModelResponse | null): Analys
   const grain = input.grain === "day" || input.grain === "week" || input.grain === "month" || input.grain === "quarter" ? input.grain : "none";
   const confidence = input.confidence === "high" || input.confidence === "medium" ? input.confidence : "low";
   const time_window = input.time_window === "explicit" ? "explicit" : "implicit";
-  const topN = typeof input.top_n === "number" && Number.isFinite(input.top_n) ? Math.min(50, Math.max(1, Math.round(input.top_n))) : 5;
+  const topN = typeof input.top_n === "number" && Number.isFinite(input.top_n) ? Math.min(50, Math.max(1, Math.round(input.top_n))) : 1;
   const sortBy = asString(input.sort_by) ?? (metrics[0] ?? "net_revenue");
   const sortDir = input.sort_dir === "asc" ? "asc" : "desc";
 
@@ -331,22 +366,132 @@ function parseAnalysisPlanModel(input: AnalysisPlanModelResponse | null): Analys
 
 function normalizePlan(plan: AnalysisPlan, question: string, catalog: ArtistCatalog): AnalysisPlan {
   const q = question.toLowerCase();
+  const isStrategyQuestion = /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate|plan)\b/i.test(q);
+  const isTourQuestion = /\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|booking dates?|where should .* tour)\b/i.test(q);
+  const asksTimeSeries = /\b(compare|comparison|trend|over time|week by week|month by month|day by day|quarter by quarter|last\s+\d+|past\s+\d+|vs|versus|prior|previous)\b/i.test(q);
+  const isFuturePlanning = /\b(next|upcoming|coming)\s+(week|month|quarter|year)\b/i.test(q);
+  const forceQualityRiskIntent = /\b(attribution|mapping|validation|confidence risk|quality risk|rights|rights-related|payout leak|payout leakage|leakage)\b/i.test(q);
+  const forceGapIntent = /\b(gross[\s-]*to[\s-]*net|gross\s*-\s*net|gross net gap)\b/i.test(q);
+  const catalogFieldSet = new Set(catalog.columns.map((c) => c.field_key));
+  const canonicalizeField = (name: string): string | null => {
+    if (catalogFieldSet.has(name)) return name;
+    const resolved = resolveColumnByAlias(name, catalog);
+    if (resolved && catalogFieldSet.has(resolved)) return resolved;
+    return null;
+  };
+  const canonicalDimensions = unique(
+    plan.dimensions
+      .map((d) => canonicalizeField(d))
+      .filter((d): d is string => !!d),
+  );
+  const canonicalMetrics = unique(
+    plan.metrics
+      .map((m) => canonicalizeField(m))
+      .filter((m): m is string => !!m),
+  );
+  const canonicalFilters = plan.filters
+    .map((f) => {
+      if (f.column.startsWith("__")) return f;
+      const canonical = canonicalizeField(f.column);
+      if (!canonical) return null;
+      return { ...f, column: canonical };
+    })
+    .filter((f): f is AnalysisPlan["filters"][number] => !!f);
+  const hasDecisionDimension = canonicalDimensions.some((dim) => ["track_title", "platform", "territory"].includes(dim));
+  const aliasLookup = buildAliasLookup(catalog);
+  const inferredQuestionDims = Array.from(aliasLookup.entries())
+    .filter(([alias, field]) => {
+      if (alias.length < 3) return false;
+      if (!q.includes(alias)) return false;
+      const col = catalog.columns.find((c) => c.field_key === field);
+      if (!col) return false;
+      if (col.inferred_type === "number") return false;
+      return true;
+    })
+    .map(([, field]) => field)
+    .filter((field) => field !== "event_date");
+  const fallbackDecisionDimension = catalog.columns.some((c) => c.field_key === "track_title")
+    ? "track_title"
+    : catalog.columns.some((c) => c.field_key === "platform")
+      ? "platform"
+      : catalog.columns.some((c) => c.field_key === "territory")
+        ? "territory"
+        : null;
+  const isQualityRiskIntent = plan.intent === "quality_risk_impact";
+  const qualityRiskDimensions = ["track_title", "platform", "territory", "rights_type"]
+    .filter((field) => catalog.columns.some((c) => c.field_key === field))
+    .slice(0, 2);
+  const relativeWindow = parseRelativeWindow(question);
+  const normalizedDimensions = unique([
+    ...canonicalDimensions,
+    ...inferredQuestionDims,
+    ...((isQualityRiskIntent || forceQualityRiskIntent) ? qualityRiskDimensions : []),
+    ...(isStrategyQuestion && !hasDecisionDimension && fallbackDecisionDimension ? [fallbackDecisionDimension] : []),
+  ]).filter((dim) => !(isTourQuestion && !asksTimeSeries && dim === "event_date"));
+  if (isTourQuestion && !normalizedDimensions.includes("territory") && catalog.columns.some((c) => c.field_key === "territory")) {
+    normalizedDimensions.push("territory");
+  }
+  const normalizedFilters = [
+    ...canonicalFilters.filter((f) => {
+      if (isTourQuestion && !asksTimeSeries) return false;
+      if (isFuturePlanning && (f.column === "__relative_window__" || f.column === "__period_compare__")) return false;
+      return f.column !== "__relative_window__";
+    }),
+    ...(relativeWindow
+      ? [{
+        column: "__relative_window__",
+        op: "=" as const,
+        value: `${relativeWindow.amount}:${relativeWindow.unit}`,
+      }]
+      : []),
+  ];
   const required = unique([
-    ...plan.required_columns,
-    ...plan.metrics,
-    ...plan.dimensions,
-    ...plan.filters.map((f) => f.column),
-    ...(/\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q) ? ["platform"] : []),
-    ...(/\b(revenue|money|earning|royalt|gross|net)\b/i.test(q) ? ["net_revenue"] : []),
-    ...(/\b(trend|over time|month|quarter|week|day|growth|qoq|yoy|mom)\b/i.test(q) ? ["event_date"] : []),
+    ...plan.required_columns.map((c) => canonicalizeField(c) ?? c),
+    ...canonicalMetrics,
+    ...normalizedDimensions,
+    ...(forceQualityRiskIntent ? ["gross_revenue", "net_revenue", "mapping_confidence", "validation_status"] : []),
+    ...normalizedFilters.map((f) => f.column).filter((column) => !column.startsWith("__")),
   ]);
-  const catalogFields = new Set(catalog.columns.map((c) => c.field_key));
   const correctedRevenue = required.includes("net_revenue") || required.includes("gross_revenue")
     ? required
-    : required.concat(catalogFields.has("net_revenue") ? ["net_revenue"] : catalogFields.has("gross_revenue") ? ["gross_revenue"] : []);
-  const normalizedTopN = Math.min(50, Math.max(1, Number(plan.top_n || 5)));
-  const normalizedSortBy = asString(plan.sort_by) ?? (plan.metrics[0] ?? "net_revenue");
-  return { ...plan, required_columns: unique(correctedRevenue), top_n: normalizedTopN, sort_by: normalizedSortBy, sort_dir: plan.sort_dir === "asc" ? "asc" : "desc" };
+    : required.concat(catalogFieldSet.has("net_revenue") ? ["net_revenue"] : catalogFieldSet.has("gross_revenue") ? ["gross_revenue"] : []);
+  const normalizedIntent = forceGapIntent
+    ? "gap_analysis"
+    : forceQualityRiskIntent
+    ? "quality_risk_impact"
+    : isTourQuestion
+    ? "territory_analysis"
+    : plan.intent;
+  const normalizedMetrics = unique([
+    ...canonicalMetrics,
+    ...(forceQualityRiskIntent ? ["gross_revenue", "net_revenue", "mapping_confidence"] : []),
+  ]);
+  const normalizedTopN = Math.min(50, Math.max(1, Number(plan.top_n || 1)));
+  const normalizedSortBy = forceQualityRiskIntent
+    ? "gross_revenue"
+    : isTourQuestion
+    ? (catalogFieldSet.has("gross_revenue") ? "gross_revenue" : "net_revenue")
+    : canonicalizeField(asString(plan.sort_by) ?? "") ?? (canonicalMetrics[0] ?? "net_revenue");
+  return {
+    ...plan,
+    intent: normalizedIntent,
+    metrics: normalizedMetrics,
+    dimensions: normalizedDimensions,
+    filters: normalizedFilters,
+    grain: asksTimeSeries ? plan.grain : "none",
+    required_columns: unique(correctedRevenue),
+    top_n: isTourQuestion ? Math.max(5, normalizedTopN) : normalizedTopN,
+    sort_by: normalizedSortBy,
+    sort_dir: plan.sort_dir === "asc" ? "asc" : "desc",
+  };
+}
+
+function realPlanFields(plan: AnalysisPlan): string[] {
+  return unique([
+    ...plan.dimensions,
+    ...plan.metrics,
+    ...plan.filters.map((f) => f.column).filter((column) => !column.startsWith("__")),
+  ]);
 }
 
 function insufficiencyPayload({
@@ -385,7 +530,7 @@ function insufficiencyPayload({
     diagnostics: {
       intent: plan.intent,
       confidence: plan.confidence,
-      used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]),
+      used_fields: realPlanFields(plan),
       missing_fields: missingFields,
       strict_mode: true,
       analysis_plan: plan,
@@ -400,7 +545,7 @@ function insufficiencyPayload({
   };
 }
 
-async function fetchCatalog(userClient: ReturnType<typeof createClient>, artistKey: string, fromDate: string, toDate: string): Promise<ArtistCatalog> {
+async function fetchCatalog(userClient: any, artistKey: string, fromDate: string, toDate: string): Promise<ArtistCatalog> {
   const { data, error } = await userClient.rpc("get_artist_assistant_catalog_v1", {
     p_artist_key: artistKey,
     from_date: fromDate,
@@ -429,7 +574,7 @@ async function fetchCatalog(userClient: ReturnType<typeof createClient>, artistK
 }
 
 async function logTurn(
-  adminClient: ReturnType<typeof createClient> | null,
+  adminClient: any | null,
   payload: Record<string, unknown>,
 ) {
   if (!adminClient) return;
@@ -472,11 +617,15 @@ async function buildPlan({
     "Available columns (field_key [type] — optional aliases):",
     catalogFieldList,
     "Rules:",
-    "- If user asks top/highest/best/most, set top_n and sort_dir='desc'.",
+    "- If user asks top/highest/best/most ranked entities, set top_n and sort_dir='desc'.",
     "- If user asks worst/lowest/poorest/bottom, set sort_dir='asc'.",
     "- Always set at least one metric from the numeric columns above.",
-    "- For artist questions about track performance, include 'track_title' in dimensions.",
+    "- For track-level ranking/performance questions, include 'track_title' in dimensions.",
     "- For territory questions include 'territory'. For platform questions include 'platform'.",
+    "- For trend/time-series questions, include 'event_date' in dimensions and set grain based on question wording (day/week/month/quarter).",
+    "- For relative-window questions (e.g., last 12 weeks, past 6 months, this quarter), include filter {\"column\":\"__relative_window__\",\"op\":\"=\",\"value\":\"<amount>:<unit>\"} where unit is day|week|month|quarter|year.",
+    "- For period-vs-prior comparison questions (e.g., last 30 days vs prior 30 days), set intent='period_comparison', grain='none', and set filters to include one special filter: {\"column\":\"__period_compare__\",\"op\":\"=\",\"value\":\"<amount>:<unit>\"} where unit is day|week|month|quarter|year.",
+    "- Do not use __period_compare__ for non-comparison questions.",
     "- confidence should be 'high' when question directly maps to available columns.",
     "No prose, no SQL. Return valid JSON only.",
   ].join("\n");
@@ -585,7 +734,10 @@ serve(async (req) => {
         to_date: toDate,
         p_sql: cleanedSql,
       });
-      if (rpcError) throw new Error(`SQL execution failed: ${rpcError.message}`);
+      if (rpcError) {
+        const preview = cleanedSql.replace(/\s+/g, " ").slice(0, 900);
+        throw new Error(`SQL execution failed: ${rpcError.message} | sql_preview=${preview}`);
+      }
 
       const sqlResult = (rpcData ?? {}) as SqlExecutionResponse;
       const columns = sanitizeColumns(sqlResult.columns);
@@ -675,7 +827,7 @@ serve(async (req) => {
     }
 
     const catalogFields = new Set(catalog.columns.map((c) => c.field_key.toLowerCase()));
-    const requiredColumns = unique(plan.required_columns);
+    const requiredColumns = unique(plan.required_columns.filter((field) => !field.startsWith("__")));
     const missingFields = requiredColumns.filter((field) => !catalogFields.has(field.toLowerCase()));
 
     if (action === "plan_query" && missingFields.length > 0) {
@@ -779,13 +931,220 @@ serve(async (req) => {
       to_date: toDate,
       p_sql: cleanedSql,
     });
-    if (rpcError) throw new Error(`SQL execution failed: ${rpcError.message}`);
+    if (rpcError) {
+      const preview = cleanedSql.replace(/\s+/g, " ").slice(0, 900);
+      throw new Error(`SQL execution failed: ${rpcError.message} | sql_preview=${preview}`);
+    }
 
-    const sqlResult = (rpcData ?? {}) as SqlExecutionResponse;
-    const columns = sanitizeColumns(sqlResult.columns);
-    const rows = sanitizeRows(sqlResult.rows);
-    const evidence = toEvidence(sqlResult, fromDate, toDate);
-    const verifier = verifyQueryResult({ question: question!, plan, columns, rows: rows as Array<Record<string, unknown>> });
+    let sqlResult = (rpcData ?? {}) as SqlExecutionResponse;
+    let columns = sanitizeColumns(sqlResult.columns);
+    let rows = sanitizeRows(sqlResult.rows);
+    let evidence = toEvidence(sqlResult, fromDate, toDate);
+    let verifier = verifyQueryResult({ question: question!, plan, columns, rows: rows as Array<Record<string, unknown>> });
+    let fallbackDataNote: string | null = null;
+
+    // Auto-recover trend/comparison questions by forcing a time series query
+    // aligned with the planner-selected grain.
+    if (verifier.status === "failed" && verifier.reason === "missing_time_dimension") {
+      const bucketExpr = plan.grain === "day"
+        ? "date_trunc('day', r.event_date)::date AS day_start"
+        : plan.grain === "week"
+          ? "date_trunc('week', r.event_date)::date AS week_start"
+          : plan.grain === "quarter"
+            ? "date_trunc('quarter', r.event_date)::date AS quarter_start"
+            : "date_trunc('month', r.event_date)::date AS month_start";
+      const trendSql = `WITH row_enriched AS (
+        SELECT c.*
+        FROM scoped_core c
+      )
+      SELECT
+        ${bucketExpr},
+        SUM(COALESCE(r.net_revenue, 0))::numeric AS net_revenue,
+        SUM(COALESCE(r.gross_revenue, 0))::numeric AS gross_revenue
+      FROM row_enriched r
+      GROUP BY 1
+      ORDER BY 1 ASC
+      LIMIT 24`;
+      const trendValidated = validatePlannedSql(trendSql);
+      const trendRun = await userClient.rpc("run_artist_chat_sql_v1", {
+        p_artist_key: artistKey,
+        from_date: fromDate,
+        to_date: toDate,
+        p_sql: trendValidated,
+      });
+      if (!trendRun.error) {
+        const trendResult = (trendRun.data ?? {}) as SqlExecutionResponse;
+        const trendColumns = sanitizeColumns(trendResult.columns);
+        const trendRows = sanitizeRows(trendResult.rows);
+        const trendVerifier = verifyQueryResult({
+          question: question!,
+          plan,
+          columns: trendColumns,
+          rows: trendRows as Array<Record<string, unknown>>,
+        });
+        if (trendRows.length > 0 && trendVerifier.status === "passed") {
+          sqlResult = trendResult;
+          columns = trendColumns;
+          rows = trendRows;
+          evidence = toEvidence(trendResult, fromDate, toDate);
+          verifier = trendVerifier;
+        }
+      }
+    }
+
+    // If the requested relative/compare window yields no rows, retry with the same plan
+    // but without synthetic time-window filters so users still get best-available evidence.
+    if (
+      verifier.status === "failed" &&
+      verifier.reason === "no_rows_returned" &&
+      rows.length === 0 &&
+      plan.filters.some((f) => f.column === "__relative_window__" || f.column === "__period_compare__")
+    ) {
+      const relaxedPlan: AnalysisPlan = {
+        ...plan,
+        filters: plan.filters.filter((f) => f.column !== "__relative_window__" && f.column !== "__period_compare__"),
+      };
+      const relaxedCompiled = compileSqlFromPlan(relaxedPlan, catalog);
+      const relaxedSql = validatePlannedSql(relaxedCompiled.sql);
+      const relaxedRun = await userClient.rpc("run_artist_chat_sql_v1", {
+        p_artist_key: artistKey,
+        from_date: fromDate,
+        to_date: toDate,
+        p_sql: relaxedSql,
+      });
+      if (!relaxedRun.error) {
+        const relaxedResult = (relaxedRun.data ?? {}) as SqlExecutionResponse;
+        const relaxedColumns = sanitizeColumns(relaxedResult.columns);
+        const relaxedRows = sanitizeRows(relaxedResult.rows);
+        const relaxedVerifier = verifyQueryResult({
+          question: question!,
+          plan: relaxedPlan,
+          columns: relaxedColumns,
+          rows: relaxedRows as Array<Record<string, unknown>>,
+        });
+        if (relaxedRows.length > 0 && relaxedVerifier.status === "passed") {
+          sqlResult = relaxedResult;
+          columns = relaxedColumns;
+          rows = relaxedRows;
+          evidence = toEvidence(relaxedResult, fromDate, toDate);
+          verifier = relaxedVerifier;
+          fallbackDataNote = "Requested time window returned no rows; showing latest available evidence in the selected scope.";
+        }
+      }
+    }
+
+    // Generic no-hardcoding rescue:
+    // If the planned query returns no rows but catalog has scope rows, retry with a
+    // lower-constraint fallback plan derived from available columns only.
+    if (verifier.status === "failed" && verifier.reason === "no_rows_returned" && rows.length === 0) {
+      const fallbackPlan: AnalysisPlan = {
+        ...deriveAnalysisPlanFallback(question!, catalog),
+        // Remove synthetic window constraints for fallback evidence retrieval.
+        filters: [],
+        // Keep to decision-useful dimensions only when available.
+        dimensions: (() => {
+          const candidates = ["track_title", "platform", "territory"];
+          const available = candidates.filter((field) => catalog.columns.some((c) => c.field_key === field));
+          return available.length > 0 ? available.slice(0, 2) : [];
+        })(),
+        metrics: (() => {
+          const candidates = ["net_revenue", "gross_revenue", "quantity"];
+          const available = candidates.filter((field) => catalog.columns.some((c) => c.field_key === field));
+          return available.length > 0 ? available.slice(0, 2) : ["net_revenue"];
+        })(),
+        top_n: 10,
+        sort_by: catalog.columns.some((c) => c.field_key === "net_revenue") ? "net_revenue" : "gross_revenue",
+        sort_dir: "desc",
+      };
+      const fallbackCompiled = compileSqlFromPlan(fallbackPlan, catalog);
+      const fallbackSql = validatePlannedSql(fallbackCompiled.sql);
+      const fallbackRun = await userClient.rpc("run_artist_chat_sql_v1", {
+        p_artist_key: artistKey,
+        from_date: fromDate,
+        to_date: toDate,
+        p_sql: fallbackSql,
+      });
+      if (!fallbackRun.error) {
+        const fallbackResult = (fallbackRun.data ?? {}) as SqlExecutionResponse;
+        const fallbackColumns = sanitizeColumns(fallbackResult.columns);
+        const fallbackRows = sanitizeRows(fallbackResult.rows);
+        const fallbackVerifier = verifyQueryResult({
+          question: question!,
+          plan: fallbackPlan,
+          columns: fallbackColumns,
+          rows: fallbackRows as Array<Record<string, unknown>>,
+        });
+        if (fallbackRows.length > 0 && fallbackVerifier.status === "passed") {
+          sqlResult = fallbackResult;
+          columns = fallbackColumns;
+          rows = fallbackRows;
+          evidence = toEvidence(fallbackResult, fromDate, toDate);
+          verifier = fallbackVerifier;
+          fallbackDataNote =
+            "Requested query shape returned no rows; showing closest available evidence from current artist scope.";
+        }
+      }
+    }
+
+    if (verifier.status === "failed" && rows.length > 0) {
+      const previewRows = rows.slice(0, 25);
+      const constrainedResponse = {
+        conversation_id: conversationId,
+        runtime_patch: ARTIST_RUNTIME_PATCH,
+        answer_title: "Constrained Artist Answer",
+        answer_text:
+          "I found artist data, but this result does not satisfy the requested question shape with high confidence.",
+        why_this_matters:
+          "Use this as directional evidence only. Refine the question with explicit metric and dimension for a decision-grade answer.",
+        kpis: [],
+        table: previewRows.length > 0 ? { columns, rows: previewRows } : undefined,
+        chart: { type: "none", x: "", y: [] },
+        evidence: { ...evidence, row_count: rows.length },
+        follow_up_questions: [
+          "Show top tracks by net revenue.",
+          "Show revenue by platform for this artist.",
+          "Show revenue by territory for this artist.",
+        ],
+        quality_outcome: "constrained",
+        diagnostics: {
+          intent: plan.intent,
+          confidence: "low",
+          used_fields: realPlanFields(plan),
+          missing_fields: missingFields,
+          strict_mode: true,
+          data_notes: [`Verifier rejected this result shape: ${verifier.reason ?? "unknown_reason"}`],
+          analysis_plan: plan,
+          required_columns: requiredColumns,
+          chosen_columns: compiled.chosen_columns,
+          top_n: plan.top_n,
+          sort_by: plan.sort_by,
+          sort_dir: plan.sort_dir,
+          verifier_status: verifier.status,
+          insufficiency_reason: verifier.reason ?? "shape_mismatch",
+          compiler_source: plan_source,
+          stage: "verify",
+        },
+      };
+
+      await logTurn(adminClient, {
+        user_id: requesterId,
+        artist_key: artistKey,
+        question: question,
+        analysis_plan: plan,
+        required_columns: requiredColumns,
+        chosen_columns: compiled.chosen_columns,
+        sql_text: cleanedSql,
+        sql_hash: stableHash(cleanedSql),
+        row_count: rows.length,
+        verifier_status: "constrained",
+        insufficiency_reason: verifier.reason ?? "shape_mismatch",
+        final_answer_meta: { conversation_id: conversationId, mode: "send_turn", quality_outcome: "constrained" },
+      });
+      return new Response(JSON.stringify(constrainedResponse), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (verifier.status === "failed") {
       // Only hard-fail when zero rows were returned — there is genuinely no data.
@@ -821,6 +1180,12 @@ serve(async (req) => {
 
     const previewRows = rows.slice(0, 25);
     const verifierWarnings = (verifier as { warnings?: string[] }).warnings ?? [];
+    const anomalyWarnings = computeRevenueAnomalyWarnings(previewRows);
+    const dataNotes = unique([
+      ...verifierWarnings,
+      ...anomalyWarnings,
+      ...(fallbackDataNote ? [fallbackDataNote] : []),
+    ]);
     let synthesized: AssistantSynthesisResponse | null = null;
     if (openAiKey) {
       try {
@@ -833,12 +1198,13 @@ serve(async (req) => {
             "Output JSON keys: answer_title, answer_text, why_this_matters, kpis, chart, follow_up_questions.",
             "answer_title: concise title (5 words max).",
             "answer_text: lead with a direct answer sentence, follow with key numbers from the result.",
+            "If territory/platform values are short codes or unknown labels, keep them exactly as shown; do not expand codes into guessed geography names.",
             "why_this_matters: Actionable Business Impact. Provide a concrete next step or business conclusion specific to these numbers. Avoid generic platitudes. e.g., if a track is peaking, suggest a sync push; if a territory is failing, suggest checking local DSP playlists.",
             "kpis: up to 4 KPI objects {label, value} derived from the top row(s).",
             "chart: suggest 'bar' or 'line' or 'none'. Only suggest a chart type if it genuinely aids reading the data.",
             "follow_up_questions: 2-3 natural follow-up questions a publisher would ask next.",
-            verifierWarnings.length > 0
-              ? `Data notes (be transparent about these in answer_text if relevant): ${verifierWarnings.join("; ")}`
+            dataNotes.length > 0
+              ? `Data notes (be transparent about these in answer_text if relevant): ${dataNotes.join("; ")}`
               : "The result is complete and verified.",
           ].join("\n"),
           userPrompt: JSON.stringify({
@@ -877,6 +1243,7 @@ serve(async (req) => {
 
     const response = {
       conversation_id: conversationId,
+      runtime_patch: ARTIST_RUNTIME_PATCH,
       answer_title: answerTitle,
       answer_text: answerText,
       why_this_matters: whyThisMatters,
@@ -887,11 +1254,12 @@ serve(async (req) => {
       follow_up_questions: followUps,
       diagnostics: {
         intent: plan.intent,
-        confidence: verifierWarnings.length > 0 ? "medium" : plan.confidence,
-        used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]),
+        confidence: dataNotes.length > 0 ? "medium" : plan.confidence,
+        used_fields: realPlanFields(plan),
         missing_fields: missingFields,
         strict_mode: false,
-        data_notes: verifierWarnings,
+        data_notes: dataNotes,
+        anomaly_flags: anomalyWarnings,
         analysis_plan: plan,
         required_columns: requiredColumns,
         chosen_columns: compiled.chosen_columns,

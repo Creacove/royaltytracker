@@ -70,4 +70,38 @@ describe("ai insights response contract", () => {
       evidence: { provenance: ["get_track_insights_list_v1"] },
     });
   });
+
+  it("accepts adaptive answer blocks payload", () => {
+    const adaptiveFixture = {
+      ...base,
+      resolved_mode: "artist",
+      answer_blocks: [
+        {
+          id: "direct-answer",
+          type: "direct_answer",
+          priority: 1,
+          source: "workspace_data",
+          payload: { title: "Artist answer", text: "Prioritize top tracks in growth territories." },
+        },
+        {
+          id: "kpi-strip",
+          type: "kpi_strip",
+          priority: 2,
+          source: "workspace_data",
+          payload: { items: [{ label: "Net revenue", value: "$100k" }] },
+        },
+      ],
+      render_hints: {
+        layout: "adaptive_card_stack",
+        density: "expanded",
+        visual_preference: "table",
+        show_confidence_badges: true,
+      },
+      evidence_map: {
+        "direct-answer": "workspace_data",
+        "kpi-strip": "workspace_data",
+      },
+    };
+    expect(isAiInsightsTurnResponse(adaptiveFixture)).toBe(true);
+  });
 });

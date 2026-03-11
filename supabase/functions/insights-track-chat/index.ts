@@ -71,6 +71,58 @@ type AnalysisPlanModelResponse = Partial<{
   sort_dir: "asc" | "desc";
 }>;
 
+type ScopeMode = "track";
+
+type ResolvedScope = {
+  mode: ScopeMode;
+  entity_context: { track_key: string };
+  from_date: string;
+  to_date: string;
+  scope_token: string;
+  scope_epoch: number;
+};
+
+type ThreadState = {
+  conversation_id: string;
+  scope_token: string;
+  scope_epoch: number;
+  intent?: string;
+  constraints?: {
+    platform?: string[];
+    territory?: string[];
+    requested_granularity?: "city" | "territory" | "platform" | "track" | "unknown";
+  };
+  selected_columns?: string[];
+  missing_columns?: string[];
+  clarification?: {
+    pending: boolean;
+    reason?: string;
+    question?: string;
+    options?: string[];
+  };
+};
+
+type ColumnCapability = {
+  field_key: string;
+  aliases: string[];
+  semantic_type: "money" | "rate" | "dimension" | "date" | "id" | "text" | "count";
+  allowed_ops: Array<"group" | "filter" | "sort" | "aggregate">;
+  quality_hints: {
+    coverage_pct: number;
+    confidence: "high" | "medium" | "low";
+  };
+};
+
+type QueryConstraints = {
+  platform: string[];
+  territory: string[];
+  asks_city: boolean;
+  asks_track: boolean;
+  asks_platform: boolean;
+  asks_territory: boolean;
+  requested_granularity: "city" | "territory" | "platform" | "track" | "unknown";
+};
+
 function asString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -262,9 +314,11 @@ function sanitizeKpis(input: unknown): Array<{ label: string; value: string; cha
       const label = asString(record.label);
       const value = asString(record.value);
       if (!label || !value) return null;
-      return { label, value, change: asString(record.change) ?? undefined };
+      const change = asString(record.change);
+      if (!change) return { label, value };
+      return { label, value, change };
     })
-    .filter((kpi): kpi is { label: string; value: string; change?: string } => !!kpi)
+    .filter((kpi): kpi is { label: string; value: string; change?: string } => kpi !== null)
     .slice(0, 6);
 }
 
@@ -284,6 +338,396 @@ function stableHash(input: string): string {
   let h = 0;
   for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) | 0;
   return String(h >>> 0);
+}
+
+function inferSemanticType(fieldKey: string, inferred: string): ColumnCapability["semantic_type"] {
+  if (/(_id|^id$|_key$|isrc|iswc)/i.test(fieldKey)) return "id";
+  if (/date|period/i.test(fieldKey) || inferred === "date") return "date";
+  if (/revenue|gross|net|commission|amount|payout/i.test(fieldKey)) return "money";
+  if (/pct|percent|ratio|rate|confidence|share|trend|growth/i.test(fieldKey)) return "rate";
+  if (/qty|quantity|count|rows?/i.test(fieldKey)) return "count";
+  if (/territory|platform|usage|artist|track|currency/i.test(fieldKey)) return "dimension";
+  if (inferred === "number") return "count";
+  return "text";
+}
+
+function defaultAllowedOps(semantic: ColumnCapability["semantic_type"]): ColumnCapability["allowed_ops"] {
+  if (semantic === "money" || semantic === "rate" || semantic === "count") return ["aggregate", "sort", "filter"];
+  if (semantic === "date") return ["group", "sort", "filter"];
+  return ["group", "filter", "sort"];
+}
+
+function confidenceFromCoverage(coverage: number): "high" | "medium" | "low" {
+  if (coverage >= 80) return "high";
+  if (coverage >= 45) return "medium";
+  return "low";
+}
+
+function buildColumnRegistry(catalog: ArtistCatalog): ColumnCapability[] {
+  return catalog.columns.map((c) => {
+    const semantic = inferSemanticType(c.field_key, String(c.inferred_type ?? "text"));
+    return {
+      field_key: c.field_key,
+      aliases: c.aliases ?? [],
+      semantic_type: semantic,
+      allowed_ops: defaultAllowedOps(semantic),
+      quality_hints: {
+        coverage_pct: Number(c.coverage_pct ?? 0),
+        confidence: confidenceFromCoverage(Number(c.coverage_pct ?? 0)),
+      },
+    };
+  });
+}
+
+function parseConstraints(question: string, prior?: ThreadState["constraints"]): QueryConstraints {
+  const q = question.toLowerCase();
+  const platform: string[] = [];
+  const territory: string[] = [];
+  const platformMap: Array<[RegExp, string]> = [
+    [/\bspotify\b/i, "spotify"],
+    [/\bapple\b/i, "apple music"],
+    [/\byoutube\b/i, "youtube"],
+    [/\bamazon\b/i, "amazon"],
+    [/\btidal\b/i, "tidal"],
+    [/\bdeezer\b/i, "deezer"],
+  ];
+  for (const [pattern, value] of platformMap) {
+    if (pattern.test(question)) platform.push(value);
+  }
+  const territoryMatches = question.match(/\b([A-Z]{2})\b/g) ?? [];
+  for (const t of territoryMatches) territory.push(t.toUpperCase());
+
+  const asksCity = /\bcity|cities|berlin|lagos|london|new york|paris\b/i.test(question);
+  const asksPlatform = /\bplatform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer\b/i.test(question);
+  const asksTerritory = /\bterritory|country|market|region|geo\b/i.test(question);
+  const asksTrack = /\btrack|song|title|isrc\b/i.test(question);
+
+  return {
+    platform: unique([...(prior?.platform ?? []), ...platform]),
+    territory: unique([...(prior?.territory ?? []), ...territory]),
+    asks_city: asksCity,
+    asks_track: asksTrack,
+    asks_platform: asksPlatform,
+    asks_territory: asksTerritory,
+    requested_granularity: asksCity ? "city" : asksTerritory ? "territory" : asksPlatform ? "platform" : asksTrack ? "track" : "unknown",
+  };
+}
+
+function filterRelevantColumns(registry: ColumnCapability[], question: string, constraints: QueryConstraints): ColumnCapability[] {
+  const q = question.toLowerCase();
+  const required = new Set<string>();
+  if (/\brevenue|earning|money|royalt|gross|net\b/.test(q)) {
+    required.add("net_revenue");
+    required.add("gross_revenue");
+  }
+  if (constraints.asks_platform || constraints.platform.length > 0) required.add("platform");
+  if (constraints.asks_territory || constraints.territory.length > 0) required.add("territory");
+  if (/\btrend|month|week|day|growth|over time\b/.test(q)) required.add("event_date");
+  if (constraints.asks_track) required.add("track_title");
+  if (required.size === 0) {
+    return registry.slice(0, 14);
+  }
+  const subset = registry.filter((r) => required.has(r.field_key) || r.aliases.some((a) => q.includes(a.toLowerCase())));
+  return subset.length > 0 ? subset.slice(0, 20) : registry.slice(0, 14);
+}
+
+function computeScopeToken(trackKey: string, fromDate: string, toDate: string): string {
+  return `track:${stableHash(`${trackKey}:${fromDate}:${toDate}`)}`;
+}
+
+async function loadThreadState(
+  adminClient: any | null,
+  userId: string,
+  conversationId: string,
+): Promise<ThreadState | null> {
+  if (!adminClient) return null;
+  try {
+    const { data, error } = await adminClient
+      .from("ai_track_thread_state_v1")
+      .select("conversation_id,scope_token,scope_epoch,state_json")
+      .eq("user_id", userId)
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const dataRow = data as Record<string, unknown>;
+    const state = (dataRow.state_json ?? {}) as Record<string, unknown>;
+    return {
+      conversation_id: asString(dataRow.conversation_id) ?? conversationId,
+      scope_token: asString(dataRow.scope_token) ?? "",
+      scope_epoch: Number(dataRow.scope_epoch ?? 1),
+      intent: asString(state.intent) ?? undefined,
+      constraints: (state.constraints as ThreadState["constraints"]) ?? undefined,
+      selected_columns: Array.isArray(state.selected_columns) ? (state.selected_columns as string[]) : undefined,
+      missing_columns: Array.isArray(state.missing_columns) ? (state.missing_columns as string[]) : undefined,
+      clarification: state.clarification as ThreadState["clarification"] | undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveThreadState(
+  adminClient: any | null,
+  userId: string,
+  state: ThreadState,
+): Promise<void> {
+  if (!adminClient) return;
+  try {
+    await adminClient.from("ai_track_thread_state_v1").upsert({
+      user_id: userId,
+      conversation_id: state.conversation_id,
+      scope_token: state.scope_token,
+      scope_epoch: state.scope_epoch,
+      state_json: {
+        intent: state.intent ?? null,
+        constraints: state.constraints ?? {},
+        selected_columns: state.selected_columns ?? [],
+        missing_columns: state.missing_columns ?? [],
+        clarification: state.clarification ?? null,
+      },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id,conversation_id" });
+  } catch {
+    // best effort
+  }
+}
+
+function buildClaimsFromRows(columns: string[], rows: Array<Record<string, string | number | null>>): Array<Record<string, unknown>> {
+  if (rows.length === 0) return [];
+  const top = rows[0];
+  const claims: Array<Record<string, unknown>> = [];
+  for (const key of columns.slice(0, 6)) {
+    if (!(key in top)) continue;
+    claims.push({
+      claim_id: `${key}_${stableHash(String(top[key] ?? "null"))}`,
+      text: `${key}: ${String(top[key] ?? "null")}`,
+      supporting_fields: [key],
+      source_ref: "run_track_chat_sql_v2",
+    });
+  }
+  return claims;
+}
+
+function detectPlatformValues(rows: Array<Record<string, string | number | null>>): string[] {
+  const values = new Set<string>();
+  for (const row of rows) {
+    const raw = row.platform;
+    if (typeof raw === "string" && raw.trim().length > 0) values.add(raw.trim().toLowerCase());
+  }
+  return Array.from(values);
+}
+
+function evaluateQualityOutcome({
+  constraints,
+  rows,
+  evidence,
+  verifierWarnings,
+  missingRequested,
+}: {
+  constraints: QueryConstraints;
+  rows: Array<Record<string, string | number | null>>;
+  evidence: { row_count: number };
+  verifierWarnings: string[];
+  missingRequested: string[];
+}): {
+  quality_outcome: "pass" | "clarify" | "constrained";
+  clarification?: { question: string; reason: string; options?: string[] };
+  unknowns: string[];
+} {
+  const unknowns: string[] = [];
+  if (missingRequested.length > 0) {
+    return {
+      quality_outcome: "clarify",
+      clarification: {
+        question: `I can answer this better if you confirm the closest available dimension. Do you want this by ${missingRequested.join(", ")} or by available territory/platform?`,
+        reason: `Requested dimensions are unavailable: ${missingRequested.join(", ")}`,
+        options: ["territory", "platform", "track_title"],
+      },
+      unknowns: [`Missing requested columns: ${missingRequested.join(", ")}`],
+    };
+  }
+
+  if (constraints.platform.length > 0) {
+    const platforms = detectPlatformValues(rows);
+    const hasMatch = constraints.platform.some((wanted) => platforms.some((p) => p.includes(wanted)));
+    if (!hasMatch) {
+      return {
+        quality_outcome: "clarify",
+        clarification: {
+          question: "Your question is platform-specific, but current scoped data does not include that platform. Should I answer using all available platforms or change platform scope?",
+          reason: `Platform mismatch. Requested ${constraints.platform.join(", ")} but found ${platforms.join(", ") || "none"}.`,
+          options: ["use available platforms", "change platform", "broaden date range"],
+        },
+        unknowns: [`Platform mismatch for requested ${constraints.platform.join(", ")}`],
+      };
+    }
+  }
+
+  if (constraints.asks_city) {
+    return {
+      quality_outcome: "clarify",
+      clarification: {
+        question: "I currently have territory-level data, not city-level fields. Should I proceed with territory-level recommendations, then enrich to city suggestions externally?",
+        reason: "City granularity requested but no city field in scoped dataset.",
+        options: ["proceed with territory", "change question", "broaden scope"],
+      },
+      unknowns: ["City-level granularity unavailable in current track schema."],
+    };
+  }
+
+  if (evidence.row_count < 3) {
+    unknowns.push("Low row count can reduce decision confidence.");
+    return {
+      quality_outcome: "constrained",
+      unknowns,
+    };
+  }
+  if (verifierWarnings.length > 0) {
+    unknowns.push(...verifierWarnings.slice(0, 3));
+  }
+  return {
+    quality_outcome: "pass",
+    unknowns,
+  };
+}
+
+function buildAdaptiveAnswerBlocks({
+  answerTitle,
+  answerText,
+  whyThisMatters,
+  kpis,
+  columns,
+  previewRows,
+  claims,
+  qualityOutcome,
+  clarification,
+  unknowns,
+}: {
+  answerTitle: string;
+  answerText: string;
+  whyThisMatters: string;
+  kpis: Array<{ label: string; value: string; change?: string }>;
+  columns: string[];
+  previewRows: Array<Record<string, string | number | null>>;
+  claims: Array<Record<string, unknown>>;
+  qualityOutcome: "pass" | "clarify" | "constrained";
+  clarification?: { question: string; reason: string; options?: string[] };
+  unknowns: string[];
+}): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [
+    {
+      id: "direct-answer",
+      type: "direct_answer",
+      priority: 1,
+      source: "workspace_data",
+      payload: { title: answerTitle, text: answerText },
+    },
+  ];
+  if (qualityOutcome === "clarify" && clarification) {
+    blocks.push({
+      id: "clarification",
+      type: "scenario_options",
+      priority: 2,
+      source: "workspace_data",
+      payload: {
+        items: (clarification.options ?? []).map((opt) => ({ action: opt, rationale: clarification.reason })),
+        question: clarification.question,
+      },
+    });
+  } else {
+    if (whyThisMatters) {
+      blocks.push({
+        id: "deep-summary",
+        type: "deep_summary",
+        priority: 2,
+        source: "workspace_data",
+        payload: { text: whyThisMatters },
+      });
+    }
+    if (kpis.length > 0) {
+      blocks.push({
+        id: "kpi-strip",
+        type: "kpi_strip",
+        priority: 3,
+        source: "workspace_data",
+        payload: { items: kpis },
+      });
+    }
+    if (previewRows.length > 0) {
+      blocks.push({
+        id: "table-main",
+        type: "table",
+        priority: 4,
+        source: "workspace_data",
+        payload: { columns, rows: previewRows },
+      });
+    }
+  }
+  if (unknowns.length > 0) {
+    blocks.push({
+      id: "risk-flags",
+      type: "risk_flags",
+      priority: 8,
+      source: "workspace_data",
+      payload: { items: unknowns },
+    });
+  }
+  blocks.push({
+    id: "citations",
+    type: "citations",
+    priority: 9,
+    source: "workspace_data",
+    payload: { items: claims.map((c) => ({ title: String(c.source_ref ?? "run_track_chat_sql_v2"), claim_ids: [String(c.claim_id ?? "")], source_type: "workspace_data" })) },
+  });
+  return blocks;
+}
+
+async function maybeRunExternalAssessment({
+  question,
+  topRows,
+}: {
+  question: string;
+  topRows: Array<Record<string, string | number | null>>;
+}): Promise<{ notes: string; citations: Array<Record<string, unknown>> } | null> {
+  const searchUrl = Deno.env.get("WEB_SEARCH_API_URL") ?? null;
+  const searchKey = Deno.env.get("WEB_SEARCH_API_KEY") ?? null;
+  if (!searchUrl || !searchKey || topRows.length === 0) return null;
+  try {
+    const anchors = {
+      territory: topRows[0].territory ?? null,
+      platform: topRows[0].platform ?? null,
+      track_title: topRows[0].track_title ?? null,
+    };
+    const resp = await fetch(searchUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${searchKey}`,
+      },
+      body: JSON.stringify({
+        question,
+        anchors,
+        max_results: 3,
+      }),
+    });
+    if (!resp.ok) return null;
+    const payload = (await resp.json()) as Record<string, unknown>;
+    const notes = asString(payload.summary) ?? "External market context was retrieved.";
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    const citations: Array<Record<string, unknown>> = results.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const row = item as Record<string, unknown>;
+      return [{
+        title: asString(row.title) ?? "External Source",
+        url: asString(row.url) ?? undefined,
+        source_type: "external",
+        claim_ids: [stableHash(JSON.stringify(row))],
+      }];
+    });
+    return { notes, citations };
+  } catch {
+    return null;
+  }
 }
 
 function parseAnalysisPlanModel(input: AnalysisPlanModelResponse | null): AnalysisPlan | null {
@@ -400,7 +844,7 @@ function insufficiencyPayload({
   };
 }
 
-async function fetchCatalog(userClient: ReturnType<typeof createClient>, trackKey: string, fromDate: string, toDate: string): Promise<ArtistCatalog> {
+async function fetchCatalog(userClient: any, trackKey: string, fromDate: string, toDate: string): Promise<ArtistCatalog> {
   const { data, error } = await userClient.rpc("get_track_assistant_catalog_v1", {
     p_track_key: trackKey,
     from_date: fromDate,
@@ -429,7 +873,7 @@ async function fetchCatalog(userClient: ReturnType<typeof createClient>, trackKe
 }
 
 async function logTurn(
-  adminClient: ReturnType<typeof createClient> | null,
+  adminClient: any | null,
   _payload: Record<string, unknown>,
 ) {
   if (!adminClient) return;
@@ -439,24 +883,54 @@ async function logTurn(
 async function buildPlan({
   question,
   catalog,
+  columnRegistrySubset,
+  priorThreadState,
+  constraints,
   openAiKey,
   model,
 }: {
   question: string;
   catalog: ArtistCatalog;
+  columnRegistrySubset: ColumnCapability[];
+  priorThreadState: ThreadState | null;
+  constraints: QueryConstraints;
   openAiKey: string | null;
   model: string;
-}): Promise<{ plan: AnalysisPlan; plan_source: "model" | "fallback" }> {
+}): Promise<{
+  plan: AnalysisPlan;
+  plan_source: "model" | "fallback";
+  column_requirements: { required: string[]; optional: string[]; missing_requested: string[] };
+  sql_intent: string;
+}> {
+  const requiredFromConstraints = unique([
+    ...(constraints.asks_platform || constraints.platform.length > 0 ? ["platform"] : []),
+    ...(constraints.asks_territory || constraints.territory.length > 0 ? ["territory"] : []),
+    ...(constraints.asks_track ? ["track_title"] : []),
+  ]);
+  const available = new Set(catalog.columns.map((c) => c.field_key));
+  const missingRequested = requiredFromConstraints.filter((field) => !available.has(field));
+
   if (!openAiKey) {
     const fallback = deriveAnalysisPlanFallback(question, catalog);
-    return { plan: normalizePlan(fallback, question, catalog), plan_source: "fallback" };
+    const normalized = normalizePlan(fallback, question, catalog);
+    return {
+      plan: normalized,
+      plan_source: "fallback",
+      column_requirements: {
+        required: unique([...normalized.required_columns, ...requiredFromConstraints]),
+        optional: unique(priorThreadState?.selected_columns ?? []).slice(0, 6),
+        missing_requested: missingRequested,
+      },
+      sql_intent: normalized.intent,
+    };
   }
 
-  // Build a concise column list for the planner so it always picks real field names
-  const catalogFieldList = catalog.columns
+  // Build a concise filtered column list for the planner so it always picks real field names
+  const registryForPlanner = columnRegistrySubset.length > 0 ? columnRegistrySubset : buildColumnRegistry(catalog);
+  const catalogFieldList = registryForPlanner
     .map((c) => {
-      const aliasNote = (c.aliases ?? []).length > 0 ? ` (aliases: ${c.aliases.join(", ")})` : "";
-      return `${c.field_key} [${c.inferred_type}]${aliasNote}`;
+      const aliasNote = c.aliases.length > 0 ? ` (aliases: ${c.aliases.join(", ")})` : "";
+      return `${c.field_key} [${c.semantic_type}]${aliasNote}`;
     })
     .join("\n");
 
@@ -475,21 +949,23 @@ async function buildPlan({
     "- For territory questions include 'territory'. For platform questions include 'platform'.",
     "- confidence should be 'high' when question directly maps to available columns.",
     "No prose, no SQL. Return valid JSON only.",
+    `Prior constraints from thread: ${JSON.stringify(priorThreadState?.constraints ?? {})}`,
+    `Current constraints: ${JSON.stringify(constraints)}`,
   ].join("\n");
 
   const plannerUser = JSON.stringify({
     question,
-    available_fields: catalog.columns.map((c) => c.field_key),
+    available_fields: registryForPlanner.map((c) => c.field_key),
     catalog: {
       total_rows: catalog.total_rows,
-      columns: catalog.columns.map((c) => ({
+      columns: registryForPlanner.map((c) => ({
         field_key: c.field_key,
-        inferred_type: c.inferred_type,
-        coverage_pct: c.coverage_pct,
-        source: c.source,
+        inferred_type: c.semantic_type,
+        coverage_pct: c.quality_hints.coverage_pct,
+        source: "registry",
         aliases: c.aliases,
       })),
-      aliases: catalog.aliases,
+      aliases: Object.fromEntries(registryForPlanner.map((c) => [c.field_key, c.aliases])),
     },
   });
 
@@ -502,10 +978,30 @@ async function buildPlan({
     });
     const parsed = parseAnalysisPlanModel(modelPlan);
     if (!parsed) throw new Error("invalid model plan");
-    return { plan: normalizePlan(parsed, question, catalog), plan_source: "model" };
+    const normalized = normalizePlan(parsed, question, catalog);
+    return {
+      plan: normalized,
+      plan_source: "model",
+      column_requirements: {
+        required: unique([...normalized.required_columns, ...requiredFromConstraints]),
+        optional: unique(priorThreadState?.selected_columns ?? []).slice(0, 6),
+        missing_requested: missingRequested,
+      },
+      sql_intent: normalized.intent,
+    };
   } catch {
     const fallback = deriveAnalysisPlanFallback(question, catalog);
-    return { plan: normalizePlan(fallback, question, catalog), plan_source: "fallback" };
+    const normalized = normalizePlan(fallback, question, catalog);
+    return {
+      plan: normalized,
+      plan_source: "fallback",
+      column_requirements: {
+        required: unique([...normalized.required_columns, ...requiredFromConstraints]),
+        optional: unique(priorThreadState?.selected_columns ?? []).slice(0, 6),
+        missing_requested: missingRequested,
+      },
+      sql_intent: normalized.intent,
+    };
   }
 }
 
@@ -530,8 +1026,8 @@ serve(async (req) => {
       throw new Error("Missing bearer token.");
     }
     const jwt = authHeader.slice(7).trim();
-    const claims = parseJwtClaims(jwt);
-    const requesterId = claims?.sub ?? claims?.user_id;
+    const jwtClaims = parseJwtClaims(jwt);
+    const requesterId = jwtClaims?.sub ?? jwtClaims?.user_id;
     if (!requesterId) throw new Error("Unable to resolve authenticated user.");
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -549,11 +1045,16 @@ serve(async (req) => {
 
     const conversationId = asString(body.conversation_id) ?? crypto.randomUUID();
     const { fromDate, toDate } = normalizeDateRange(body.from_date, body.to_date);
+    const scopeToken = computeScopeToken(trackKey, fromDate, toDate);
 
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${jwt}` } },
     });
     const adminClient = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
+    const priorThreadState = await loadThreadState(adminClient, requesterId, conversationId);
+    const scopeEpoch = priorThreadState
+      ? (priorThreadState.scope_token === scopeToken ? priorThreadState.scope_epoch : priorThreadState.scope_epoch + 1)
+      : 1;
 
     if (action === "run_query") {
       if (!signingSecret) throw new Error("INSIGHTS_SIGNING_SECRET is required for run_query.");
@@ -633,12 +1134,26 @@ serve(async (req) => {
     }
 
     const catalog = await fetchCatalog(userClient, trackKey, fromDate, toDate);
-    const { plan, plan_source } = await buildPlan({
+    const columnRegistry = buildColumnRegistry(catalog);
+    const constraints = parseConstraints(question!, priorThreadState?.constraints);
+    const columnRegistrySubset = filterRelevantColumns(columnRegistry, question!, constraints);
+    const { plan, plan_source, column_requirements, sql_intent } = await buildPlan({
       question: question!,
       catalog,
+      columnRegistrySubset,
+      priorThreadState,
+      constraints,
       openAiKey,
       model,
     });
+    const resolvedScope: ResolvedScope = {
+      mode: "track",
+      entity_context: { track_key: trackKey },
+      from_date: fromDate,
+      to_date: toDate,
+      scope_token: scopeToken,
+      scope_epoch: scopeEpoch,
+    };
 
     if (catalog.total_rows <= 0) {
       const response = insufficiencyPayload({
@@ -671,8 +1186,8 @@ serve(async (req) => {
     }
 
     const catalogFields = new Set(catalog.columns.map((c) => c.field_key.toLowerCase()));
-    const requiredColumns = unique(plan.required_columns);
-    const missingFields = requiredColumns.filter((field) => !catalogFields.has(field.toLowerCase()));
+    const requiredColumns = unique(column_requirements.required);
+    const missingFields = unique([...column_requirements.missing_requested, ...requiredColumns.filter((field) => !catalogFields.has(field.toLowerCase()))]);
 
     if (action === "plan_query" && missingFields.length > 0) {
       return new Response(
@@ -683,6 +1198,7 @@ serve(async (req) => {
             analysis_plan: plan,
             required_columns: requiredColumns,
             missing_fields: missingFields,
+            column_requirements: column_requirements,
             top_n: plan.top_n,
             sort_by: plan.sort_by,
             sort_dir: plan.sort_dir,
@@ -725,6 +1241,7 @@ serve(async (req) => {
             analysis_plan: plan,
             required_columns: requiredColumns,
             chosen_columns: compiled.chosen_columns,
+            column_requirements: column_requirements,
             top_n: plan.top_n,
             sort_by: plan.sort_by,
             sort_dir: plan.sort_dir,
@@ -871,16 +1388,101 @@ serve(async (req) => {
       return { type: chartType, x, y, title: asString(proposed?.title) ?? undefined };
     })();
 
+    const quality = evaluateQualityOutcome({
+      constraints,
+      rows: previewRows,
+      evidence,
+      verifierWarnings,
+      missingRequested: column_requirements.missing_requested,
+    });
+    const claimsList = buildClaimsFromRows(columns, previewRows);
+    const externalAssessment = quality.quality_outcome === "pass"
+      ? await maybeRunExternalAssessment({ question: question!, topRows: previewRows })
+      : null;
+    if (externalAssessment) {
+      claimsList.push({
+        claim_id: `external_${stableHash(externalAssessment.notes)}`,
+        text: externalAssessment.notes,
+        supporting_fields: [],
+        source_ref: "external_web_assessment",
+      });
+    }
+    const planTrace = {
+      intent: sql_intent,
+      selected_columns: compiled.chosen_columns,
+      missing_columns: missingFields,
+      column_requirements,
+      constraints,
+    };
+
+    let finalAnswerText = answerText;
+    let finalWhyThisMatters = whyThisMatters;
+    let finalFollowUps = followUps;
+    if (quality.quality_outcome === "clarify" && quality.clarification) {
+      finalAnswerText = quality.clarification.question;
+      finalWhyThisMatters = quality.clarification.reason;
+      finalFollowUps = quality.clarification.options ?? [];
+    } else if (quality.quality_outcome === "constrained") {
+      finalWhyThisMatters = "Evidence is currently constrained; treat this as directional until data sufficiency improves.";
+      if (finalFollowUps.length === 0) {
+        finalFollowUps = [
+          "Broaden the date range for stronger confidence.",
+          "Filter to the platform or territory you care about most.",
+        ];
+      }
+    }
+    const answerBlocks = buildAdaptiveAnswerBlocks({
+      answerTitle,
+      answerText: finalAnswerText,
+      whyThisMatters: finalWhyThisMatters,
+      kpis,
+      columns,
+      previewRows,
+      claims: claimsList,
+      qualityOutcome: quality.quality_outcome,
+      clarification: quality.clarification,
+      unknowns: quality.unknowns,
+    });
+    if (externalAssessment) {
+      answerBlocks.push({
+        id: "external-summary",
+        type: "deep_summary",
+        priority: 6,
+        source: "external",
+        payload: { text: externalAssessment.notes },
+      });
+    }
+    const evidenceMap = Object.fromEntries(
+      answerBlocks
+        .filter((b) => typeof b.id === "string")
+        .map((b) => [String(b.id), b.source === "external" ? "external" : "workspace_data"]),
+    );
+
     const response = {
       conversation_id: conversationId,
       answer_title: answerTitle,
-      answer_text: answerText,
-      why_this_matters: whyThisMatters,
+      answer_text: finalAnswerText,
+      why_this_matters: finalWhyThisMatters,
       kpis,
       table: previewRows.length > 0 ? { columns, rows: previewRows } : undefined,
       chart,
       evidence,
-      follow_up_questions: followUps,
+      follow_up_questions: finalFollowUps,
+      quality_outcome: quality.quality_outcome,
+      clarification: quality.clarification,
+      resolved_scope: resolvedScope,
+      plan_trace: planTrace,
+      claims: claimsList,
+      answer_blocks: answerBlocks,
+      render_hints: {
+        layout: "adaptive_card_stack",
+        density: quality.quality_outcome === "pass" ? "expanded" : "compact",
+        visual_preference: chart.type === "none" ? "table" : "chart",
+        show_confidence_badges: true,
+      },
+      evidence_map: evidenceMap,
+      unknowns: quality.unknowns,
+      citations: externalAssessment?.citations ?? undefined,
       diagnostics: {
         intent: plan.intent,
         confidence: verifierWarnings.length > 0 ? "medium" : plan.confidence,
@@ -889,6 +1491,7 @@ serve(async (req) => {
         strict_mode: false,
         data_notes: verifierWarnings,
         analysis_plan: plan,
+        column_requirements: column_requirements,
         required_columns: requiredColumns,
         chosen_columns: compiled.chosen_columns,
         top_n: plan.top_n,
@@ -898,8 +1501,31 @@ serve(async (req) => {
         insufficiency_reason: null,
         compiler_source: plan_source,
         stage: "verify",
+        external_assessment: externalAssessment ? "applied" : "skipped",
       },
     };
+
+    await saveThreadState(adminClient, requesterId, {
+      conversation_id: conversationId,
+      scope_token: scopeToken,
+      scope_epoch: scopeEpoch,
+      intent: sql_intent,
+      constraints: {
+        platform: constraints.platform,
+        territory: constraints.territory,
+        requested_granularity: constraints.requested_granularity,
+      },
+      selected_columns: compiled.chosen_columns,
+      missing_columns: missingFields,
+      clarification: quality.clarification
+        ? {
+            pending: true,
+            reason: quality.clarification.reason,
+            question: quality.clarification.question,
+            options: quality.clarification.options,
+          }
+        : { pending: false },
+    });
 
     await logTurn(adminClient, {
       user_id: requesterId,

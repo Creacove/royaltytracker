@@ -1,0 +1,725 @@
+[
+  {
+    "prompt_id": "artist-live-001",
+    "question": "Where are the biggest attribution and mapping gaps likely distorting net revenue decisions, and what is the 30-day remediation order by expected financial impact?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-002",
+    "question": "Which tracks in this artist's catalog have high usage but low effective royalty rate by rights type this year, and what contract/data issue should we investigate first?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-003",
+    "question": "Compare last 6 months vs prior 6 months by platform and recommend 3 actions.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-004",
+    "question": "Show net revenue week by week for the last 16 weeks by platform, and identify where momentum broke.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-005",
+    "question": "Which platforms are driving revenue concentration risk, and what should we do next quarter?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-006",
+    "question": "Which territories are under-monetized relative to usage, and what should we do first?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-007",
+    "question": "Where should this artiste tour and why?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.64,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "runtime_error",
+      "missing_external_citations"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-008",
+    "question": "Where should this artiste tour next quarter, and what should we validate before booking dates?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.64,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "runtime_error",
+      "missing_external_citations"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-009",
+    "question": "Which territories show strongest monetization momentum, and what city-level validation should we run before routing dates?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.64,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "runtime_error",
+      "missing_external_citations"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-010",
+    "question": "If budget is limited, what 2 no-regret moves should we make this quarter?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-011",
+    "question": "What should this artist focus on in 2026: growth, risk reduction, or diversification?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-012",
+    "question": "If we wanted a 20% uplift in net revenue, which 3 levers are most realistic from current data?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-013",
+    "question": "If we had to choose between doubling down on top performers vs building the mid-tier catalog, which strategy has better 2-quarter upside-adjusted risk?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-014",
+    "question": "Which 5 tracks have the highest net revenue this year, and what explains the gap to #2-#5?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-015",
+    "question": "Compare this year vs last year by platform and territory, then give an executive recommendation.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-016",
+    "question": "Show net revenue day by day for the last 30 days and explain the biggest spike.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-017",
+    "question": "Which platform-territory pairs have the largest gross-to-net gap this year, and what should we fix first?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-018",
+    "question": "Which entities have the highest confidence risk (mapping/validation) but high revenue impact, and what is the no-regret remediation order?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-019",
+    "question": "If budget is cut by 40%, what 2 moves should we keep and what 1 move should we pause?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  },
+  {
+    "prompt_id": "artist-live-020",
+    "question": "What should we stop doing immediately because it has low upside or high execution risk?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-11",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "error",
+    "quality_score": 2.89,
+    "quality_breakdown": {
+      "directness": 0,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [
+      "runtime_error"
+    ],
+    "critical_flags": [
+      "runtime_error"
+    ],
+    "intent_detected": "unknown",
+    "quality_outcome": "unknown",
+    "response_excerpt": "",
+    "diagnostics": null,
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "error": "Artist assistant error: Unable to resolve authenticated user."
+    }
+  }
+]

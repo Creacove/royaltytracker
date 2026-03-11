@@ -65,6 +65,20 @@ type TrackAssistantTurnResponse = {
     provenance?: string[];
   };
   follow_up_questions?: string[];
+  quality_outcome?: "pass" | "clarify" | "constrained";
+  resolved_scope?: Record<string, unknown>;
+  plan_trace?: Record<string, unknown>;
+  claims?: Array<Record<string, unknown>>;
+  citations?: Array<Record<string, unknown>>;
+  answer_blocks?: Array<Record<string, unknown>>;
+  render_hints?: Record<string, unknown>;
+  evidence_map?: Record<string, unknown>;
+  unknowns?: string[];
+  clarification?: {
+    question?: string;
+    reason?: string;
+    options?: string[];
+  };
   diagnostics?: {
     intent?: string;
     confidence?: "high" | "medium" | "low" | string;
@@ -72,11 +86,9 @@ type TrackAssistantTurnResponse = {
     missing_fields?: string[];
     strict_mode?: boolean;
   };
-  clarification?: {
-    prompt?: string;
-    options?: string[];
-  };
 };
+
+const RUNTIME_PATCH = "router-hotfix-2026-03-12-0228z";
 
 type TrackNaturalChatPlanResponse = {
   plan_id?: string;
@@ -84,8 +96,475 @@ type TrackNaturalChatPlanResponse = {
   execution_token?: string;
 };
 
+type AdaptivePersona =
+  | "publisher"
+  | "marketer"
+  | "tour_manager"
+  | "label_head"
+  | "executive_decision_maker";
+
+type AdaptiveAnswerResponse = {
+  conversation_id: string;
+  resolved_mode: AiInsightsMode;
+  resolved_entities: EntityContext;
+  answer_title?: string;
+  executive_answer: string;
+  why_this_matters: string;
+  evidence: {
+    row_count: number;
+    scanned_rows: number;
+    from_date: string;
+    to_date: string;
+    provenance: string[];
+    system_confidence: "high" | "medium" | "low";
+  };
+  actions: Array<{ label: string; href: string; kind?: "primary" | "secondary" | "ghost" | string }>;
+  follow_up_questions: string[];
+  visual: {
+    type: "bar" | "line" | "table" | "none";
+    title?: string;
+    x?: string;
+    y?: string[];
+    rows?: Array<Record<string, string | number | null>>;
+    columns?: string[];
+  };
+  kpis: Array<{ label: string; value: string }>;
+  recommendations?: Array<Record<string, unknown>>;
+  external_context?: {
+    summary?: string;
+    citations?: Array<Record<string, unknown>>;
+  };
+  diagnostics?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type DecisionFrame = {
+  objective: "allocation" | "growth" | "diagnostic" | "risk_control" | "exploration";
+  decision_type: "strategy" | "ranking" | "comparison" | "forecast" | "investigation";
+  horizon: "short_term" | "annual" | "multi_year" | "unspecified";
+  entity_scope: "track" | "artist" | "catalog" | "workspace";
+  persona: AdaptivePersona;
+  asks_external_context: boolean;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isAdaptiveCandidate(body: unknown): body is AdaptiveAnswerResponse {
+  if (!isRecord(body)) return false;
+  if (Array.isArray((body as Record<string, unknown>).answer_blocks)) return false;
+  return (
+    typeof body.conversation_id === "string" &&
+    typeof body.executive_answer === "string" &&
+    isRecord(body.evidence) &&
+    Array.isArray(body.actions) &&
+    Array.isArray(body.follow_up_questions) &&
+    isRecord(body.visual) &&
+    Array.isArray(body.kpis)
+  );
+}
+
+function detectPersonaFromText(text: string): AdaptivePersona {
+  const q = text.toLowerCase();
+  if (/\b(tour|venue|city|route|booking|festival|show)\b/.test(q)) return "tour_manager";
+  if (/\b(campaign|audience|creative|channel|content|marketing|acquisition)\b/.test(q)) return "marketer";
+  if (/\b(catalog|portfolio|signing|release strategy|a&r|label)\b/.test(q)) return "label_head";
+  if (/\b(publish|rights|sync|royalty leak|leakage|cmo)\b/.test(q)) return "publisher";
+  return "executive_decision_maker";
+}
+
+function detectIntentFromBody(body: AdaptiveAnswerResponse): string {
+  const diagIntent = isRecord(body.diagnostics) && typeof body.diagnostics.intent === "string"
+    ? body.diagnostics.intent
+    : null;
+  if (diagIntent) return diagIntent;
+  const text = `${body.answer_title ?? ""} ${body.executive_answer} ${body.why_this_matters}`.toLowerCase();
+  if (/\b(tour|venue|city|market entry|routing)\b/.test(text)) return "touring_live";
+  if (/\b(campaign|audience|channel|activation)\b/.test(text)) return "audience_marketing";
+  if (/\b(rights|publisher|leakage|risk|compliance)\b/.test(text)) return "rights_revenue_risk";
+  if (/\b(catalog|portfolio|allocation|top tracks)\b/.test(text)) return "catalog_strategy";
+  if (/\b(compare|vs|benchmark|peer)\b/.test(text)) return "competitive_market_context";
+  return "open_exploratory";
+}
+
+function isTouringQuestion(question: string): boolean {
+  return /\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|dates?)\b/.test(question.toLowerCase());
+}
+
+type TourTerritoryAggregate = {
+  territory: string;
+  gross: number;
+  net: number;
+  qty: number;
+  score: number;
+};
+
+function rankTourTerritories(rows: Array<Record<string, unknown>>): TourTerritoryAggregate[] {
+  const agg = new Map<string, { territory: string; gross: number; net: number; qty: number }>();
+  for (const row of rows) {
+    const territory = String(row.territory ?? "").trim();
+    if (!territory || isLikelyUnknown(territory)) continue;
+    const gross = toNum(row.gross_revenue) ?? 0;
+    const net = toNum(row.net_revenue) ?? 0;
+    const qty = toNum(row.quantity) ?? toNum(row.performance_count) ?? 0;
+    const current = agg.get(territory) ?? { territory, gross: 0, net: 0, qty: 0 };
+    current.gross += gross;
+    current.net += net;
+    current.qty += qty;
+    agg.set(territory, current);
+  }
+  const values = Array.from(agg.values());
+  if (values.length === 0) return [];
+
+  const grossRank = [...values].sort((a, b) => b.gross - a.gross).map((v) => v.territory);
+  const netRank = [...values].sort((a, b) => b.net - a.net).map((v) => v.territory);
+  const qtyRank = [...values].sort((a, b) => b.qty - a.qty).map((v) => v.territory);
+  const scoreByTerritory = new Map<string, number>();
+  const addRankScore = (ranked: string[], weight: number) => {
+    ranked.forEach((territory, idx) => {
+      const points = Math.max(0, ranked.length - idx) * weight;
+      scoreByTerritory.set(territory, (scoreByTerritory.get(territory) ?? 0) + points);
+    });
+  };
+  addRankScore(grossRank, 1.0);
+  addRankScore(netRank, 1.5);
+  addRankScore(qtyRank, 0.75);
+
+  const totalGross = values.reduce((sum, t) => sum + t.gross, 0);
+  const totalNet = values.reduce((sum, t) => sum + t.net, 0);
+  return values
+    .map((v) => {
+      const grossShare = totalGross > 0 ? v.gross / totalGross : 0;
+      const netShare = totalNet > 0 ? v.net / totalNet : 0;
+      const score = (scoreByTerritory.get(v.territory) ?? 0) + (grossShare * 10) + (netShare * 8);
+      return { ...v, score };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+function buildTourDecisionBrief(visual: AdaptiveAnswerResponse["visual"]): { executive: string; why: string; kpis: Array<{ label: string; value: string }> } | null {
+  const rows = Array.isArray(visual.rows) ? visual.rows : [];
+  if (rows.length === 0) return null;
+  const ranked = rankTourTerritories(rows as Array<Record<string, unknown>>);
+  if (ranked.length === 0) return null;
+  const top3 = ranked.slice(0, 3);
+  const totalGross = ranked.reduce((sum, t) => sum + t.gross, 0);
+  const top = top3[0];
+  const share = totalGross > 0 ? (top.gross / totalGross) * 100 : null;
+  const executive = `Priority touring territories: ${top3.map((t) => t.territory).join(", ")}. ${top.territory} leads the current monetization signal${share !== null ? ` at ${share.toFixed(1)}% share of observed gross` : ""}.`;
+  const why = "Before booking dates, validate city-level demand concentration, venue hold availability, competing-events window, and pricing-band fit in each priority territory.";
+  const kpis = [
+    { label: "Priority 1", value: top.territory },
+    { label: "Priority 2", value: top3[1]?.territory ?? "n/a" },
+    { label: "Priority 3", value: top3[2]?.territory ?? "n/a" },
+    { label: "Top territory gross", value: compactMoney(top.gross) },
+  ];
+  return { executive, why, kpis };
+}
+
+function buildDecisionFrame(
+  question: string,
+  mode: AiInsightsMode,
+  context: EntityContext,
+  persona: AdaptivePersona,
+): DecisionFrame {
+  const q = question.toLowerCase();
+  const objective: DecisionFrame["objective"] =
+    /\bfocus|allocate|budget|priorit|invest|double down\b/.test(q)
+      ? "allocation"
+      : /\bgrow|scale|increase|boost\b/.test(q)
+        ? "growth"
+        : /\brisk|leak|uncertain|confidence|quality\b/.test(q)
+          ? "risk_control"
+          : /\bwhy|what happened|driver|root cause|diagnos\b/.test(q)
+            ? "diagnostic"
+            : "exploration";
+  const decision_type: DecisionFrame["decision_type"] =
+    /\btop|highest|best|most|rank\b/.test(q)
+      ? "ranking"
+      : /\bcompare|vs|versus|against\b/.test(q)
+        ? "comparison"
+        : /\bforecast|scenario|predict|outlook\b/.test(q)
+          ? "forecast"
+          : /\binvestigate|deep dive|drill\b/.test(q)
+            ? "investigation"
+            : "strategy";
+  const horizon: DecisionFrame["horizon"] =
+    /\b2026|2027|year\b/.test(q)
+      ? "annual"
+      : /\bquarter|month|30 days|90 days|next 2 weeks\b/.test(q)
+        ? "short_term"
+        : /\b3 years|5 years|long term|multi-year\b/.test(q)
+          ? "multi_year"
+          : "unspecified";
+  const entity_scope: DecisionFrame["entity_scope"] =
+    context.track_key || mode === "track"
+      ? "track"
+      : context.artist_key || context.artist_name || mode === "artist"
+        ? "artist"
+        : /\bcatalog|catalogue|portfolio\b/.test(q)
+          ? "catalog"
+          : "workspace";
+  const asks_external_context = /\btour|venue|city|playlist|editorial|campaign|market trend|audience\b/.test(q);
+
+  return { objective, decision_type, horizon, entity_scope, persona, asks_external_context };
+}
+
+function makeClaimId(seed: string, idx: number): string {
+  let h = 0;
+  const input = `${seed}:${idx}`;
+  for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) | 0;
+  return `claim_${Math.abs(h)}`;
+}
+
+function buildAdaptiveBlocks(body: AdaptiveAnswerResponse): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+  const confidence = body.evidence?.system_confidence ?? "low";
+  const hasVisualRows = Array.isArray(body.visual?.rows) && body.visual.rows.length > 0;
+
+  blocks.push({
+    id: "direct-answer",
+    type: "direct_answer",
+    priority: 1,
+    source: "workspace_data",
+    confidence,
+    payload: {
+      title: body.answer_title ?? "AI answer",
+      text: body.executive_answer,
+    },
+  });
+
+  if (isNonEmptyString(body.why_this_matters)) {
+    blocks.push({
+      id: "deep-summary",
+      type: "deep_summary",
+      priority: 2,
+      source: "workspace_data",
+      confidence,
+      payload: {
+        text: body.why_this_matters,
+      },
+    });
+  }
+
+  if (isNonEmptyString(body.external_context?.summary)) {
+    blocks.push({
+      id: "external-context",
+      type: "deep_summary",
+      priority: 3,
+      source: "external",
+      confidence,
+      payload: {
+        text: body.external_context?.summary,
+      },
+    });
+  }
+
+  if (body.kpis.length > 0) {
+    blocks.push({
+      id: "kpi-strip",
+      type: "kpi_strip",
+      priority: 3,
+      source: "workspace_data",
+      confidence,
+      payload: { items: body.kpis.slice(0, 6) },
+    });
+  }
+
+  if (body.visual.type === "table" && hasVisualRows) {
+    blocks.push({
+      id: "table-main",
+      type: "table",
+      priority: 4,
+      source: "workspace_data",
+      confidence,
+      title: body.visual.title ?? "Evidence Table",
+      payload: {
+        columns: body.visual.columns ?? [],
+        rows: body.visual.rows ?? [],
+      },
+    });
+  }
+
+  if (body.visual.type === "bar" && hasVisualRows) {
+    blocks.push({
+      id: "bar-main",
+      type: "bar_chart",
+      priority: 4,
+      source: "workspace_data",
+      confidence,
+      title: body.visual.title ?? "Evidence Chart",
+      payload: {
+        x: body.visual.x ?? "",
+        y: body.visual.y ?? [],
+        rows: body.visual.rows ?? [],
+      },
+    });
+  }
+
+  if (body.visual.type === "line" && hasVisualRows) {
+    blocks.push({
+      id: "line-main",
+      type: "line_chart",
+      priority: 4,
+      source: "workspace_data",
+      confidence,
+      title: body.visual.title ?? "Trend",
+      payload: {
+        x: body.visual.x ?? "",
+        y: body.visual.y ?? [],
+        rows: body.visual.rows ?? [],
+      },
+    });
+    blocks.push({
+      id: "past-pattern",
+      type: "past_pattern_inference",
+      priority: 6,
+      source: "workspace_data",
+      confidence,
+      payload: {
+        text: "Historical pattern suggests this trajectory should be monitored for sustained movement over the next 4-8 weeks.",
+      },
+    });
+  }
+
+  const recommendationItems = Array.isArray(body.recommendations) ? body.recommendations : [];
+  if (recommendationItems.length > 0) {
+    blocks.push({
+      id: "recommendations",
+      type: "recommendations",
+      priority: 5,
+      source: "workspace_data",
+      confidence,
+      payload: { items: recommendationItems.slice(0, 4) },
+    });
+  }
+
+  const citationItems = [
+    ...(Array.isArray(body.citations) ? body.citations : []),
+    ...(Array.isArray(body.external_context?.citations) ? body.external_context.citations : []),
+  ];
+  if (citationItems.length > 0) {
+    blocks.push({
+      id: "citations",
+      type: "citations",
+      priority: 9,
+      source: "external",
+      confidence,
+      payload: { items: citationItems.slice(0, 8) },
+    });
+  }
+
+  const riskItems: string[] = [];
+  if (confidence !== "high") riskItems.push("Confidence is not high; validate with broader scope before major spend decisions.");
+  if (body.evidence.row_count <= 3) riskItems.push("Low row count can hide market variability.");
+  if (Array.isArray(body.diagnostics?.missing_fields) && body.diagnostics.missing_fields.length > 0) {
+    riskItems.push(`Missing fields detected: ${(body.diagnostics.missing_fields as string[]).join(", ")}.`);
+  }
+  if (Array.isArray(body.diagnostics?.data_notes)) {
+    for (const note of body.diagnostics.data_notes.slice(0, 3)) {
+      if (typeof note === "string" && note.trim().length > 0) riskItems.push(note);
+    }
+  }
+  if (Array.isArray(body.diagnostics?.anomaly_flags)) {
+    for (const flag of body.diagnostics.anomaly_flags.slice(0, 3)) {
+      if (typeof flag === "string" && flag.trim().length > 0) riskItems.push(flag);
+    }
+  }
+  const uniqueRiskItems = Array.from(new Set(riskItems.map((item) => item.trim()).filter((item) => item.length > 0)));
+  if (uniqueRiskItems.length > 0) {
+    blocks.push({
+      id: "risk-flags",
+      type: "risk_flags",
+      priority: 8,
+      source: "workspace_data",
+      confidence,
+      payload: { items: uniqueRiskItems },
+    });
+  }
+
+  return blocks.sort((a, b) => Number(a.priority) - Number(b.priority));
+}
+
+function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerResponse {
+  const answerTextForPersona = `${body.answer_title ?? ""} ${body.executive_answer} ${body.why_this_matters}`;
+  const detected_intent = detectIntentFromBody(body);
+  const detected_persona = detectPersonaFromText(answerTextForPersona);
+  const normalizedBody: AdaptiveAnswerResponse = (() => {
+    const existing = Array.isArray(body.recommendations) ? body.recommendations : [];
+    if (existing.length > 0) return body;
+    const needsDecisionGuidance =
+      detected_intent === "catalog_strategy" ||
+      detected_intent === "touring_live" ||
+      detected_intent === "audience_marketing" ||
+      detected_intent === "rights_revenue_risk";
+    if (!needsDecisionGuidance) return body;
+    return {
+      ...body,
+      recommendations: [{
+        action: "Choose one priority move and execute it for 14 days with explicit success thresholds.",
+        rationale: body.why_this_matters,
+        impact: "Transforms analysis into a testable decision path.",
+        risk: "If thresholds are not defined upfront, results become non-actionable.",
+      }],
+    };
+  })();
+  const answer_blocks = buildAdaptiveBlocks(normalizedBody);
+  const evidence_map: Record<string, "workspace_data" | "external"> = {};
+  for (const block of answer_blocks) {
+    if (typeof block.id === "string") {
+      evidence_map[block.id] = block.source === "external" ? "external" : "workspace_data";
+    }
+  }
+  const render_hints = {
+    layout: "adaptive_card_stack",
+    density: answer_blocks.length > 6 ? "expanded" : "compact",
+    visual_preference: body.visual.type === "bar" || body.visual.type === "line"
+      ? "chart"
+      : body.visual.type === "table"
+        ? "table"
+        : "none",
+    show_confidence_badges: true,
+  };
+
+  const citationBlock = answer_blocks.find((b) => b.type === "citations");
+  const citations = isRecord(citationBlock?.payload) && Array.isArray(citationBlock.payload.items)
+    ? (citationBlock.payload.items as Array<Record<string, unknown>>).map((item) => ({
+      title: String(item.title ?? "Source"),
+      source_type: String(item.source_type ?? "workspace_data"),
+      claim_ids: Array.isArray(item.claim_ids) ? item.claim_ids : [],
+    }))
+    : [];
+
+  const recommendationBlock = answer_blocks.find((b) => b.type === "recommendations");
+  const recommendations = isRecord(recommendationBlock?.payload) && Array.isArray(recommendationBlock.payload.items)
+    ? recommendationBlock.payload.items
+    : [];
+
+  const unknowns: string[] = [];
+  if (body.evidence.system_confidence !== "high") unknowns.push("Confidence is below high for this answer.");
+  if (body.evidence.row_count === 0) unknowns.push("No validated rows were returned for this scope.");
+
+  return {
+    ...normalizedBody,
+    detected_intent,
+    detected_persona,
+    answer_blocks,
+    render_hints,
+    evidence_map,
+    recommendations: recommendations as Array<Record<string, unknown>>,
+    citations,
+    unknowns,
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
+  const adaptiveBody = status < 400 && isAdaptiveCandidate(body) ? withAdaptiveAnswer(body) : body;
+  if (status < 400 && isRecord(adaptiveBody)) {
+    adaptiveBody.runtime_patch = RUNTIME_PATCH;
+  }
+  return new Response(JSON.stringify(adaptiveBody), {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
@@ -120,6 +599,669 @@ function detectMode(question: string, context: EntityContext): AiInsightsMode {
   if (q.includes("artist")) return "artist";
   if (q.includes("track") || q.includes("isrc")) return "track";
   return "workspace-general";
+}
+
+function asksForCurrentArtist(question: string): boolean {
+  return /\b(this|that|current|selected)\s+(artist|artiste)\b/i.test(question);
+}
+
+function asksForCurrentTrack(question: string): boolean {
+  return /\b(this|that|current|selected)\s+(track|song)\b/i.test(question);
+}
+
+function toNum(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^0-9.\-]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function toCanonicalKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function inferVisualColumns(visual: AdaptiveAnswerResponse["visual"]): string[] {
+  const declared = Array.isArray(visual.columns) ? visual.columns : [];
+  const fromDeclared = declared
+    .filter((col): col is string => typeof col === "string" && col.trim().length > 0)
+    .map((col) => toCanonicalKey(col));
+  if (fromDeclared.length > 0) return Array.from(new Set(fromDeclared));
+  const rows = Array.isArray(visual.rows) ? visual.rows : [];
+  const first = rows[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return [];
+  return Array.from(
+    new Set(
+      Object.keys(first)
+        .filter((key) => key.trim().length > 0)
+        .map((key) => toCanonicalKey(key)),
+    ),
+  );
+}
+
+function isLikelyUnknown(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return v.length === 0 || v === "unknown" || v === "n/a" || v === "na";
+}
+
+function normalizeTerritoryValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (isLikelyUnknown(trimmed)) return "Unknown";
+  if (/^[A-Za-z]{2,3}$/.test(trimmed)) return trimmed.toUpperCase();
+  return null;
+}
+
+function normalizePlatformValue(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (isLikelyUnknown(trimmed)) return "Unknown";
+  if (/^[A-Za-z0-9 .&+\-]{2,40}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+function normalizedVisualForDecision(visual: AdaptiveAnswerResponse["visual"]): AdaptiveAnswerResponse["visual"] {
+  const rows = Array.isArray(visual.rows) ? visual.rows : [];
+  const columns = inferVisualColumns(visual);
+  if (rows.length === 0 || columns.length === 0) return visual;
+  const metric = columns.includes("net_revenue")
+    ? "net_revenue"
+    : columns.includes("gross_revenue")
+      ? "gross_revenue"
+      : null;
+
+  const cleaned = rows.map((row) => {
+    const next: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      next[toCanonicalKey(key)] = value;
+    }
+    if ("territory" in next) {
+      const normalized = normalizeTerritoryValue(next.territory);
+      next.territory = normalized ?? "Unknown";
+    }
+    if ("platform" in next) {
+      const normalized = normalizePlatformValue(next.platform);
+      next.platform = normalized ?? "Unknown";
+    }
+    return next;
+  });
+
+  if (metric) {
+    cleaned.sort((a, b) => (toNum(b[metric]) ?? 0) - (toNum(a[metric]) ?? 0));
+  }
+  return { ...visual, columns, rows: cleaned as Array<Record<string, string | number | null>> };
+}
+
+function computeQuestionEvidenceFit(question: string, visual: AdaptiveAnswerResponse["visual"]): { score: number; reasons: string[] } {
+  const q = question.toLowerCase();
+  const cols = inferVisualColumns(visual);
+  const reasons: string[] = [];
+  let score = 1;
+  const needsTrack = /\btrack|tracks|song|songs\b/.test(q);
+  const needsPlatform = /\bplatform|dsp|spotify|apple|youtube|amazon|deezer|tidal\b/.test(q);
+  const needsTerritory = /\bterritory|market|country|region|tour|live|venue|city\b/.test(q);
+  const needsUsageMonetization = /\bunder-?monet|usage|relative to usage|payout share|usage share\b/.test(q);
+  const hasMoney = cols.includes("net_revenue") || cols.includes("gross_revenue");
+  if (!hasMoney) {
+    score -= 0.4;
+    reasons.push("missing_revenue_metric");
+  }
+  if (needsTrack && !cols.includes("track_title")) {
+    score -= 0.3;
+    reasons.push("missing_track_dimension");
+  }
+  if (needsPlatform && !cols.includes("platform")) {
+    score -= 0.25;
+    reasons.push("missing_platform_dimension");
+  }
+  if (needsTerritory && !cols.includes("territory")) {
+    score -= 0.25;
+    reasons.push("missing_territory_dimension");
+  }
+  if (needsUsageMonetization) {
+    const hasUsage = cols.includes("usage_share") || cols.includes("quantity");
+    const hasPayout = cols.includes("payout_share") || hasMoney;
+    if (!hasUsage || !hasPayout) {
+      score -= 0.35;
+      reasons.push("missing_usage_vs_payout_fields");
+    }
+  }
+  return { score: Math.max(0, Math.min(1, score)), reasons };
+}
+
+function isTrendComparisonQuestion(question: string): boolean {
+  const q = question.toLowerCase();
+  return /\b(trend|over time|qoq|yoy|mom|growth rate|month over month|quarter over quarter|week over week|month by month|week by week|day by day|quarter by quarter|last\s+\d+\s+(?:days?|weeks?|months?|quarters?)|prior\s+\d+\s+(?:days?|weeks?|months?|quarters?)|vs\s+prior|compared\s+to\s+prior)\b/.test(q);
+}
+
+function isStrategyQuestionText(question: string): boolean {
+  return /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate|plan|levers?|moves?)\b/.test(question.toLowerCase());
+}
+
+function buildDataDrivenRecommendations(
+  question: string,
+  visual: AdaptiveAnswerResponse["visual"],
+  whyThisMatters: string,
+): Array<Record<string, unknown>> {
+  const q = question.toLowerCase();
+  const requestedMoves = (() => {
+    const match = q.match(/\b(\d{1,2})\b(?:[\w\s-]{0,24})\b(moves?|actions?|levers?|mitigations?)\b/);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(1, Math.min(6, Math.round(parsed)));
+  })();
+  const rows = Array.isArray(visual.rows) ? visual.rows : [];
+  if (rows.length === 0) return [];
+
+  const recs: Array<Record<string, unknown>> = [];
+  const cols = inferVisualColumns(visual);
+  const hasTerritory = cols.includes("territory");
+  const hasPlatform = cols.includes("platform");
+  const hasTrack = cols.includes("track_title");
+  const hasArtist = cols.includes("artist_name");
+  const hasUsageSignal = cols.includes("usage_share") || cols.includes("quantity");
+  const hasPayoutSignal = cols.includes("payout_share") || cols.includes("net_revenue") || cols.includes("gross_revenue");
+  const moneyKey = cols.includes("net_revenue") ? "net_revenue" : "gross_revenue";
+  const topMoney = rows
+    .map((r) => toNum((r as Record<string, unknown>)[moneyKey]))
+    .filter((v): v is number => v !== null && v > 0);
+  const totalMoney = topMoney.reduce((sum, n) => sum + n, 0);
+  const topRow = rows[0] ?? {};
+  const topTrack = String((topRow as Record<string, unknown>).track_title ?? "top track");
+  const topPlatform = (() => {
+    const firstKnown = rows.find((r) => {
+      const platformValue = String((r as Record<string, unknown>).platform ?? "");
+      return platformValue.trim().length > 0 && !isLikelyUnknown(platformValue);
+    });
+    if (firstKnown) return String((firstKnown as Record<string, unknown>).platform ?? "top platform");
+    return String((topRow as Record<string, unknown>).platform ?? "top platform");
+  })();
+  const topTerritory = String((topRow as Record<string, unknown>).territory ?? "top territory");
+  const topArtist = String((topRow as Record<string, unknown>).artist_name ?? "this artist");
+
+  const isStrategyQuestion = /\bfocus|priorit|strategy|plan|what should|next step|2026|this year|next year|budget|no-regret|uplift|levers?\b/.test(q);
+  const asksNoRegretBudget = /\b(budget|limited budget|no-regret)\b/.test(q);
+  const asksTrendCompare = isTrendComparisonQuestion(question);
+  const asksUplift = /\b(uplift|increase|grow|improve)\b/.test(q) && /\b(net revenue|revenue)\b/.test(q);
+  const strictCountRequest = requestedMoves !== null;
+  const asksUnderMonetizedVsUsage = /\bunder-?monet|relative to usage|usage vs payout|usage share|payout share\b/.test(q);
+  const asksRightsRisk = /\b(rights|royalty leak|leakage|payout leak|payout leakage|mapping|attribution|rights-related|validation status)\b/.test(q);
+  const rightsOnlyMode = asksRightsRisk || /\b(attribution|mapping gaps|validation gaps)\b/.test(q);
+  const asksMomentumBreak = /\b(momentum|broke|breakdown|break point|where momentum broke)\b/.test(q);
+  const asksTouring = isTouringQuestion(question);
+
+  const topTerritoriesForTour = hasTerritory
+    ? rankTourTerritories(rows as Array<Record<string, unknown>>).slice(0, 3)
+    : [];
+  const periodCountForMomentum = rows.filter((r) => {
+    const keys = Object.keys(r as Record<string, unknown>).map((k) => k.toLowerCase());
+    return keys.includes("week_start") || keys.includes("day_start") || keys.includes("month_start") || keys.includes("quarter_start");
+  }).length;
+  const insufficientMomentumEvidence = asksMomentumBreak && periodCountForMomentum < 4;
+  if (asksUnderMonetizedVsUsage && (!hasUsageSignal || !hasPayoutSignal)) {
+    recs.push({
+      action: "Pull usage-share and payout-share evidence for the same territories before making under-monetization decisions.",
+      rationale: "This question needs both usage and monetization signals; current result does not include enough fields.",
+      impact: "Prevents false positives when flagging markets as under-monetized.",
+      risk: "Acting on revenue-only data can misallocate market development budget.",
+    });
+  }
+  if (asksRightsRisk) {
+    const hasRightsType = cols.includes("rights_type");
+    const hasValidation = cols.includes("validation_status") || cols.includes("mapping_confidence");
+    if (!hasRightsType || !hasValidation) {
+      recs.push({
+        action: "Run a rights-mapping audit first: expose rights type, mapping confidence, and validation status in the same query scope.",
+        rationale: "Rights-leakage diagnosis is unreliable without rights and validation fields together.",
+        impact: "Converts leakage analysis from directional to decision-grade.",
+        risk: "Skipping this step can misidentify leakage root causes and waste remediation effort.",
+      });
+      recs.push({
+        action: "Prioritize cleanup for high-gross / low-net rows where attribution or rights metadata is missing.",
+        rationale: "Large gross-to-net gaps with weak metadata are the highest-probability leakage candidates.",
+        impact: "Targets the highest-value recovery opportunities first.",
+        risk: "If metadata is incomplete, recovered value may be overstated.",
+      });
+    }
+  }
+  if (isStrategyQuestion && !strictCountRequest && !insufficientMomentumEvidence && !rightsOnlyMode && !asksTouring) {
+    if (hasTrack) {
+      recs.push({
+        action: `Set a 2026 primary growth bet on ${topTrack}, with explicit weekly KPIs (streams, saves, conversion, revenue).`,
+        rationale: `${topTrack} is currently the strongest observed revenue driver in this scope.`,
+        impact: "Creates a clear execution focus and improves budget efficiency versus broad untargeted spend.",
+        risk: "If top-driver revenue is anomaly-inflated, strategy may over-concentrate; validate source and mapping first.",
+      });
+      recs.push({
+        action: "Create a second-priority pipeline of 2-3 emerging tracks and allocate test budget to reduce concentration risk.",
+        rationale: "Portfolio balance is required when one asset dominates current revenue.",
+        impact: "Builds downside protection while preserving upside from the top asset.",
+        risk: "Without disciplined test criteria, pipeline spend can dilute returns.",
+      });
+    }
+    if (hasPlatform) {
+      recs.push({
+        action: `Build platform-specific 2026 plans: double down on ${topPlatform}, and set minimum lift targets for secondary DSPs.`,
+        rationale: "Platform concentration drives where tactical optimization has highest leverage.",
+        impact: "Improves channel ROI by matching creative and distribution to platform behavior.",
+        risk: "Over-allocation to one DSP increases exposure to algorithm/editorial volatility.",
+      });
+    }
+    if (hasTerritory && !isLikelyUnknown(topTerritory)) {
+      recs.push({
+        action: `Prioritize market development in ${topTerritory} first, then expand only to territories that clear conversion thresholds.`,
+        rationale: "Territory sequencing should follow observed revenue traction.",
+        impact: "Improves market expansion hit-rate and reduces premature expansion waste.",
+        risk: "Territory-level signals may hide city-level execution issues.",
+      });
+    }
+    if (hasArtist) {
+      recs.push({
+        action: `Run a quarterly strategy review for ${topArtist}: keep, scale, or reallocate budget based on measured contribution changes.`,
+        rationale: "Strategy quality depends on continuous reallocation against real performance shifts.",
+        impact: "Prevents stale plans and improves compounding returns across the year.",
+        risk: "Requires strict measurement discipline and clean attribution.",
+      });
+    }
+  }
+  if (asksTrendCompare) {
+    const timeKey = cols.includes("month_start")
+      ? "month_start"
+      : cols.includes("week_start")
+        ? "week_start"
+        : cols.includes("day_start")
+          ? "day_start"
+          : cols.includes("quarter_start")
+            ? "quarter_start"
+            : null;
+    if (timeKey && topMoney.length >= 2) {
+      const ordered = [...rows].sort((a, b) => {
+        const av = String((a as Record<string, unknown>)[timeKey] ?? "");
+        const bv = String((b as Record<string, unknown>)[timeKey] ?? "");
+        return av.localeCompare(bv);
+      });
+      const latest = ordered[ordered.length - 1];
+      const prev = ordered[ordered.length - 2];
+      const latestVal = toNum((latest as Record<string, unknown>)[moneyKey]) ?? 0;
+      const prevVal = toNum((prev as Record<string, unknown>)[moneyKey]) ?? 0;
+      const deltaPct = prevVal > 0 ? ((latestVal - prevVal) / prevVal) * 100 : null;
+      const boundedDeltaPct = deltaPct !== null && Number.isFinite(deltaPct) && Math.abs(deltaPct) <= 500
+        ? deltaPct
+        : null;
+      const direction = deltaPct === null ? "changed" : deltaPct >= 0 ? "increased" : "decreased";
+      recs.push({
+        action: deltaPct !== null && deltaPct >= 0
+          ? "Scale the top-performing channels from the latest period and lock a 2-week execution sprint."
+          : "Run a recovery sprint on the weakest segment from the latest period before adding new spend.",
+        rationale: boundedDeltaPct === null
+          ? "Time-series evidence shows a measurable shift between recent periods."
+          : `Latest period ${direction} by ${Math.abs(boundedDeltaPct).toFixed(1)}% versus prior period.`,
+        impact: "Converts period-over-period signal into immediate execution priorities.",
+        risk: "If attribution is unstable, short-term swings can overstate true trend.",
+      });
+      recs.push({
+        action: "Set one hard checkpoint in 14 days: continue, rebalance, or stop based on measured delta vs baseline.",
+        rationale: "Comparison questions need explicit control rules to avoid reactive budget drift.",
+        impact: "Improves decision consistency and prevents overreaction to noise.",
+        risk: "Without checkpoint discipline, trend-informed plans degrade into ad-hoc decisions.",
+      });
+    }
+  }
+  if (asksUplift) {
+    const targetPctMatch = q.match(/\b(\d{1,3})\s*%/);
+    const targetPct = targetPctMatch ? Number(targetPctMatch[1]) : null;
+    const netNow = topMoney.length > 0 ? (topMoney[0] ?? 0) : 0;
+    const upliftAmount = targetPct !== null ? (netNow * targetPct) / 100 : null;
+    if (hasTrack) {
+      recs.push({
+        action: `Protect the top earner (${topTrack}) as Lever 1 and assign a weekly lift target against baseline.`,
+        rationale: "The largest current contributor is the lowest-friction lever for near-term uplift.",
+        impact: targetPct !== null && upliftAmount !== null
+          ? `Most realistic path to ${targetPct}% uplift is scaling proven demand before expanding to weaker assets.`
+          : "Most realistic near-term uplift usually starts with proven demand assets.",
+        risk: "If top-asset performance is anomaly-driven, projected uplift can be overstated.",
+      });
+      recs.push({
+        action: "Deploy Lever 2 as a controlled secondary-track test with hard pass/fail thresholds after 14 days.",
+        rationale: "Secondary tests add upside while preventing over-concentration on one asset.",
+        impact: "Builds an additional growth path without diluting core execution.",
+        risk: "Loose thresholds convert experiments into non-actionable spend.",
+      });
+      recs.push({
+        action: "Run Lever 3 as an attribution and payout-quality cleanup sprint on top-revenue rows.",
+        rationale: "Data-quality noise can hide true net-revenue drivers and distort uplift planning.",
+        impact: "Improves confidence in lift measurement and allocation decisions.",
+        risk: "Skipping cleanup can misdirect budget even when topline appears strong.",
+      });
+    } else if (hasPlatform || hasTerritory) {
+      const anchor = hasPlatform ? topPlatform : topTerritory;
+      recs.push({
+        action: `Lever 1: scale the strongest channel (${anchor}) with KPI-gated spend increments each week.`,
+        rationale: "Concentrating first on strongest observed channel is typically highest-confidence for uplift.",
+        impact: "Improves probability of measurable near-term revenue gains.",
+        risk: "Channel concentration increases exposure to platform/market volatility.",
+      });
+      recs.push({
+        action: "Lever 2: rebalance underperforming channels only after they pass conversion thresholds.",
+        rationale: "Threshold gating prevents weak channels from consuming growth budget.",
+        impact: "Raises capital efficiency while preserving upside options.",
+        risk: "Overly strict thresholds can delay legitimate growth opportunities.",
+      });
+      recs.push({
+        action: "Lever 3: close attribution gaps (unknown mappings) before the next budget reallocation.",
+        rationale: "Reliable attribution is necessary to prove uplift and avoid false positives.",
+        impact: "Improves decision reliability for subsequent scaling.",
+        risk: "Unresolved attribution can invalidate uplift conclusions.",
+      });
+    } else {
+      recs.push({
+        action: "Lever 1: defend current top-revenue segment with explicit weekly KPI targets.",
+        rationale: "Uplift plans should start with the most certain existing driver.",
+        impact: "Maximizes chance of short-term positive movement.",
+        risk: "Driver certainty may be overstated if data quality is weak.",
+      });
+      recs.push({
+        action: "Lever 2: run one controlled growth test with a fixed budget and pre-set stop rules.",
+        rationale: "Controlled tests create upside while limiting downside.",
+        impact: "Adds optional growth without major risk expansion.",
+        risk: "Without stop rules, tests drift into unbounded spend.",
+      });
+      recs.push({
+        action: "Lever 3: improve measurement fidelity (mapping, confidence, reconciliation) before scaling.",
+        rationale: "Measurement quality determines whether uplift is real or noise.",
+        impact: "Raises confidence in strategic decisions and ROI claims.",
+        risk: "Poor measurement can produce false confidence and misallocation.",
+      });
+    }
+  }
+  if (asksNoRegretBudget && hasTrack) {
+    const secondTrack = rows[1] ? String((rows[1] as Record<string, unknown>).track_title ?? "").trim() : "";
+    recs.push({
+      action: `Put 70% of this quarter budget behind ${topTrack}, with one owner and weekly KPI checkpoints.`,
+      rationale: `${topTrack} is the strongest observed revenue driver in current scope.`,
+      impact: "Highest-probability short-term return from constrained spend.",
+      risk: "If top-track revenue is anomaly-inflated, over-concentration can reduce resilience.",
+    });
+    recs.push({
+      action: secondTrack.length > 0
+        ? `Use 20% as a controlled upside test on ${secondTrack}; keep 10% as reserve for mid-quarter reallocations.`
+        : "Use 20% for one controlled upside test track and keep 10% as reserve for mid-quarter reallocations.",
+      rationale: "No-regret plans preserve upside while keeping flexibility under uncertainty.",
+      impact: "Creates optionality without diluting core execution.",
+      risk: "Without clear pass/fail thresholds, test spend can drift.",
+    });
+  }
+
+  if (/\b(?:tour|touring|live|show|shows|venue|venues|city|cities|routing|route|dates?)\b/.test(q) && hasTerritory && !rightsOnlyMode) {
+    const topTerritories = topTerritoriesForTour.map((t) => t.territory);
+    if (topTerritories.length > 0) {
+      const topValue = toNum((topRow as Record<string, unknown>)[moneyKey]) ?? 0;
+      const topShare = totalMoney > 0 ? ((topValue / totalMoney) * 100) : null;
+      recs.push({
+        action: `Prioritize live routing in ${topTerritories.join(", ")} and validate city-level demand before locking dates.`,
+        rationale: "These territories are leading current revenue contribution in your catalog scope.",
+        impact: topShare !== null
+          ? `Top territory contributes about ${topShare.toFixed(1)}% of observed revenue in this result.`
+          : "Higher probability of sell-through by routing around proven demand zones.",
+        risk: "Territory-level signals can hide city-level variance; confirm with city and venue indicators.",
+      });
+      recs.push({
+        action: "Build a city shortlist (3-5 cities per priority territory) using streaming concentration and promoter/venue fit.",
+        rationale: "Tour decisions need city-level conversion signals, not only territory totals.",
+        impact: "Reduces routing waste and improves ticket conversion forecasting.",
+        risk: "If city-level demand is not validated, routing can over-index weak submarkets.",
+      });
+      recs.push({
+        action: "Stage spend in two waves: pilot dates first, then scale only territories that clear ticket velocity thresholds.",
+        rationale: "Protects downside while preserving upside in high-performing markets.",
+        impact: "Improves capital efficiency and reduces over-commitment risk.",
+        risk: "Requires strict post-show measurement discipline to work.",
+      });
+      recs.push({
+        action: "Run market-readiness checks per priority territory: venue hold availability, competing events window, and pricing-band fit before locking contracts.",
+        rationale: "Routing quality depends on external market conditions in addition to internal demand signals.",
+        impact: "Reduces booking risk and improves margin certainty per date.",
+        risk: "Skipping readiness checks can convert strong demand signals into weak on-ground performance.",
+      });
+      recs.push({
+        action: "Execute a 30-day routing sequence: Week 1 city shortlist, Week 2 venue/promo partner outreach, Week 3 pilot-date holds, Week 4 go/no-go allocation by ticket velocity proxies.",
+        rationale: "Tour planning converts best when market selection and execution checkpoints are sequenced, not parallelized blindly.",
+        impact: "Raises booking quality and reduces late-stage routing rework.",
+        risk: "Without stage-gates, teams commit dates before market readiness is validated.",
+      });
+    }
+  }
+
+  if (/\bplatform|dsp|spotify|apple|youtube|amazon|deezer|tidal\b/.test(q) && hasPlatform && !insufficientMomentumEvidence && !rightsOnlyMode && !asksTouring) {
+    const anchor = !isLikelyUnknown(topPlatform)
+      ? topPlatform
+      : (() => {
+        const candidate = rows.find((r) => {
+          const p = String((r as Record<string, unknown>).platform ?? "");
+          return p.trim().length > 0 && !isLikelyUnknown(p);
+        });
+        return candidate ? String((candidate as Record<string, unknown>).platform ?? topPlatform) : topPlatform;
+      })();
+    const anchorRow = rows.find((r) => {
+      const p = String((r as Record<string, unknown>).platform ?? "");
+      return p.trim().toLowerCase() === anchor.trim().toLowerCase();
+    }) ?? topRow;
+    const anchorRevenue = toNum((anchorRow as Record<string, unknown>)[moneyKey]);
+    if (!isLikelyUnknown(anchor)) {
+      recs.push({
+        action: `Treat ${anchor} as the priority channel for the next cycle with platform-specific creative and playlist strategy.`,
+        rationale: anchorRevenue !== null
+          ? `${anchor} is currently carrying a large share of monetized performance (${compactMoney(anchorRevenue)} observed).`
+          : `This segment currently leads observed performance in your scoped data.`,
+        impact: "Concentrates spend where observed return is strongest.",
+        risk: "Concentration risk if top segment is anomaly-driven; validate against prior periods.",
+      });
+    }
+    recs.push({
+      action: "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+      rationale: "Unattributed platform revenue blocks reliable channel ROI decisions.",
+      impact: "Improves attribution quality and makes platform-level budget allocation defendable.",
+      risk: "Skipping this step can over-invest in the wrong channel.",
+    });
+    if (asksTrendCompare) {
+      const periodRows = rows.filter((r) => String((r as Record<string, unknown>).platform ?? "").trim().toLowerCase() === anchor.trim().toLowerCase());
+      if (periodRows.length >= 2) {
+        const byPeriod = new Map<string, number>();
+        for (const r of periodRows) {
+          const bucket = String((r as Record<string, unknown>).period_bucket ?? "");
+          const value = toNum((r as Record<string, unknown>)[moneyKey]) ?? 0;
+          byPeriod.set(bucket, value);
+        }
+        const lastEntry = Array.from(byPeriod.entries()).find(([k]) => /^last_/i.test(k));
+        const priorEntry = Array.from(byPeriod.entries()).find(([k]) => /^prior_/i.test(k));
+        if (lastEntry && priorEntry) {
+          const delta = lastEntry[1] - priorEntry[1];
+          const deltaPct = priorEntry[1] > 0 ? (delta / priorEntry[1]) * 100 : null;
+          recs.push({
+            action: delta >= 0
+              ? `Set a platform delta target for ${anchor}: sustain and extend lift from ${lastEntry[0]} versus ${priorEntry[0]}.`
+              : `Launch a recovery plan for ${anchor}: close the decline from ${priorEntry[0]} to ${lastEntry[0]} before scaling spend.`,
+            rationale: deltaPct === null
+              ? `${anchor} shows a measurable shift across compared periods.`
+              : `${anchor} changed by ${deltaPct.toFixed(1)}% between compared periods.`,
+            impact: "Turns period comparison into a specific, measurable execution target.",
+            risk: "If period attribution is incomplete, delta targets can be misread.",
+          });
+        }
+      }
+    }
+  }
+
+  if (/\bmarketing|campaign|promot|strategy|grow|scale\b/.test(q) && (hasPlatform || hasTrack) && !insufficientMomentumEvidence && !rightsOnlyMode && !asksTouring) {
+    const anchor = hasPlatform ? topPlatform : hasTrack ? topTrack : "top segment";
+    const anchorRevenue = toNum((topRow as Record<string, unknown>)[moneyKey]);
+    recs.push({
+      action: `Build a focused 2-week campaign around ${anchor} with clear conversion checkpoints.`,
+      rationale: anchorRevenue !== null
+        ? `${anchor} is currently carrying a large share of monetized performance (${compactMoney(anchorRevenue)} observed).`
+        : `This segment currently leads observed performance in your scoped data.`,
+      impact: "Concentrates spend where observed return is strongest, then iterates using real conversion evidence.",
+      risk: "Concentration risk if top segment is anomaly-driven; validate against prior periods.",
+    });
+  }
+
+  if (asksMomentumBreak) {
+    if (insufficientMomentumEvidence) {
+      recs.push({
+        action: "Insufficient time points to identify a true momentum break. Expand the time window or include at least 4 periods before taking directional action.",
+        rationale: "Momentum-break analysis needs a minimum historical sequence, not a single-point snapshot.",
+        impact: "Prevents false trend conclusions and misallocated campaign spend.",
+        risk: "Acting on one or two points can invert priorities due to noise.",
+      });
+    }
+  }
+
+  if (/\btrack|tracks|songs|money|revenue|earning|top\b/.test(q) && hasTrack && !rightsOnlyMode) {
+    recs.push({
+      action: `Run a track-level growth plan for ${topTrack}: playlist outreach, creator content, and sync shortlist in parallel.`,
+      rationale: "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+      impact: "Accelerates monetization of the strongest current asset.",
+      risk: "Over-concentration risk if underlying revenue is anomaly-driven.",
+    });
+  }
+
+  if (recs.length === 0 && isStrategyQuestion) {
+    recs.push({
+      action: "Protect 70-80% of budget for proven drivers; reserve 20-30% for controlled tests with pre-defined success thresholds.",
+      rationale: "This is the lowest-regret allocation pattern when evidence is incomplete.",
+      impact: "Balances downside protection with measurable upside discovery.",
+      risk: "If test thresholds are weak, exploration budget can leak without learning.",
+    });
+    recs.push({
+      action: "Run a 14-day attribution cleanup sprint on unknown/low-confidence segments before major reallocation.",
+      rationale: "Decision quality is capped by attribution quality.",
+      impact: "Improves signal reliability for subsequent budget moves.",
+      risk: "Delaying cleanup can compound misallocation over the quarter.",
+    });
+  }
+
+  if (recs.length === 0 && !isStrategyQuestion && !asksUplift && whyThisMatters.trim().length > 0) {
+    recs.push({
+      action: "Run one focused experiment tied to the top driver in this result and review performance after one cycle.",
+      rationale: whyThisMatters,
+      impact: "Creates measurable learning instead of broad, low-signal execution.",
+      risk: "Directional evidence only if data quality warnings are present.",
+    });
+  }
+  const deduped = Array.from(
+    new Map(
+      recs
+        .filter((r) => typeof r.action === "string" && r.action.trim().length > 0)
+        .map((r) => [String(r.action).toLowerCase(), r]),
+    ).values(),
+  );
+  if (deduped.length === 1 && !isStrategyQuestion) {
+    deduped.push({
+      action: "Define one validation checkpoint for the next 14 days to confirm this direction before scaling spend.",
+      rationale: "Fast validation prevents low-signal strategy lock-in.",
+      impact: "Improves decision confidence before major allocation changes.",
+      risk: "Skipping validation increases probability of expensive misallocation.",
+    });
+  }
+  if ((requestedMoves ?? 0) >= 2 && deduped.length < 2 && !isStrategyQuestion) {
+    deduped.push({
+      action: "Protect downside by capping spend to a pilot budget until attribution and signal quality are confirmed.",
+      rationale: "No-regret planning favors reversible decisions under uncertainty.",
+      impact: "Reduces budget burn while preserving option value.",
+      risk: "May slow upside capture if evidence quality is actually strong.",
+    });
+  }
+  if ((requestedMoves ?? 0) > 0 && deduped.length < requestedMoves && !(asksTrendCompare && hasPlatform)) {
+    const gap = requestedMoves - deduped.length;
+    for (let i = 0; i < gap; i++) {
+      deduped.push({
+        action: i % 2 === 0
+          ? "Improve attribution fidelity for top revenue segments before scaling budget allocation."
+          : "Define explicit pass/fail thresholds for every spend move before execution.",
+        rationale: "When evidence is thin, execution discipline is the fastest way to raise decision quality.",
+        impact: "Reduces avoidable spend leakage and improves learning speed.",
+        risk: "If ignored, low-signal moves can accumulate into expensive misallocation.",
+      });
+    }
+  }
+  if ((requestedMoves ?? 0) > 0 && deduped.length > requestedMoves) {
+    return deduped.slice(0, requestedMoves);
+  }
+  return deduped.slice(0, requestedMoves ?? 4);
+}
+
+async function maybeFetchExternalContext(params: {
+  question: string;
+  artistName?: string;
+  visual: AdaptiveAnswerResponse["visual"];
+}): Promise<{ summary: string; citations: Array<Record<string, unknown>> } | null> {
+  const searchUrl = Deno.env.get("WEB_SEARCH_API_URL") ?? null;
+  const searchKey = Deno.env.get("WEB_SEARCH_API_KEY") ?? null;
+  if (!searchUrl || !searchKey) return null;
+
+  const q = params.question.toLowerCase();
+  const isTouring = isTouringQuestion(params.question);
+  const shouldEnrich = /\btour|live|venue|cities|marketing|campaign|strategy|playlist|spotify\b/.test(q);
+  if (!shouldEnrich) return null;
+
+  const rows = Array.isArray(params.visual.rows) ? params.visual.rows : [];
+  const top = rows[0] ?? {};
+  const topTerritories = rows
+    .map((r) => (typeof (r as Record<string, unknown>).territory === "string" ? String((r as Record<string, unknown>).territory).trim() : ""))
+    .filter((v) => v.length > 0 && !isLikelyUnknown(v))
+    .slice(0, 3);
+  const anchors = {
+    artist_name: params.artistName ?? null,
+    territory: typeof (top as Record<string, unknown>).territory === "string" ? (top as Record<string, unknown>).territory : null,
+    platform: typeof (top as Record<string, unknown>).platform === "string" ? (top as Record<string, unknown>).platform : null,
+    track_title: typeof (top as Record<string, unknown>).track_title === "string" ? (top as Record<string, unknown>).track_title : null,
+    top_territories: topTerritories,
+    intent: isTouring ? "touring_live_enrichment" : "general_enrichment",
+  };
+
+  try {
+    const resp = await fetch(searchUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${searchKey}`,
+      },
+      body: JSON.stringify({
+        question: params.question,
+        anchors,
+        max_results: isTouring ? 6 : 3,
+        enrichment_prompt: isTouring
+          ? "Prioritize city-level touring context: venue ecosystem, competing events, seasonality, pricing signals, and route feasibility."
+          : "Provide concise external market context relevant to this decision.",
+      }),
+    });
+    if (!resp.ok) return null;
+    const payload = (await resp.json()) as Record<string, unknown>;
+    const summary = typeof payload.summary === "string" ? payload.summary : "";
+    const results = Array.isArray(payload.results) ? payload.results : [];
+    const citations: Array<Record<string, unknown>> = results.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const row = item as Record<string, unknown>;
+      return [{
+        title: typeof row.title === "string" ? row.title : "External Source",
+        url: typeof row.url === "string" ? row.url : undefined,
+        source_type: "external",
+        claim_ids: [makeClaimId(JSON.stringify(row), 0)],
+      }];
+    });
+    if (!summary && citations.length === 0) return null;
+    return { summary, citations };
+  } catch {
+    return null;
+  }
 }
 
 function inferConfidence(rows: InsightRow[]): "high" | "medium" | "low" {
@@ -261,7 +1403,7 @@ function computeShare(total: number, amount: number): number {
 }
 
 async function fetchTrackSnapshotDetail(
-  userClient: ReturnType<typeof createClient>,
+  userClient: any,
   trackKey: string,
   fromDate: string,
   toDate: string,
@@ -887,6 +2029,34 @@ serve(async (req) => {
     let mode = detectMode(question, entityContext);
     const hasTrackContext = isNonEmptyString(entityContext.track_key);
     const hasArtistContext = isNonEmptyString(entityContext.artist_key) || isNonEmptyString(entityContext.artist_name);
+    if (mode === "artist" && !hasArtistContext && asksForCurrentArtist(question)) {
+      return jsonResponse(
+        {
+          error: "Artist scope is missing.",
+          quality_outcome: "clarify",
+          clarification: {
+            question: "Select an artist first, then ask the question again.",
+            reason: "This question references a specific current artist but no artist context was provided.",
+            options: ["Select artist in left rail", "Switch to workspace question"],
+          },
+        },
+        422,
+      );
+    }
+    if (mode === "track" && !hasTrackContext && asksForCurrentTrack(question)) {
+      return jsonResponse(
+        {
+          error: "Track scope is missing.",
+          quality_outcome: "clarify",
+          clarification: {
+            question: "Select a track first, then ask the question again.",
+            reason: "This question references a specific current track but no track context was provided.",
+            options: ["Select track in left rail", "Switch to workspace question"],
+          },
+        },
+        422,
+      );
+    }
     if ((mode === "artist" && !hasArtistContext) || (mode === "track" && !hasTrackContext)) {
       mode = "workspace-general";
     }
@@ -1229,28 +2399,96 @@ serve(async (req) => {
       const rowCount = Number(assistantPayload.evidence?.row_count ?? 0);
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
-      const visual = toAiVisual(assistantPayload);
+      const visual = normalizedVisualForDecision(toAiVisual(assistantPayload));
+      const diag = (assistantPayload.diagnostics ?? {}) as Record<string, unknown>;
+      const diagNotesRaw = Array.isArray(diag.data_notes) ? diag.data_notes : [];
+      const trendQuestion = isTrendComparisonQuestion(question);
+      const diagNotes = diagNotesRaw.filter((note) => {
+        if (typeof note !== "string") return false;
+        if (!trendQuestion && note.includes("missing_time_dimension")) return false;
+        return true;
+      });
+      const verifierStatusResolved = typeof diag.verifier_status === "string" ? diag.verifier_status : "passed";
+      const persona = detectPersonaFromText(question);
+      const decisionFrame = buildDecisionFrame(question, "artist", resolvedEntities, persona);
+      const evidenceFit = computeQuestionEvidenceFit(question, visual);
+      const isTouring = isTouringQuestion(question);
+      const tourBrief = isTouring ? buildTourDecisionBrief(visual) : null;
+      const confidence: "high" | "medium" | "low" = rowCount === 0
+        ? "low"
+        : verifierStatusResolved === "failed"
+          ? "low"
+          : diagNotes.length > 0
+            ? "medium"
+            : "high";
+      const resolvedWhy =
+        (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
+        (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Artist-level reviewed evidence in scope.");
+      const recommendations = buildDataDrivenRecommendations(question, visual, resolvedWhy);
+      const externalContext = decisionFrame.asks_external_context ? await maybeFetchExternalContext({
+        question,
+        artistName: resolvedEntities.artist_name ?? entityContext.artist_name,
+        visual,
+      }) : null;
+      const mergedCitations = (() => {
+        const merged = [
+          ...(Array.isArray(assistantPayload.citations) ? assistantPayload.citations : []),
+          ...(Array.isArray(externalContext?.citations) ? externalContext!.citations : []),
+        ];
+        const seen = new Set<string>();
+        const out: Array<Record<string, unknown>> = [];
+        for (const item of merged) {
+          if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+          const row = item as Record<string, unknown>;
+          const key = `${String(row.url ?? "")}|${String(row.title ?? "")}`.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(row);
+        }
+        return out;
+      })();
+      const isStrategyQuestion = isStrategyQuestionText(question);
+      const qualityOutcome = evidenceFit.score < 0.4 ? "constrained" : (assistantPayload.quality_outcome ?? undefined);
+      const topRow = Array.isArray(visual.rows) && visual.rows.length > 0 ? visual.rows[0] : null;
+      const topTrack = topRow && typeof topRow.track_title === "string" ? topRow.track_title : null;
+      const topPlatform = topRow && typeof topRow.platform === "string" ? topRow.platform : null;
+      const strategyExecutiveFallback = topTrack
+        ? `Primary focus should be ${topTrack}, then run one controlled secondary bet to reduce concentration risk while preserving upside.`
+        : topPlatform
+          ? `Primary focus should be ${topPlatform}, then run one controlled secondary channel test to reduce concentration risk while preserving upside.`
+          : "Primary focus should stay on the strongest proven driver, with one controlled secondary test to preserve upside and reduce concentration risk.";
+      const finalExecutive = qualityOutcome === "constrained" && !isStrategyQuestion
+        ? "I found relevant artist data, but evidence fit to this question is partial. Use these recommendations as provisional until missing evidence is added."
+        : (isStrategyQuestion && (!isNonEmptyString(assistantPayload.answer_text) || /constrained artist answer/i.test(assistantPayload.answer_text))
+          ? strategyExecutiveFallback
+          : assistantPayload.answer_text);
+      const finalWhy = qualityOutcome === "constrained" && !isStrategyQuestion
+        ? "The decision is directionally useful, but key evidence fields for a high-confidence answer are missing."
+        : resolvedWhy;
+      const executiveOut = tourBrief ? tourBrief.executive : finalExecutive;
+      const whyOut = tourBrief ? tourBrief.why : finalWhy;
+      const kpisOut = tourBrief
+        ? [...tourBrief.kpis, ...kpis].slice(0, 6)
+        : kpis;
 
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
         resolved_mode: "artist",
         resolved_entities: resolvedEntities,
-        answer_title:
-          (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
-          "Artist AI answer",
-        executive_answer: assistantPayload.answer_text,
-        why_this_matters:
-          (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
-          (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Artist-level reviewed evidence in scope."),
+        answer_title: isStrategyQuestion
+          ? "Strategic Priorities"
+          : ((isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) || "Artist AI answer"),
+        executive_answer: executiveOut,
+        why_this_matters: whyOut,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
           from_date: assistantPayload.evidence?.from_date ?? fromDate,
           to_date: assistantPayload.evidence?.to_date ?? toDate,
           provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence?.provenance : ["run_artist_chat_sql_v1"],
-          system_confidence: rowCount > 0 ? "high" : "low",
+          system_confidence: confidence,
         },
-        kpis,
+        kpis: kpisOut,
         visual,
         actions: [
           { label: "Open Artist Transactions", href: `/transactions?q=${encodeURIComponent(resolvedEntities.artist_name ?? entityContext.artist_name ?? "")}`, kind: "primary" },
@@ -1265,7 +2503,24 @@ serve(async (req) => {
               "Which territories underperform for this artist?",
               "Where are the biggest quality blockers for this artist?",
             ],
-        diagnostics: assistantPayload.diagnostics ?? undefined,
+        recommendations,
+        external_context: externalContext ?? undefined,
+        quality_outcome: qualityOutcome,
+        resolved_scope: assistantPayload.resolved_scope ?? undefined,
+        plan_trace: assistantPayload.plan_trace ?? undefined,
+        claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
+        citations: mergedCitations.length > 0 ? mergedCitations : undefined,
+        answer_blocks: undefined,
+        render_hints: assistantPayload.render_hints ?? undefined,
+        evidence_map: assistantPayload.evidence_map ?? undefined,
+        unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
+        clarification: assistantPayload.clarification ?? undefined,
+        diagnostics: {
+          ...(assistantPayload.diagnostics ?? {}),
+          data_notes: diagNotes,
+          decision_frame: decisionFrame,
+          evidence_fit: evidenceFit,
+        },
       });
     }
 
@@ -1319,7 +2574,7 @@ serve(async (req) => {
           return jsonResponse(
             buildTrackSnapshotSummaryResponse({
               detail: snapshotDetail,
-              row: track,
+              row: trackRow,
               fromDate,
               toDate,
               resolvedEntities,
@@ -1433,6 +2688,16 @@ serve(async (req) => {
               "What should I review first to improve payout confidence?",
               "Show top leakage patterns for this track.",
             ],
+        quality_outcome: assistantPayload.quality_outcome ?? undefined,
+        resolved_scope: assistantPayload.resolved_scope ?? undefined,
+        plan_trace: assistantPayload.plan_trace ?? undefined,
+        claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
+        citations: Array.isArray(assistantPayload.citations) ? assistantPayload.citations : undefined,
+        answer_blocks: undefined,
+        render_hints: assistantPayload.render_hints ?? undefined,
+        evidence_map: assistantPayload.evidence_map ?? undefined,
+        unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
+        clarification: assistantPayload.clarification ?? undefined,
       });
     }
 
@@ -1651,6 +2916,16 @@ serve(async (req) => {
               "Where are the biggest quality blockers across the workspace?",
               "Which tracks combine high opportunity with high risk?",
             ],
+        quality_outcome: assistantPayload.quality_outcome ?? undefined,
+        resolved_scope: assistantPayload.resolved_scope ?? undefined,
+        plan_trace: assistantPayload.plan_trace ?? undefined,
+        claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
+        citations: Array.isArray(assistantPayload.citations) ? assistantPayload.citations : undefined,
+        answer_blocks: undefined,
+        render_hints: assistantPayload.render_hints ?? undefined,
+        evidence_map: assistantPayload.evidence_map ?? undefined,
+        unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
+        clarification: assistantPayload.clarification ?? undefined,
         diagnostics: assistantPayload.diagnostics ?? undefined,
       });
     }

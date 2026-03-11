@@ -38,6 +38,10 @@ function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function isSafeSqlIdentifier(value: string): boolean {
+  return /^[a-z_][a-z0-9_]*$/.test(value);
+}
+
 function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -160,6 +164,99 @@ function inferTopN(question: string): number {
   return 5;
 }
 
+type ComparisonUnit = "day" | "week" | "month" | "quarter" | "year";
+type ComparisonWindow = { amount: number; unit: ComparisonUnit };
+
+function unitAliasToCanonical(value: string | null | undefined): ComparisonUnit | null {
+  if (!value) return null;
+  const v = value.toLowerCase().trim();
+  if (v.startsWith("day")) return "day";
+  if (v.startsWith("week")) return "week";
+  if (v.startsWith("month")) return "month";
+  if (v.startsWith("quarter")) return "quarter";
+  if (v.startsWith("year") || v === "yr" || v === "yrs") return "year";
+  return null;
+}
+
+function parseAmountToken(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const v = value.trim().toLowerCase();
+  if (v === "a" || v === "an" || v === "one") return 1;
+  const parsed = Number(v);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(1, Math.min(365, Math.round(parsed)));
+}
+
+function parseWindowUnitAndAmount(amountToken: string | null | undefined, unitToken: string | null | undefined): ComparisonWindow | null {
+  const amount = parseAmountToken(amountToken);
+  const unit = unitAliasToCanonical(unitToken);
+  if (!amount || !unit) return null;
+  return { amount, unit };
+}
+
+export function parseRelativeWindow(question: string): ComparisonWindow | null {
+  const q = question.toLowerCase();
+  const direct = q.match(/\b(?:last|past)\s+(\d{1,3}|one|a|an)\s+(days?|weeks?|months?|quarters?|years?)\b/i);
+  if (direct) {
+    const parsed = parseWindowUnitAndAmount(direct[1], direct[2]);
+    if (parsed) return parsed;
+  }
+
+  const thisWindow = q.match(/\bthis\s+(day|week|month|quarter|year)\b/i);
+  if (thisWindow) {
+    const unit = unitAliasToCanonical(thisWindow[1]);
+    if (unit) return { amount: 1, unit };
+  }
+
+  return null;
+}
+
+function parseComparisonWindow(question: string): ComparisonWindow | null {
+  const q = question.toLowerCase();
+  const direct = q.match(
+    /\b(?:last|past)\s+(\d{1,3}|one|a|an)\s+(days?|weeks?|months?|quarters?|years?)\s+(?:vs|versus|compared to)\s+(?:prior|previous)\s*(\d{0,3}|one|a|an)?\s*(days?|weeks?|months?|quarters?|years?)?\b/i,
+  );
+  if (direct) {
+    const parsed = parseWindowUnitAndAmount(direct[1], direct[2]);
+    if (parsed) return parsed;
+  }
+
+  const fallback = q.match(/\b(?:last|past)\s+(\d{1,3}|one|a|an)\s+(days?|weeks?|months?|quarters?|years?)\b/i);
+  if (fallback && /\b(compare|comparison|vs|versus|prior|previous)\b/i.test(q)) {
+    const parsed = parseWindowUnitAndAmount(fallback[1], fallback[2]);
+    if (parsed) return parsed;
+  }
+
+  const implicitYearCompare = q.match(/\b(?:last|past)\s+year\b/) &&
+    /\b(compare|comparison|vs|versus|prior|previous)\b/i.test(q);
+  if (implicitYearCompare) {
+    return { amount: 1, unit: "year" };
+  }
+  return null;
+}
+
+function detectTrendGrain(question: string): AnalysisPlan["grain"] {
+  const q = question.toLowerCase();
+  if (/\b(day by day|daily|per day)\b/.test(q)) return "day";
+  if (/\b(week by week|weekly|per week|week over week|wow)\b/.test(q)) return "week";
+  if (/\b(month by month|monthly|per month|month over month|mom)\b/.test(q)) return "month";
+  if (/\b(quarter by quarter|quarterly|per quarter|quarter over quarter|qoq)\b/.test(q)) return "quarter";
+  if (/\b(year by year|yearly|annual|annually|per year|year over year|yoy)\b/.test(q)) return "quarter";
+  if (/\bweek\b/.test(q)) return "week";
+  if (/\bday\b/.test(q)) return "day";
+  if (/\bquarter\b/.test(q)) return "quarter";
+  return "month";
+}
+
+function intervalOffsetSql(amount: number, unit: ComparisonUnit): string {
+  const n = Math.max(1, Math.min(365, Math.round(amount)));
+  if (unit === "day") return `${n} * INTERVAL '1 day'`;
+  if (unit === "week") return `${n} * INTERVAL '1 week'`;
+  if (unit === "month") return `${n} * INTERVAL '1 month'`;
+  if (unit === "quarter") return `${n * 3} * INTERVAL '1 month'`;
+  return `${n} * INTERVAL '1 year'`;
+}
+
 export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCatalog): AnalysisPlan {
   const q = question.toLowerCase();
   const tokens = tokenizeQuestion(question);
@@ -180,14 +277,22 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   const asksRevenue = /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
   const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q);
   const asksTerritory = /\b(territory|country|market|region|geo|geography)\b/i.test(q);
-  const asksTrend = /\b(trend|over time|month|quarter|week|day|growth|qoq|yoy|mom)\b/i.test(q);
+  const asksTrend = /\b(trend|over time|qoq|yoy|mom|growth rate|month over month|quarter over quarter|week over week|month by month|week by week|day by day|quarter by quarter|last\s+\d+\s+(?:days?|weeks?|months?|quarters?)|prior\s+\d+\s+(?:days?|weeks?|months?|quarters?)|vs\s+prior|compared\s+to\s+prior)\b/i.test(q);
+  const comparisonWindow = parseComparisonWindow(question);
+  const relativeWindow = parseRelativeWindow(question);
+  const asksPeriodComparison = comparisonWindow !== null || /\b(compare|comparison|vs\s+prior|versus\s+prior|compared\s+to\s+prior)\b/i.test(q);
   const asksOpportunityRisk = /\b(opportunity|potential)\b.*\b(risk|data risk|quality risk)\b|\b(highest opportunity)\b.*\b(highest data risk)\b/i.test(q);
+  const asksGrossNetGap = /\b(gross[\s-]*to[\s-]*net|gross\s*-\s*net|gap)\b/i.test(q) &&
+    /\b(gross|net|revenue|payout|leakage|leak)\b/i.test(q);
+  const asksConfidenceRisk = /\b(confidence risk|mapping|validation|low confidence|high confidence|quality issue|quality risk|attribution|rights|rights-related|payout leak|payout leakage|leakage)\b/i.test(q);
   const asksPoor = /\b(poor|worst|lowest|underperform|bottom)\b/i.test(q);
+  const asksStrategyAllocation = /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate)\b/i.test(q);
 
   const dimensions: string[] = [];
   if (asksPlatform) dimensions.push("platform");
   if (asksTerritory) dimensions.push("territory");
-  if (asksTrend) dimensions.push("event_date");
+  if (/\b(rights|rights[-\s]?type|royalty type)\b/i.test(q)) dimensions.push("rights_type");
+  if (asksTrend && !asksPeriodComparison) dimensions.push("event_date");
   // For "underperforming / worst" track questions, group by track
   if (asksPoor && !dimensions.includes("track_title")) dimensions.push("track_title");
 
@@ -208,17 +313,42 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (!dimensions.includes("track_title") && /\b(track|song|title)\b/i.test(q)) {
     dimensions.push("track_title");
   }
+  if (asksStrategyAllocation && dimensions.length === 0) {
+    dimensions.push("track_title");
+  }
 
   const required_columns = unique([
     ...dimensions,
     ...metrics,
     ...(asksPlatform ? ["platform"] : []),
     ...(asksRevenue ? [metrics[0] ?? "net_revenue"] : []),
-    ...(asksTrend ? ["event_date"] : []),
+    ...(asksTrend && !asksPeriodComparison ? ["event_date"] : []),
     ...(asksOpportunityRisk ? ["track_title", "net_revenue", "mapping_confidence", "validation_status"] : []),
+    ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
+    ...(asksConfidenceRisk ? ["mapping_confidence", "validation_status", "gross_revenue", "net_revenue"] : []),
   ]);
+  const planFilters: AnalysisPlan["filters"] = [];
+  if (comparisonWindow) {
+    planFilters.push({
+      column: "__period_compare__",
+      op: "=",
+      value: `${comparisonWindow.amount}:${comparisonWindow.unit}`,
+    });
+  } else if (relativeWindow) {
+    planFilters.push({
+      column: "__relative_window__",
+      op: "=",
+      value: `${relativeWindow.amount}:${relativeWindow.unit}`,
+    });
+  }
 
-  const intent = asksOpportunityRisk
+  const intent = asksPeriodComparison
+    ? "period_comparison"
+    : asksGrossNetGap
+    ? "gap_analysis"
+    : asksConfidenceRisk
+    ? "quality_risk_impact"
+    : asksOpportunityRisk
     ? "opportunity_risk_tracks"
     : asksPlatform
       ? "platform_analysis"
@@ -230,14 +360,10 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
             ? "revenue_analysis"
             : "exploratory_analysis";
 
-  const grain = asksTrend
-    ? /\bquarter|qoq\b/i.test(q)
-      ? "quarter"
-      : /\bweek\b/i.test(q)
-        ? "week"
-        : /\bday\b/i.test(q)
-          ? "day"
-          : "month"
+  const grain = asksPeriodComparison
+    ? "none"
+    : asksTrend
+    ? detectTrendGrain(question)
     : "none";
 
   // For "poor/worst" questions sort ascending, otherwise desc
@@ -245,15 +371,23 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
 
   return {
     intent,
-    metrics: unique(metrics).slice(0, 3),
+    metrics: unique([
+      ...metrics,
+      ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
+      ...(asksConfidenceRisk ? ["gross_revenue", "net_revenue", "mapping_confidence"] : []),
+    ]).slice(0, 3),
     dimensions: unique(dimensions).slice(0, 3),
-    filters: [],
+    filters: planFilters,
     grain,
     time_window: "implicit",
     confidence: inferConfidence(required_columns.length),
     required_columns,
     top_n: inferTopN(question),
-    sort_by: asksOpportunityRisk ? "opportunity_score" : (metrics[0] ?? "net_revenue"),
+    sort_by: asksGrossNetGap
+      ? "gross_net_gap_abs"
+      : asksOpportunityRisk
+      ? "opportunity_score"
+      : (metrics[0] ?? "net_revenue"),
     sort_dir: sortDir,
   };
 }
@@ -275,8 +409,231 @@ function buildMetricExpr(column: CatalogColumn): string {
   return `SUM(COALESCE(NULLIF(regexp_replace(r.${key}::text, '[^0-9\\.\\-]', '', 'g'), '')::numeric, 0))::numeric AS ${key}`;
 }
 
+function buildRowEnrichedCte(customFields: string[]): string {
+  const normalized = unique(customFields).filter((field) => isSafeSqlIdentifier(field));
+  const customProjection = normalized
+    .map(
+      (field) =>
+        `(SELECT sc.custom_value FROM scoped_custom sc WHERE sc.report_id = c.report_id AND sc.source_row_id = c.source_row_id AND sc.event_date = c.event_date AND lower(sc.custom_key) = lower(${quoteSqlLiteral(field)}) LIMIT 1) AS ${field}`,
+    )
+    .join(",\n        ");
+  const projection = customProjection.length > 0 ? `,\n        ${customProjection}` : "";
+  return `WITH row_enriched AS (
+      SELECT c.*${projection}
+      FROM scoped_core c
+    )`;
+}
+
 export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): { sql: string; chosen_columns: string[] } {
   const byKey = new Map(catalog.columns.map((c) => [c.field_key, c] as const));
+
+  if (plan.intent === "gap_analysis") {
+    const resolveGapDims = (names: string[]): CatalogColumn[] => {
+      const cols: CatalogColumn[] = [];
+      for (const name of unique(names)) {
+        const direct = byKey.get(name);
+        if (direct) {
+          cols.push(direct);
+          continue;
+        }
+        const resolved = resolveColumnByAlias(name, catalog);
+        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
+      }
+      return cols;
+    };
+    const dims = resolveGapDims(plan.dimensions)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 3);
+    const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
+    const dimAliases = dims.map((d) => d.field_key);
+    const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
+    const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
+    const sql = `${rowEnrichedCte}
+    SELECT
+      ${dimWithComma}SUM(COALESCE(r.gross_revenue, 0))::numeric AS gross_revenue,
+      SUM(COALESCE(r.net_revenue, 0))::numeric AS net_revenue,
+      (SUM(COALESCE(r.gross_revenue, 0)) - SUM(COALESCE(r.net_revenue, 0)))::numeric AS gross_net_gap_abs,
+      CASE
+        WHEN SUM(COALESCE(r.gross_revenue, 0)) = 0 THEN NULL
+        ELSE ((SUM(COALESCE(r.gross_revenue, 0)) - SUM(COALESCE(r.net_revenue, 0))) / NULLIF(SUM(COALESCE(r.gross_revenue, 0)), 0))::numeric
+      END AS gross_net_gap_pct
+    FROM row_enriched r
+    ${groupBy}
+    ORDER BY gross_net_gap_abs DESC NULLS LAST
+    LIMIT ${limit}`;
+    return {
+      sql,
+      chosen_columns: [...dimAliases, "gross_revenue", "net_revenue", "gross_net_gap_abs", "gross_net_gap_pct"],
+    };
+  }
+
+  if (plan.intent === "quality_risk_impact") {
+    const resolveQualityDims = (names: string[]): CatalogColumn[] => {
+      const cols: CatalogColumn[] = [];
+      for (const name of unique(names)) {
+        const direct = byKey.get(name);
+        if (direct) {
+          cols.push(direct);
+          continue;
+        }
+        const resolved = resolveColumnByAlias(name, catalog);
+        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
+      }
+      return cols;
+    };
+    const dims = resolveQualityDims(plan.dimensions)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 3);
+    if (dims.length === 0 && byKey.has("track_title")) dims.push(byKey.get("track_title")!);
+    const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
+    const dimAliases = dims.map((d) => d.field_key);
+    const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
+    const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
+    const sql = `${rowEnrichedCte}
+    SELECT
+      ${dimWithComma}SUM(COALESCE(r.gross_revenue, 0))::numeric AS gross_revenue,
+      SUM(COALESCE(r.net_revenue, 0))::numeric AS net_revenue,
+      AVG(COALESCE(r.mapping_confidence, 0))::numeric AS mapping_confidence,
+      SUM(CASE WHEN lower(COALESCE(r.validation_status, '')) IN ('failed','critical') THEN 1 ELSE 0 END)::numeric AS validation_critical_rows,
+      COUNT(*)::numeric AS row_count
+    FROM row_enriched r
+    ${groupBy}
+    ORDER BY gross_revenue DESC NULLS LAST
+    LIMIT ${limit}`;
+    return {
+      sql,
+      chosen_columns: [...dimAliases, "gross_revenue", "net_revenue", "mapping_confidence", "validation_critical_rows", "row_count"],
+    };
+  }
+
+  if (plan.intent === "period_comparison") {
+    const resolvePeriodDims = (names: string[]): CatalogColumn[] => {
+      const cols: CatalogColumn[] = [];
+      for (const name of unique(names)) {
+        const direct = byKey.get(name);
+        if (direct) {
+          cols.push(direct);
+          continue;
+        }
+        const resolved = resolveColumnByAlias(name, catalog);
+        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
+      }
+      return cols;
+    };
+    const periodDims = resolvePeriodDims(plan.dimensions)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 2);
+    const rowEnrichedCte = buildRowEnrichedCte(periodDims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const encoded = plan.filters.find((f) => f.column === "__period_compare__" && f.op === "=" && typeof f.value === "string");
+    const [rawAmount, rawUnit] = typeof encoded?.value === "string" ? encoded.value.split(":") : [];
+    const parsedAmount = parseAmountToken(rawAmount);
+    const amount = parsedAmount ?? 90;
+    const unit = unitAliasToCanonical(rawUnit) ?? "day";
+    const currentOffsetSql = intervalOffsetSql(amount, unit);
+    const doubleOffsetSql = intervalOffsetSql(amount * 2, unit);
+    const lastLabel = `last_${amount}_${unit}${amount === 1 ? "" : "s"}`;
+    const priorLabel = `prior_${amount}_${unit}${amount === 1 ? "" : "s"}`;
+    const dimCols = periodDims.map((d) => d.field_key);
+    const dimSelectWithComma = dimCols.length > 0 ? `${dimCols.join(",\n        ")},\n        ` : "";
+    const dimGroupClause = dimCols.length > 0 ? `GROUP BY ${dimCols.join(", ")}` : "";
+    const dimUsingClause = dimCols.length > 0 ? `USING (${dimCols.join(", ")})` : "ON TRUE";
+    const dimFinalWithComma = dimCols.length > 0 ? `${dimCols.join(",\n      ")},\n      ` : "";
+    const dimOrderBy = dimCols.length > 0 ? `${dimCols.join(", ")}, ` : "";
+    const dimRowSelectWithComma = dimCols.length > 0 ? `${dimCols.join(",\n        ")},\n        ` : "";
+
+    const sql = `${rowEnrichedCte},
+    bounds AS (
+      SELECT MAX(c.event_date)::date AS max_date
+      FROM scoped_core c
+    ),
+    last_period AS (
+      SELECT
+        ${dimSelectWithComma}SUM(COALESCE(c.net_revenue, 0))::numeric AS last_net_revenue,
+        SUM(COALESCE(c.gross_revenue, 0))::numeric AS last_gross_revenue,
+        SUM(COALESCE(c.quantity, 0))::numeric AS last_quantity
+      FROM row_enriched c
+      WHERE c.event_date::date > ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql})::date
+      ${dimGroupClause}
+    ),
+    prior_period AS (
+      SELECT
+        ${dimSelectWithComma}SUM(COALESCE(c.net_revenue, 0))::numeric AS prior_net_revenue,
+        SUM(COALESCE(c.gross_revenue, 0))::numeric AS prior_gross_revenue,
+        SUM(COALESCE(c.quantity, 0))::numeric AS prior_quantity
+      FROM row_enriched c
+      WHERE c.event_date::date > ((SELECT b.max_date FROM bounds b) - ${doubleOffsetSql})::date
+        AND c.event_date::date <= ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql})::date
+      ${dimGroupClause}
+    ),
+    dim_rows AS (
+      SELECT
+        ${dimRowSelectWithComma}
+        COALESCE(last_net_revenue, 0)::numeric AS last_net_revenue,
+        COALESCE(last_gross_revenue, 0)::numeric AS last_gross_revenue,
+        COALESCE(last_quantity, 0)::numeric AS last_quantity,
+        COALESCE(prior_net_revenue, 0)::numeric AS prior_net_revenue,
+        COALESCE(prior_gross_revenue, 0)::numeric AS prior_gross_revenue,
+        COALESCE(prior_quantity, 0)::numeric AS prior_quantity
+      FROM last_period
+      FULL OUTER JOIN prior_period
+        ${dimUsingClause}
+    )
+    SELECT
+      period_bucket,
+      period_start,
+      period_end,
+      ${dimFinalWithComma}net_revenue,
+      gross_revenue,
+      quantity
+    FROM (
+      SELECT
+        1::int AS sort_order,
+        '${lastLabel}'::text AS period_bucket,
+        ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql} + INTERVAL '1 day')::date AS period_start,
+        (SELECT b.max_date FROM bounds b)::date AS period_end,
+        ${dimFinalWithComma}last_net_revenue AS net_revenue,
+        last_gross_revenue AS gross_revenue,
+        last_quantity AS quantity
+      FROM dim_rows
+      UNION ALL
+      SELECT
+        2::int AS sort_order,
+        '${priorLabel}'::text AS period_bucket,
+        ((SELECT b.max_date FROM bounds b) - ${doubleOffsetSql} + INTERVAL '1 day')::date AS period_start,
+        ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql})::date AS period_end,
+        ${dimFinalWithComma}prior_net_revenue AS net_revenue,
+        prior_gross_revenue AS gross_revenue,
+        prior_quantity AS quantity
+      FROM dim_rows
+    ) u
+    ORDER BY ${dimOrderBy}sort_order`;
+    return {
+      sql,
+      chosen_columns: [
+        "period_bucket",
+        "period_start",
+        "period_end",
+        ...periodDims.map((d) => d.field_key),
+        "net_revenue",
+        "gross_revenue",
+        "quantity",
+      ],
+    };
+  }
+
+  const relativeWindowFilter = plan.filters.find((f) => f.column === "__relative_window__" && f.op === "=" && typeof f.value === "string");
+  const relativeWindowValue = typeof relativeWindowFilter?.value === "string" ? relativeWindowFilter.value : null;
+  const [rawWindowAmount, rawWindowUnit] = relativeWindowValue ? relativeWindowValue.split(":") : [];
+  const relativeAmount = parseAmountToken(rawWindowAmount);
+  const relativeUnit = unitAliasToCanonical(rawWindowUnit);
+  const relativeOffsetSql = relativeAmount && relativeUnit ? intervalOffsetSql(relativeAmount, relativeUnit) : null;
 
   if (plan.intent === "opportunity_risk_tracks") {
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 5)));
@@ -378,8 +735,10 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     ...finalMetrics.filter((m) => m.source === "custom").map((m) => m.field_key),
     ...plan.filters.map((f) => f.column).filter((field) => byKey.get(field)?.source === "custom"),
   ]);
+  const canonicalFieldKeys = new Set(catalog.columns.filter((c) => c.source === "canonical").map((c) => c.field_key));
+  const customFieldsProjected = customFieldsNeeded.filter((field) => !canonicalFieldKeys.has(field));
 
-  const customProjection = customFieldsNeeded
+  const customProjection = customFieldsProjected
     .map(
       (field) =>
         `(SELECT sc.custom_value FROM scoped_custom sc WHERE sc.report_id = c.report_id AND sc.source_row_id = c.source_row_id AND sc.event_date = c.event_date AND lower(sc.custom_key) = lower(${quoteSqlLiteral(field)}) LIMIT 1) AS ${field}`,
@@ -389,9 +748,11 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   const selectDimensionExprs = dimensionCols.map((col) => buildDimensionExpr(col, plan.grain));
   const metricExprs = finalMetrics.map((col) => buildMetricExpr(col));
   const aliases = selectDimensionExprs.map((expr) => expr.split(/\s+AS\s+/i)[1]).filter(Boolean);
+  const metricAliases = finalMetrics.map((m) => m.field_key);
 
   const whereClauses: string[] = [];
   for (const filter of plan.filters.slice(0, 4)) {
+    if (filter.column.startsWith("__")) continue;
     // Resolve filter column through alias lookup
     const resolvedField = resolveColumnByAlias(filter.column, catalog) ?? filter.column;
     const col = byKey.get(resolvedField);
@@ -406,6 +767,9 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
       whereClauses.push(`lower(${colExpr}::text) IN (${values})`);
     }
   }
+  if (relativeOffsetSql) {
+    whereClauses.push(`r.event_date::date > ((SELECT MAX(c.event_date)::date FROM scoped_core c) - ${relativeOffsetSql})::date`);
+  }
 
   const selectList = [...selectDimensionExprs, ...metricExprs].join(",\n      ");
   const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
@@ -415,7 +779,12 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   // Resolve sort_by through alias lookup as well
   const resolvedSortField = resolveColumnByAlias(plan.sort_by, catalog) ?? plan.sort_by;
   const requestedSort = byKey.get(resolvedSortField);
-  const orderByMetric = (requestedSort?.field_key ?? finalMetrics[0]?.field_key ?? "1");
+  const requestedSortKey = requestedSort?.field_key ?? null;
+  const hasProjectedSortField = requestedSortKey !== null &&
+    (metricAliases.includes(requestedSortKey) || aliases.includes(requestedSortKey));
+  const orderByMetric = hasProjectedSortField
+    ? requestedSortKey!
+    : (finalMetrics[0]?.field_key ?? aliases[0] ?? "1");
   const orderDir = plan.sort_dir === "asc" ? "ASC" : "DESC";
 
   // If time grain is active, always sort chronologically. Otherwise sort by metric.
@@ -457,8 +826,15 @@ export function validatePlannedSql(sql: string): string {
   if (/\b(insert|update|delete|drop|alter|create|grant|revoke|copy|call|do|truncate)\b/i.test(v)) {
     throw new Error("Generated SQL contains a disallowed keyword.");
   }
-  if (/\b(?:from|join)\s+[a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\b/i.test(v)) {
-    throw new Error("Generated SQL cannot reference schema-qualified relations.");
+  const relationTokens = Array.from(lower.matchAll(/\b(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_\.]*)\b/g)).map((m) => m[1]);
+  const blockedSchemas = new Set(["public", "auth", "storage", "extensions", "graphql_public", "pg_catalog", "information_schema"]);
+  for (const rel of relationTokens) {
+    const dotIndex = rel.indexOf(".");
+    if (dotIndex <= 0) continue;
+    const prefix = rel.slice(0, dotIndex);
+    if (blockedSchemas.has(prefix)) {
+      throw new Error("Generated SQL cannot reference schema-qualified relations.");
+    }
   }
   return v;
 }
@@ -501,59 +877,94 @@ export function verifyQueryResult({
   const colSet = new Set(columns.map((c) => c.toLowerCase()));
   const checks: string[] = [];
   const warnings: string[] = [];
+  const hasRevenueColumn = colSet.has("net_revenue") || colSet.has("gross_revenue");
+  const hasTimeColumn =
+    colSet.has("event_date") ||
+    colSet.has("month_start") ||
+    colSet.has("quarter_start") ||
+    colSet.has("week_start") ||
+    colSet.has("day_start") ||
+    colSet.has("period_bucket");
+  const hasTrackDimension = colSet.has("track_title");
+  const hasPlatformDimension = colSet.has("platform");
+  const hasTerritoryDimension = colSet.has("territory");
+  const planMetrics = plan?.metrics.map((m) => m.toLowerCase()) ?? [];
+  const planDimensions = plan?.dimensions.map((d) => d.toLowerCase()) ?? [];
+  const asksTop = /\b(top|highest|best|lowest|worst|rank(?:ed|ing)?)\b/i.test(q);
+  const asksRevenue = planMetrics.some((m) => m.includes("revenue") || m === "net" || m === "gross") ||
+    /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
+  const asksTrack = planDimensions.includes("track_title");
+  const asksPlatformRanking = planDimensions.includes("platform");
+  const asksTerritoryRanking = planDimensions.includes("territory");
+  const asksTrend = (plan?.grain && plan.grain !== "none") || planDimensions.includes("event_date") || plan?.intent === "period_comparison";
+  const asksGapEvidence = plan?.intent === "gap_analysis";
+  const asksQualityRiskEvidence = plan?.intent === "quality_risk_impact";
+  const asksStrengths = /\b(strength|strengths|strongest|edge|advantage)\b/i.test(q) || plan?.intent === "catalog_strengths";
 
-  // If we got actual rows back, always pass — the data speaks for itself.
-  // We collect informational warnings for transparency, but never hard-fail.
-  if (rows.length > 0) {
-    // Informational checks (warnings only when rows exist)
-    const asksPlatformRanking = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q);
-    if (asksPlatformRanking) {
-      checks.push("platform_preferred");
-      if (!colSet.has("platform")) {
-        warnings.push("platform column not in output; result may be aggregated across all platforms");
-      }
-    }
-
-    const asksRevenue = /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
-    if (asksRevenue) {
-      checks.push("revenue_preferred");
-      const hasRevenueColumn = colSet.has("net_revenue") || colSet.has("gross_revenue");
-      if (!hasRevenueColumn) {
-        warnings.push("revenue column not in output; a proxy metric may have been used");
-      } else if (!hasNonNullNumeric(rows, ["net_revenue", "gross_revenue"])) {
-        warnings.push("revenue values in result are zero or null");
-      }
-    }
-
-    const asksTrend = /\b(trend|over time|month|quarter|week|day|growth|qoq|yoy|mom)\b/i.test(q);
-    if (asksTrend) {
-      checks.push("time_grain_preferred");
-      const hasTime =
-        colSet.has("event_date") ||
-        colSet.has("month_start") ||
-        colSet.has("quarter_start") ||
-        colSet.has("week_start") ||
-        colSet.has("day_start");
-      if (!hasTime) {
-        warnings.push("no time-grain column in output; trend may not be visible");
-      }
-    }
-
-    if (plan && /top|highest|best|most/i.test(q)) {
-      checks.push("top_n_respected");
-      if (plan.top_n > 0 && rows.length > plan.top_n) {
-        warnings.push(`expected at most ${plan.top_n} rows but got ${rows.length}`);
-      }
-    }
-
-    return { status: "passed", checks, warnings };
+  if (rows.length === 0) {
+    return {
+      status: "failed",
+      reason: "no_rows_returned",
+      checks: ["row_count_check"],
+      warnings: [],
+    };
   }
 
-  // Zero rows — the only hard-fail case.
-  return {
-    status: "failed",
-    reason: "no_rows_returned",
-    checks: ["row_count_check"],
-    warnings: [],
-  };
+  if (asksRevenue && !hasRevenueColumn) {
+    return { status: "failed", reason: "missing_revenue_metric", checks: ["revenue_metric_required"], warnings };
+  }
+
+  if (asksTop && asksTrack && !hasTrackDimension) {
+    return { status: "failed", reason: "missing_track_dimension", checks: ["track_dimension_required"], warnings };
+  }
+
+  if (asksPlatformRanking && !hasPlatformDimension) {
+    return { status: "failed", reason: "missing_platform_dimension", checks: ["platform_dimension_required"], warnings };
+  }
+
+  if (asksTerritoryRanking && !hasTerritoryDimension) {
+    return { status: "failed", reason: "missing_territory_dimension", checks: ["territory_dimension_required"], warnings };
+  }
+
+  if (asksTrend && !hasTimeColumn) {
+    return { status: "failed", reason: "missing_time_dimension", checks: ["time_dimension_required"], warnings };
+  }
+  if (asksGapEvidence && !(colSet.has("gross_revenue") && colSet.has("net_revenue") && colSet.has("gross_net_gap_abs"))) {
+    return { status: "failed", reason: "missing_gap_metric", checks: ["gap_metric_required"], warnings };
+  }
+  if (asksQualityRiskEvidence && !(colSet.has("mapping_confidence") || colSet.has("validation_critical_rows"))) {
+    return { status: "failed", reason: "missing_quality_risk_evidence", checks: ["quality_evidence_required"], warnings };
+  }
+
+  if (asksStrengths) {
+    const hasAnyStrengthDimension = hasTrackDimension || hasPlatformDimension || hasTerritoryDimension;
+    if (!hasAnyStrengthDimension || !hasRevenueColumn) {
+      return {
+        status: "failed",
+        reason: "insufficient_strength_evidence",
+        checks: ["strength_requires_dimension_and_revenue"],
+        warnings,
+      };
+    }
+  }
+
+  if (asksRevenue && !hasNonNullNumeric(rows, ["net_revenue", "gross_revenue"])) {
+    warnings.push("revenue values in result are all zero or null");
+  }
+
+  const explicitTopMatch = q.match(/\b(top|highest|best|first)\s+(\d{1,3})\b/i);
+  const explicitTopN = explicitTopMatch ? Number(explicitTopMatch[2]) : 0;
+  if (plan && asksTop && explicitTopN > 0) {
+    checks.push("top_n_respected");
+    const requestedTopN = explicitTopN;
+    if (requestedTopN > 0 && rows.length > requestedTopN) {
+      warnings.push(`expected at most ${requestedTopN} rows but got ${rows.length}`);
+    }
+    if (requestedTopN >= 3 && rows.length < Math.min(requestedTopN, 3)) {
+      warnings.push(`asked for top ${requestedTopN} but only ${rows.length} ranked row(s) returned`);
+    }
+  }
+
+  return { status: "passed", checks, warnings };
+
 }
