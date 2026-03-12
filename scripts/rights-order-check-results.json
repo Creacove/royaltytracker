@@ -1,0 +1,1009 @@
+[
+  {
+    "prompt_id": "rights-order",
+    "question": "Which rights/mapping gaps are most likely causing payout leakage, and what is the 30-day remediation order by financial impact?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-12",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 9.39,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 10,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "quality_risk_impact",
+    "quality_outcome": "unknown",
+    "response_excerpt": "The most significant payout leakage is associated with the track 'We are Golden' on Spotify, with a gross revenue of $62,256,510.56 and a net revenue of $17,541.00, indicating a mapping confidence of only 33.94%. This suggests substantial revenue loss due to rights mapping issues. The second highest gross revenue is...",
+    "diagnostics": {
+      "intent": "quality_risk_impact",
+      "confidence": "high",
+      "used_fields": [
+        "rights_type",
+        "track_title",
+        "platform",
+        "net_revenue",
+        "gross_revenue",
+        "mapping_confidence"
+      ],
+      "missing_fields": [
+        "mapping_confidence",
+        "validation_status"
+      ],
+      "strict_mode": false,
+      "data_notes": [],
+      "anomaly_flags": [],
+      "analysis_plan": {
+        "intent": "quality_risk_impact",
+        "metrics": [
+          "net_revenue",
+          "gross_revenue",
+          "mapping_confidence"
+        ],
+        "dimensions": [
+          "rights_type",
+          "track_title",
+          "platform"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "rights_type",
+          "net_revenue",
+          "track_title",
+          "platform",
+          "gross_revenue",
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "top_n": 10,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "rights_type",
+        "net_revenue",
+        "track_title",
+        "platform",
+        "gross_revenue",
+        "mapping_confidence",
+        "validation_status"
+      ],
+      "chosen_columns": [
+        "rights_type",
+        "track_title",
+        "platform",
+        "gross_revenue",
+        "net_revenue",
+        "mapping_confidence",
+        "validation_critical_rows",
+        "row_count"
+      ],
+      "top_n": 10,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "risk_control",
+        "decision_type": "ranking",
+        "horizon": "unspecified",
+        "entity_scope": "artist",
+        "persona": "publisher",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-rights-order",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Payout Leakage Analysis",
+      "executive_answer": "The most significant payout leakage is associated with the track 'We are Golden' on Spotify, with a gross revenue of $62,256,510.56 and a net revenue of $17,541.00, indicating a mapping confidence of only 33.94%. This suggests substantial revenue loss due to rights mapping issues. The second highest gross revenue is also from 'We are Golden' on Spotify, with $48,421,604.29 but a net revenue of just $0.00, highlighting critical mapping gaps.",
+      "why_this_matters": "Immediate action is needed to improve rights mapping for 'We are Golden' on Spotify to recover lost revenue. Focus on enhancing mapping confidence and addressing validation critical rows to prevent further leakage.",
+      "evidence": {
+        "row_count": 10,
+        "scanned_rows": 10,
+        "from_date": "2000-03-12",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "high"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "mapping_confidence",
+          "net_revenue",
+          "platform",
+          "rights_type",
+          "row_count",
+          "track_title",
+          "validation_critical_rows"
+        ],
+        "rows": [
+          {
+            "platform": "Spotify",
+            "row_count": 254,
+            "net_revenue": 17541.0045,
+            "rights_type": null,
+            "track_title": "We are Golden",
+            "gross_revenue": 62256510.5571,
+            "mapping_confidence": 33.93700787401575,
+            "validation_critical_rows": 77
+          },
+          {
+            "platform": "Unknown",
+            "row_count": 26,
+            "net_revenue": 17541.0003,
+            "rights_type": null,
+            "track_title": "We are Golden",
+            "gross_revenue": 6917390.0552,
+            "mapping_confidence": 0,
+            "validation_critical_rows": 0
+          },
+          {
+            "platform": "Deezer",
+            "row_count": 4,
+            "net_revenue": 0.022,
+            "rights_type": null,
+            "track_title": "Wish Was Heather",
+            "gross_revenue": 0.022,
+            "mapping_confidence": 37.5,
+            "validation_critical_rows": 2
+          },
+          {
+            "platform": "Spotify",
+            "row_count": 124,
+            "net_revenue": 0.0021,
+            "rights_type": "track",
+            "track_title": "We are Golden",
+            "gross_revenue": 48421604.2924,
+            "mapping_confidence": 58.064516129032256,
+            "validation_critical_rows": 11
+          },
+          {
+            "platform": "Spotify",
+            "row_count": 7,
+            "net_revenue": 0,
+            "rights_type": "Back",
+            "track_title": "We are Golden",
+            "gross_revenue": 42.0567,
+            "mapping_confidence": 57.142857142857146,
+            "validation_critical_rows": 6
+          },
+          {
+            "platform": "Spotify",
+            "row_count": 7,
+            "net_revenue": 0,
+            "rights_type": "hack",
+            "track_title": "We are Golden",
+            "gross_revenue": 42.028,
+            "mapping_confidence": 57.142857142857146,
+            "validation_critical_rows": 6
+          },
+          {
+            "platform": "Spotify",
+            "row_count": 14,
+            "net_revenue": 0,
+            "rights_type": "frack",
+            "track_title": "We are Golden",
+            "gross_revenue": 42.0161,
+            "mapping_confidence": 57.142857142857146,
+            "validation_critical_rows": 6
+          },
+          {
+            "platform": "Spondy",
+            "row_count": 9,
+            "net_revenue": 0,
+            "rights_type": null,
+            "track_title": "We are Golden",
+            "gross_revenue": 0.0171,
+            "mapping_confidence": 35.55555555555556,
+            "validation_critical_rows": 2
+          },
+          {
+            "platform": "Spotify",
+            "row_count": 7,
+            "net_revenue": 0,
+            "rights_type": "Hack",
+            "track_title": "We are Golden",
+            "gross_revenue": 0.0133,
+            "mapping_confidence": 57.142857142857146,
+            "validation_critical_rows": 0
+          },
+          {
+            "platform": "Spondy",
+            "row_count": 7,
+            "net_revenue": 0,
+            "rights_type": "mack",
+            "track_title": "We are Golden",
+            "gross_revenue": 0.0133,
+            "mapping_confidence": 57.142857142857146,
+            "validation_critical_rows": 0
+          }
+        ],
+        "title": "Payout Leakage Analysis"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What specific rights mapping issues are identified?",
+        "How can we improve mapping confidence for this track?",
+        "What are the next steps for remediation?"
+      ],
+      "recommendations": [
+        {
+          "action": "Run a rights-attribution verification pass on the top financial rows and re-score the decision after cleanup.",
+          "rationale": "Immediate action is needed to improve rights mapping for 'We are Golden' on Spotify to recover lost revenue. Focus on enhancing mapping confidence and addressing validation critical rows to prevent further leakage.",
+          "impact": "Improves confidence in net-revenue decisions before scaling changes.",
+          "risk": "Skipping verification can encode data defects into strategy."
+        },
+        {
+          "action": "Define the first 7-day remediation tranche on the highest-value leakage rows before widening scope.",
+          "rationale": "Sequencing rights fixes by value prevents low-impact work from blocking recovery.",
+          "impact": "Improves early payout recovery and clarifies team execution order.",
+          "risk": "Without tranche boundaries, remediation efforts diffuse across low-impact tasks."
+        },
+        {
+          "action": "Order rights cleanup by recoverable value: fix highest gross-to-net gaps first, then medium-impact rows, then residual long-tail issues.",
+          "rationale": "Rights remediation performs best when sequencing and measurement are explicit.",
+          "impact": "Improves payout recovery speed and makes remediation progress auditable.",
+          "risk": "Without a sequence and cadence, teams can burn effort on low-impact fixes."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "title": "Payout Leakage Analysis",
+            "text": "The most significant payout leakage is associated with the track 'We are Golden' on Spotify, with a gross revenue of $62,256,510.56 and a net revenue of $17,541.00, indicating a mapping confidence of only 33.94%. This suggests substantial revenue loss due to rights mapping issues. The second highest gross revenue is also from 'We are Golden' on Spotify, with $48,421,604.29 but a net revenue of just $0.00, highlighting critical mapping gaps."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "text": "Immediate action is needed to improve rights mapping for 'We are Golden' on Spotify to recover lost revenue. Focus on enhancing mapping confidence and addressing validation critical rows to prevent further leakage."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "high",
+          "title": "Payout Leakage Analysis",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "mapping_confidence",
+              "net_revenue",
+              "platform",
+              "rights_type",
+              "row_count",
+              "track_title",
+              "validation_critical_rows"
+            ],
+            "rows": [
+              {
+                "platform": "Spotify",
+                "row_count": 254,
+                "net_revenue": 17541.0045,
+                "rights_type": null,
+                "track_title": "We are Golden",
+                "gross_revenue": 62256510.5571,
+                "mapping_confidence": 33.93700787401575,
+                "validation_critical_rows": 77
+              },
+              {
+                "platform": "Unknown",
+                "row_count": 26,
+                "net_revenue": 17541.0003,
+                "rights_type": null,
+                "track_title": "We are Golden",
+                "gross_revenue": 6917390.0552,
+                "mapping_confidence": 0,
+                "validation_critical_rows": 0
+              },
+              {
+                "platform": "Deezer",
+                "row_count": 4,
+                "net_revenue": 0.022,
+                "rights_type": null,
+                "track_title": "Wish Was Heather",
+                "gross_revenue": 0.022,
+                "mapping_confidence": 37.5,
+                "validation_critical_rows": 2
+              },
+              {
+                "platform": "Spotify",
+                "row_count": 124,
+                "net_revenue": 0.0021,
+                "rights_type": "track",
+                "track_title": "We are Golden",
+                "gross_revenue": 48421604.2924,
+                "mapping_confidence": 58.064516129032256,
+                "validation_critical_rows": 11
+              },
+              {
+                "platform": "Spotify",
+                "row_count": 7,
+                "net_revenue": 0,
+                "rights_type": "Back",
+                "track_title": "We are Golden",
+                "gross_revenue": 42.0567,
+                "mapping_confidence": 57.142857142857146,
+                "validation_critical_rows": 6
+              },
+              {
+                "platform": "Spotify",
+                "row_count": 7,
+                "net_revenue": 0,
+                "rights_type": "hack",
+                "track_title": "We are Golden",
+                "gross_revenue": 42.028,
+                "mapping_confidence": 57.142857142857146,
+                "validation_critical_rows": 6
+              },
+              {
+                "platform": "Spotify",
+                "row_count": 14,
+                "net_revenue": 0,
+                "rights_type": "frack",
+                "track_title": "We are Golden",
+                "gross_revenue": 42.0161,
+                "mapping_confidence": 57.142857142857146,
+                "validation_critical_rows": 6
+              },
+              {
+                "platform": "Spondy",
+                "row_count": 9,
+                "net_revenue": 0,
+                "rights_type": null,
+                "track_title": "We are Golden",
+                "gross_revenue": 0.0171,
+                "mapping_confidence": 35.55555555555556,
+                "validation_critical_rows": 2
+              },
+              {
+                "platform": "Spotify",
+                "row_count": 7,
+                "net_revenue": 0,
+                "rights_type": "Hack",
+                "track_title": "We are Golden",
+                "gross_revenue": 0.0133,
+                "mapping_confidence": 57.142857142857146,
+                "validation_critical_rows": 0
+              },
+              {
+                "platform": "Spondy",
+                "row_count": 7,
+                "net_revenue": 0,
+                "rights_type": "mack",
+                "track_title": "We are Golden",
+                "gross_revenue": 0.0133,
+                "mapping_confidence": 57.142857142857146,
+                "validation_critical_rows": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              {
+                "action": "Run a rights-attribution verification pass on the top financial rows and re-score the decision after cleanup.",
+                "rationale": "Immediate action is needed to improve rights mapping for 'We are Golden' on Spotify to recover lost revenue. Focus on enhancing mapping confidence and addressing validation critical rows to prevent further leakage.",
+                "impact": "Improves confidence in net-revenue decisions before scaling changes.",
+                "risk": "Skipping verification can encode data defects into strategy."
+              },
+              {
+                "action": "Define the first 7-day remediation tranche on the highest-value leakage rows before widening scope.",
+                "rationale": "Sequencing rights fixes by value prevents low-impact work from blocking recovery.",
+                "impact": "Improves early payout recovery and clarifies team execution order.",
+                "risk": "Without tranche boundaries, remediation efforts diffuse across low-impact tasks."
+              },
+              {
+                "action": "Order rights cleanup by recoverable value: fix highest gross-to-net gaps first, then medium-impact rows, then residual long-tail issues.",
+                "rationale": "Rights remediation performs best when sequencing and measurement are explicit.",
+                "impact": "Improves payout recovery speed and makes remediation progress auditable.",
+                "risk": "Without a sequence and cadence, teams can burn effort on low-impact fixes."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              "Missing fields detected: validation_status."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [],
+      "diagnostics": {
+        "intent": "quality_risk_impact",
+        "confidence": "high",
+        "used_fields": [
+          "rights_type",
+          "track_title",
+          "platform",
+          "net_revenue",
+          "gross_revenue",
+          "mapping_confidence"
+        ],
+        "missing_fields": [
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "strict_mode": false,
+        "data_notes": [],
+        "anomaly_flags": [],
+        "analysis_plan": {
+          "intent": "quality_risk_impact",
+          "metrics": [
+            "net_revenue",
+            "gross_revenue",
+            "mapping_confidence"
+          ],
+          "dimensions": [
+            "rights_type",
+            "track_title",
+            "platform"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "rights_type",
+            "net_revenue",
+            "track_title",
+            "platform",
+            "gross_revenue",
+            "mapping_confidence",
+            "validation_status"
+          ],
+          "top_n": 10,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "rights_type",
+          "net_revenue",
+          "track_title",
+          "platform",
+          "gross_revenue",
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "chosen_columns": [
+          "rights_type",
+          "track_title",
+          "platform",
+          "gross_revenue",
+          "net_revenue",
+          "mapping_confidence",
+          "validation_critical_rows",
+          "row_count"
+        ],
+        "top_n": 10,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "risk_control",
+          "decision_type": "ranking",
+          "horizon": "unspecified",
+          "entity_scope": "artist",
+          "persona": "publisher",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "quality_risk_impact",
+      "detected_persona": "publisher",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "rights-high-usage",
+    "question": "Which tracks in this artist's catalog have high usage but low effective royalty rate by rights type this year, and what contract/data issue should we investigate first?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-12",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 8.39,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 10,
+      "actionability": 5,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "quality_risk_impact",
+    "quality_outcome": "unknown",
+    "response_excerpt": "The track 'We are Golden' has high usage with a gross revenue of $62,256,510.56 but a net revenue of $17,541.00 on Spotify. The mapping confidence is low at 33.94%, indicating potential data issues. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope.",
+    "diagnostics": {
+      "intent": "quality_risk_impact",
+      "confidence": "high",
+      "used_fields": [
+        "track_title",
+        "rights_type",
+        "platform",
+        "quantity",
+        "net_revenue",
+        "gross_revenue",
+        "mapping_confidence",
+        "artist_name"
+      ],
+      "missing_fields": [
+        "mapping_confidence",
+        "validation_status"
+      ],
+      "strict_mode": false,
+      "data_notes": [],
+      "anomaly_flags": [],
+      "analysis_plan": {
+        "intent": "quality_risk_impact",
+        "metrics": [
+          "quantity",
+          "net_revenue",
+          "gross_revenue",
+          "mapping_confidence"
+        ],
+        "dimensions": [
+          "track_title",
+          "rights_type",
+          "platform"
+        ],
+        "filters": [
+          {
+            "column": "artist_name",
+            "op": "=",
+            "value": "specific_artist_name"
+          },
+          {
+            "column": "__relative_window__",
+            "op": "=",
+            "value": "1:year"
+          }
+        ],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "quantity",
+          "net_revenue",
+          "track_title",
+          "rights_type",
+          "platform",
+          "gross_revenue",
+          "mapping_confidence",
+          "validation_status",
+          "artist_name"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "asc"
+      },
+      "required_columns": [
+        "quantity",
+        "net_revenue",
+        "track_title",
+        "rights_type",
+        "platform",
+        "gross_revenue",
+        "mapping_confidence",
+        "validation_status",
+        "artist_name"
+      ],
+      "chosen_columns": [
+        "track_title",
+        "rights_type",
+        "platform",
+        "gross_revenue",
+        "net_revenue",
+        "mapping_confidence",
+        "validation_critical_rows",
+        "row_count"
+      ],
+      "top_n": 1,
+      "sort_by": "gross_revenue",
+      "sort_dir": "asc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "allocation",
+        "decision_type": "investigation",
+        "horizon": "annual",
+        "entity_scope": "artist",
+        "persona": "label_head",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 0.65,
+        "reasons": [
+          "missing_usage_vs_payout_fields"
+        ]
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-rights-high-usage",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "High Usage, Low Royalty Track",
+      "executive_answer": "The track 'We are Golden' has high usage with a gross revenue of $62,256,510.56 but a net revenue of $17,541.00 on Spotify. The mapping confidence is low at 33.94%, indicating potential data issues. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope.",
+      "why_this_matters": "Investigate the mapping accuracy for 'We are Golden' to ensure proper royalty distribution. Low mapping confidence suggests that rights may not be fully accounted for, impacting revenue.",
+      "evidence": {
+        "row_count": 1,
+        "scanned_rows": 1,
+        "from_date": "2000-03-12",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "high"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "mapping_confidence",
+          "net_revenue",
+          "platform",
+          "rights_type",
+          "row_count",
+          "track_title",
+          "validation_critical_rows"
+        ],
+        "rows": [
+          {
+            "platform": "Spotify",
+            "row_count": 254,
+            "net_revenue": 17541.0045,
+            "rights_type": null,
+            "track_title": "We are Golden",
+            "gross_revenue": 62256510.5571,
+            "mapping_confidence": 33.93700787401575,
+            "validation_critical_rows": 77
+          }
+        ],
+        "title": "High Usage, Low Royalty Track"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What specific rights types are missing for this track?",
+        "How does the mapping confidence compare to other tracks?",
+        "Are there similar issues with other tracks in the catalog?"
+      ],
+      "recommendations": [
+        {
+          "action": "Prioritize remediation by financial impact: fix high-gross rows with weak rights/mapping confidence before lower-value cleanup.",
+          "rationale": "Leakage recovery is fastest when ordered by recoverable value, not row volume.",
+          "impact": "Maximizes near-term payout recovery from limited ops capacity.",
+          "risk": "A broad untargeted cleanup can consume time with low financial return."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "title": "High Usage, Low Royalty Track",
+            "text": "The track 'We are Golden' has high usage with a gross revenue of $62,256,510.56 but a net revenue of $17,541.00 on Spotify. The mapping confidence is low at 33.94%, indicating potential data issues. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "text": "Investigate the mapping accuracy for 'We are Golden' to ensure proper royalty distribution. Low mapping confidence suggests that rights may not be fully accounted for, impacting revenue."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "high",
+          "title": "High Usage, Low Royalty Track",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "mapping_confidence",
+              "net_revenue",
+              "platform",
+              "rights_type",
+              "row_count",
+              "track_title",
+              "validation_critical_rows"
+            ],
+            "rows": [
+              {
+                "platform": "Spotify",
+                "row_count": 254,
+                "net_revenue": 17541.0045,
+                "rights_type": null,
+                "track_title": "We are Golden",
+                "gross_revenue": 62256510.5571,
+                "mapping_confidence": 33.93700787401575,
+                "validation_critical_rows": 77
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              {
+                "action": "Prioritize remediation by financial impact: fix high-gross rows with weak rights/mapping confidence before lower-value cleanup.",
+                "rationale": "Leakage recovery is fastest when ordered by recoverable value, not row volume.",
+                "impact": "Maximizes near-term payout recovery from limited ops capacity.",
+                "risk": "A broad untargeted cleanup can consume time with low financial return."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              "Low row count can hide market variability.",
+              "Missing fields detected: quantity, validation_status, artist_name."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [],
+      "diagnostics": {
+        "intent": "quality_risk_impact",
+        "confidence": "high",
+        "used_fields": [
+          "track_title",
+          "rights_type",
+          "platform",
+          "quantity",
+          "net_revenue",
+          "gross_revenue",
+          "mapping_confidence",
+          "artist_name"
+        ],
+        "missing_fields": [
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "strict_mode": false,
+        "data_notes": [],
+        "anomaly_flags": [],
+        "analysis_plan": {
+          "intent": "quality_risk_impact",
+          "metrics": [
+            "quantity",
+            "net_revenue",
+            "gross_revenue",
+            "mapping_confidence"
+          ],
+          "dimensions": [
+            "track_title",
+            "rights_type",
+            "platform"
+          ],
+          "filters": [
+            {
+              "column": "artist_name",
+              "op": "=",
+              "value": "specific_artist_name"
+            },
+            {
+              "column": "__relative_window__",
+              "op": "=",
+              "value": "1:year"
+            }
+          ],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "quantity",
+            "net_revenue",
+            "track_title",
+            "rights_type",
+            "platform",
+            "gross_revenue",
+            "mapping_confidence",
+            "validation_status",
+            "artist_name"
+          ],
+          "top_n": 1,
+          "sort_by": "gross_revenue",
+          "sort_dir": "asc"
+        },
+        "required_columns": [
+          "quantity",
+          "net_revenue",
+          "track_title",
+          "rights_type",
+          "platform",
+          "gross_revenue",
+          "mapping_confidence",
+          "validation_status",
+          "artist_name"
+        ],
+        "chosen_columns": [
+          "track_title",
+          "rights_type",
+          "platform",
+          "gross_revenue",
+          "net_revenue",
+          "mapping_confidence",
+          "validation_critical_rows",
+          "row_count"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "asc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "allocation",
+          "decision_type": "investigation",
+          "horizon": "annual",
+          "entity_scope": "artist",
+          "persona": "label_head",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 0.65,
+          "reasons": [
+            "missing_usage_vs_payout_fields"
+          ]
+        }
+      },
+      "detected_intent": "quality_risk_impact",
+      "detected_persona": "publisher",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  }
+]

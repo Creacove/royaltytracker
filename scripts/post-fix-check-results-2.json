@@ -1,0 +1,2011 @@
+[
+  {
+    "prompt_id": "check-1",
+    "question": "Show the top 5 tracks by net revenue this year, and explain what separates #1 from #2�#5.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 9.39,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 10,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "ranking",
+    "quality_outcome": "unknown",
+    "response_excerpt": "The top track by net revenue this year is 'We are Golden' with $35,082.00, significantly outperforming the others. The second track, 'King Me Slowly', generated only $30.31, while 'Wish Was Heather' earned a mere $0.0055. This stark difference highlights the dominance of 'We are Golden' in revenue generation. Reques...",
+    "diagnostics": {
+      "intent": "ranking",
+      "confidence": "medium",
+      "used_fields": [
+        "track_title",
+        "net_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "anomaly_flags": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "analysis_plan": {
+        "intent": "ranking",
+        "metrics": [
+          "net_revenue"
+        ],
+        "dimensions": [
+          "track_title"
+        ],
+        "filters": [
+          {
+            "column": "__relative_window__",
+            "op": "=",
+            "value": "1:year"
+          }
+        ],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "track_title",
+          "net_revenue"
+        ],
+        "top_n": 5,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "track_title",
+        "net_revenue"
+      ],
+      "chosen_columns": [
+        "track_title",
+        "net_revenue",
+        "__relative_window__"
+      ],
+      "top_n": 5,
+      "sort_by": "net_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "exploration",
+        "decision_type": "ranking",
+        "horizon": "annual",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": true
+      },
+      "evidence_fit": {
+        "score": 0.75,
+        "reasons": [
+          "missing_territory_dimension"
+        ]
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-check-1",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Top Track Revenue Comparison",
+      "executive_answer": "The top track by net revenue this year is 'We are Golden' with $35,082.00, significantly outperforming the others. The second track, 'King Me Slowly', generated only $30.31, while 'Wish Was Heather' earned a mere $0.0055. This stark difference highlights the dominance of 'We are Golden' in revenue generation. Requested top 5; only 3 ranked rows are available in current scope.",
+      "why_this_matters": "Focus marketing efforts on promoting 'We are Golden' further, as it is clearly the standout performer. Consider exploring sync opportunities or playlist placements to maximize its reach.",
+      "evidence": {
+        "row_count": 3,
+        "scanned_rows": 3,
+        "from_date": "2000-03-11",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "net_revenue",
+          "track_title"
+        ],
+        "rows": [
+          {
+            "net_revenue": 35082.0015,
+            "track_title": "We are Golden"
+          },
+          {
+            "net_revenue": 30.3136,
+            "track_title": "King Me Slowly"
+          },
+          {
+            "net_revenue": 0.0055,
+            "track_title": "Wish Was Heather"
+          }
+        ],
+        "title": "Top Track Revenue Comparison"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What marketing strategies are in place for 'We are Golden'?",
+        "Are there any upcoming releases that could impact these numbers?",
+        "How does the performance of these tracks compare to last year?"
+      ],
+      "recommendations": [
+        {
+          "action": "Set a 2026 primary growth bet on We are Golden, with explicit weekly KPIs (streams, saves, conversion, revenue).",
+          "rationale": "We are Golden is currently the strongest observed revenue driver in this scope.",
+          "impact": "Creates a clear execution focus and improves budget efficiency versus broad untargeted spend.",
+          "risk": "If top-driver revenue is anomaly-inflated, strategy may over-concentrate; validate source and mapping first."
+        },
+        {
+          "action": "Create a second-priority pipeline of 2-3 emerging tracks and allocate test budget to reduce concentration risk.",
+          "rationale": "Portfolio balance is required when one asset dominates current revenue.",
+          "impact": "Builds downside protection while preserving upside from the top asset.",
+          "risk": "Without disciplined test criteria, pipeline spend can dilute returns."
+        },
+        {
+          "action": "Run a track-level growth plan for We are Golden: playlist outreach, creator content, and sync shortlist in parallel.",
+          "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+          "impact": "Accelerates monetization of the strongest current asset.",
+          "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Top Track Revenue Comparison",
+            "text": "The top track by net revenue this year is 'We are Golden' with $35,082.00, significantly outperforming the others. The second track, 'King Me Slowly', generated only $30.31, while 'Wish Was Heather' earned a mere $0.0055. This stark difference highlights the dominance of 'We are Golden' in revenue generation. Requested top 5; only 3 ranked rows are available in current scope."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "Focus marketing efforts on promoting 'We are Golden' further, as it is clearly the standout performer. Consider exploring sync opportunities or playlist placements to maximize its reach."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Top Track Revenue Comparison",
+          "payload": {
+            "columns": [
+              "net_revenue",
+              "track_title"
+            ],
+            "rows": [
+              {
+                "net_revenue": 35082.0015,
+                "track_title": "We are Golden"
+              },
+              {
+                "net_revenue": 30.3136,
+                "track_title": "King Me Slowly"
+              },
+              {
+                "net_revenue": 0.0055,
+                "track_title": "Wish Was Heather"
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Set a 2026 primary growth bet on We are Golden, with explicit weekly KPIs (streams, saves, conversion, revenue).",
+                "rationale": "We are Golden is currently the strongest observed revenue driver in this scope.",
+                "impact": "Creates a clear execution focus and improves budget efficiency versus broad untargeted spend.",
+                "risk": "If top-driver revenue is anomaly-inflated, strategy may over-concentrate; validate source and mapping first."
+              },
+              {
+                "action": "Create a second-priority pipeline of 2-3 emerging tracks and allocate test budget to reduce concentration risk.",
+                "rationale": "Portfolio balance is required when one asset dominates current revenue.",
+                "impact": "Builds downside protection while preserving upside from the top asset.",
+                "risk": "Without disciplined test criteria, pipeline spend can dilute returns."
+              },
+              {
+                "action": "Run a track-level growth plan for We are Golden: playlist outreach, creator content, and sync shortlist in parallel.",
+                "rationale": "Top-track concentration usually gives fastest near-term uplift when execution is coordinated.",
+                "impact": "Accelerates monetization of the strongest current asset.",
+                "risk": "Over-concentration risk if underlying revenue is anomaly-driven."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "ranking",
+        "confidence": "medium",
+        "used_fields": [
+          "track_title",
+          "net_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "anomaly_flags": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "analysis_plan": {
+          "intent": "ranking",
+          "metrics": [
+            "net_revenue"
+          ],
+          "dimensions": [
+            "track_title"
+          ],
+          "filters": [
+            {
+              "column": "__relative_window__",
+              "op": "=",
+              "value": "1:year"
+            }
+          ],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "track_title",
+            "net_revenue"
+          ],
+          "top_n": 5,
+          "sort_by": "net_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "track_title",
+          "net_revenue"
+        ],
+        "chosen_columns": [
+          "track_title",
+          "net_revenue",
+          "__relative_window__"
+        ],
+        "top_n": 5,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "exploration",
+          "decision_type": "ranking",
+          "horizon": "annual",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": true
+        },
+        "evidence_fit": {
+          "score": 0.75,
+          "reasons": [
+            "missing_territory_dimension"
+          ]
+        }
+      },
+      "detected_intent": "ranking",
+      "detected_persona": "marketer",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "check-2",
+    "question": "Which platforms are creating the biggest concentration risk right now, and what 3 actions should we take next quarter?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 8.34,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 5,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "risk_analysis",
+    "quality_outcome": "unknown",
+    "response_excerpt": "Spotify is creating the biggest concentration risk with a gross revenue of $110,678,240.97. The second platform is 'Unknown' with $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope.",
+    "diagnostics": {
+      "intent": "risk_analysis",
+      "confidence": "medium",
+      "used_fields": [
+        "platform",
+        "gross_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+      ],
+      "anomaly_flags": [
+        "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+      ],
+      "analysis_plan": {
+        "intent": "risk_analysis",
+        "metrics": [
+          "gross_revenue"
+        ],
+        "dimensions": [
+          "platform"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "top_n": 3,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "gross_revenue",
+        "platform"
+      ],
+      "chosen_columns": [
+        "platform",
+        "gross_revenue"
+      ],
+      "top_n": 3,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "risk_control",
+        "decision_type": "strategy",
+        "horizon": "short_term",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-check-2",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Top Revenue Platforms Identified",
+      "executive_answer": "Spotify is creating the biggest concentration risk with a gross revenue of $110,678,240.97. The second platform is 'Unknown' with $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope.",
+      "why_this_matters": "Given the high revenue concentration on Spotify, it's crucial to diversify revenue streams. Consider increasing marketing efforts on lesser-performing platforms and exploring partnerships or sync opportunities to mitigate risk.",
+      "evidence": {
+        "row_count": 3,
+        "scanned_rows": 3,
+        "from_date": "2000-03-11",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "rows": [
+          {
+            "platform": "Spotify",
+            "gross_revenue": 110678240.9659
+          },
+          {
+            "platform": "Unknown",
+            "gross_revenue": 6917390.0556
+          },
+          {
+            "platform": "Deezer",
+            "gross_revenue": 0.033
+          }
+        ],
+        "title": "Top Revenue Platforms Identified"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What strategies can we implement to boost revenue on lesser-known platforms?",
+        "How does the revenue from 'Unknown' compare to previous quarters?",
+        "What specific actions can we take to reduce reliance on Spotify?"
+      ],
+      "recommendations": [
+        {
+          "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+          "rationale": "Spotify is currently carrying a large share of monetized performance ($110.7M observed).",
+          "impact": "Concentrates spend where observed return is strongest.",
+          "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+        },
+        {
+          "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+          "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+          "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+          "risk": "Skipping this step can over-invest in the wrong channel."
+        },
+        {
+          "action": "Set platform-level ROI thresholds and pause channels below floor targets.",
+          "rationale": "Channel strategy is only as strong as attribution and threshold discipline.",
+          "impact": "Improves channel allocation defensibility and ROI consistency.",
+          "risk": "Weak attribution or no thresholds increases budget drift risk."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Top Revenue Platforms Identified",
+            "text": "Spotify is creating the biggest concentration risk with a gross revenue of $110,678,240.97. The second platform is 'Unknown' with $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "Given the high revenue concentration on Spotify, it's crucial to diversify revenue streams. Consider increasing marketing efforts on lesser-performing platforms and exploring partnerships or sync opportunities to mitigate risk."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Top Revenue Platforms Identified",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "platform"
+            ],
+            "rows": [
+              {
+                "platform": "Spotify",
+                "gross_revenue": 110678240.9659
+              },
+              {
+                "platform": "Unknown",
+                "gross_revenue": 6917390.0556
+              },
+              {
+                "platform": "Deezer",
+                "gross_revenue": 0.033
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+                "rationale": "Spotify is currently carrying a large share of monetized performance ($110.7M observed).",
+                "impact": "Concentrates spend where observed return is strongest.",
+                "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+              },
+              {
+                "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+                "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+                "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+                "risk": "Skipping this step can over-invest in the wrong channel."
+              },
+              {
+                "action": "Set platform-level ROI thresholds and pause channels below floor targets.",
+                "rationale": "Channel strategy is only as strong as attribution and threshold discipline.",
+                "impact": "Improves channel allocation defensibility and ROI consistency.",
+                "risk": "Weak attribution or no thresholds increases budget drift risk."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "risk_analysis",
+        "confidence": "medium",
+        "used_fields": [
+          "platform",
+          "gross_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+        ],
+        "anomaly_flags": [
+          "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+        ],
+        "analysis_plan": {
+          "intent": "risk_analysis",
+          "metrics": [
+            "gross_revenue"
+          ],
+          "dimensions": [
+            "platform"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "gross_revenue",
+            "platform"
+          ],
+          "top_n": 3,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "chosen_columns": [
+          "platform",
+          "gross_revenue"
+        ],
+        "top_n": 3,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "risk_control",
+          "decision_type": "strategy",
+          "horizon": "short_term",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "risk_analysis",
+      "detected_persona": "marketer",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "check-3",
+    "question": "Where should this artiste tour next quarter, and what city-level checks must pass before booking dates?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 8.51,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 7,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "missing_external_citations"
+    ],
+    "critical_flags": [],
+    "intent_detected": "territory_analysis",
+    "quality_outcome": "unknown",
+    "response_excerpt": "Priority touring territories: SE, AN, ON. SE leads the current monetization signal at 86.8% share of observed gross.",
+    "diagnostics": {
+      "intent": "territory_analysis",
+      "confidence": "high",
+      "used_fields": [
+        "territory",
+        "gross_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [],
+      "anomaly_flags": [],
+      "analysis_plan": {
+        "intent": "territory_analysis",
+        "metrics": [
+          "gross_revenue"
+        ],
+        "dimensions": [
+          "territory"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "artist_name",
+          "gross_revenue",
+          "territory"
+        ],
+        "top_n": 5,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "artist_name",
+        "gross_revenue",
+        "territory"
+      ],
+      "chosen_columns": [
+        "territory",
+        "gross_revenue"
+      ],
+      "top_n": 5,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "exploration",
+        "decision_type": "strategy",
+        "horizon": "short_term",
+        "entity_scope": "artist",
+        "persona": "tour_manager",
+        "asks_external_context": true
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-check-3",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Top Touring Territories Identified",
+      "executive_answer": "Priority touring territories: SE, AN, ON. SE leads the current monetization signal at 86.8% share of observed gross.",
+      "why_this_matters": "Before booking dates, validate city-level demand concentration, venue hold availability, competing-events window, and pricing-band fit in each priority territory.",
+      "evidence": {
+        "row_count": 5,
+        "scanned_rows": 5,
+        "from_date": "2000-03-11",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "high"
+      },
+      "kpis": [
+        {
+          "label": "Priority 1",
+          "value": "SE"
+        },
+        {
+          "label": "Priority 2",
+          "value": "AN"
+        },
+        {
+          "label": "Priority 3",
+          "value": "ON"
+        },
+        {
+          "label": "Top territory gross",
+          "value": "$96.1M"
+        }
+      ],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "territory"
+        ],
+        "rows": [
+          {
+            "territory": "SE",
+            "gross_revenue": 96051840.1622
+          },
+          {
+            "territory": "AN",
+            "gross_revenue": 13711980
+          },
+          {
+            "territory": "Unknown",
+            "gross_revenue": 6917402.131
+          },
+          {
+            "territory": "ON",
+            "gross_revenue": 914132
+          },
+          {
+            "territory": "BR",
+            "gross_revenue": 96.2
+          }
+        ],
+        "title": "Top Touring Territories Identified"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What are the local market conditions in SE and AN?",
+        "Which venues are available in these territories?",
+        "What are the historical attendance figures for these cities?"
+      ],
+      "recommendations": [
+        {
+          "action": "Run market-readiness checks per priority territory: venue hold availability, competing events window, and pricing-band fit before locking contracts.",
+          "rationale": "Routing quality depends on external market conditions in addition to internal demand signals.",
+          "impact": "Reduces booking risk and improves margin certainty per date.",
+          "risk": "Skipping readiness checks can convert strong demand signals into weak on-ground performance."
+        },
+        {
+          "action": "Stage spend in two waves: pilot dates first, then scale only territories that clear ticket velocity thresholds.",
+          "rationale": "Protects downside while preserving upside in high-performing markets.",
+          "impact": "Improves capital efficiency and reduces over-commitment risk.",
+          "risk": "Requires strict post-show measurement discipline to work."
+        },
+        {
+          "action": "Execute a 30-day routing sequence: Week 1 city shortlist, Week 2 venue/promo partner outreach, Week 3 pilot-date holds, Week 4 go/no-go allocation by ticket velocity proxies.",
+          "rationale": "Tour planning converts best when market selection and execution checkpoints are sequenced, not parallelized blindly.",
+          "impact": "Raises booking quality and reduces late-stage routing rework.",
+          "risk": "Without stage-gates, teams commit dates before market readiness is validated."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "title": "Top Touring Territories Identified",
+            "text": "Priority touring territories: SE, AN, ON. SE leads the current monetization signal at 86.8% share of observed gross."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "text": "Before booking dates, validate city-level demand concentration, venue hold availability, competing-events window, and pricing-band fit in each priority territory."
+          }
+        },
+        {
+          "id": "kpi-strip",
+          "type": "kpi_strip",
+          "priority": 3,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              {
+                "label": "Priority 1",
+                "value": "SE"
+              },
+              {
+                "label": "Priority 2",
+                "value": "AN"
+              },
+              {
+                "label": "Priority 3",
+                "value": "ON"
+              },
+              {
+                "label": "Top territory gross",
+                "value": "$96.1M"
+              }
+            ]
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "high",
+          "title": "Top Touring Territories Identified",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "territory"
+            ],
+            "rows": [
+              {
+                "territory": "SE",
+                "gross_revenue": 96051840.1622
+              },
+              {
+                "territory": "AN",
+                "gross_revenue": 13711980
+              },
+              {
+                "territory": "Unknown",
+                "gross_revenue": 6917402.131
+              },
+              {
+                "territory": "ON",
+                "gross_revenue": 914132
+              },
+              {
+                "territory": "BR",
+                "gross_revenue": 96.2
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "high",
+          "payload": {
+            "items": [
+              {
+                "action": "Run market-readiness checks per priority territory: venue hold availability, competing events window, and pricing-band fit before locking contracts.",
+                "rationale": "Routing quality depends on external market conditions in addition to internal demand signals.",
+                "impact": "Reduces booking risk and improves margin certainty per date.",
+                "risk": "Skipping readiness checks can convert strong demand signals into weak on-ground performance."
+              },
+              {
+                "action": "Stage spend in two waves: pilot dates first, then scale only territories that clear ticket velocity thresholds.",
+                "rationale": "Protects downside while preserving upside in high-performing markets.",
+                "impact": "Improves capital efficiency and reduces over-commitment risk.",
+                "risk": "Requires strict post-show measurement discipline to work."
+              },
+              {
+                "action": "Execute a 30-day routing sequence: Week 1 city shortlist, Week 2 venue/promo partner outreach, Week 3 pilot-date holds, Week 4 go/no-go allocation by ticket velocity proxies.",
+                "rationale": "Tour planning converts best when market selection and execution checkpoints are sequenced, not parallelized blindly.",
+                "impact": "Raises booking quality and reduces late-stage routing rework.",
+                "risk": "Without stage-gates, teams commit dates before market readiness is validated."
+              }
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "kpi-strip": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data"
+      },
+      "unknowns": [],
+      "diagnostics": {
+        "intent": "territory_analysis",
+        "confidence": "high",
+        "used_fields": [
+          "territory",
+          "gross_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [],
+        "anomaly_flags": [],
+        "analysis_plan": {
+          "intent": "territory_analysis",
+          "metrics": [
+            "gross_revenue"
+          ],
+          "dimensions": [
+            "territory"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "artist_name",
+            "gross_revenue",
+            "territory"
+          ],
+          "top_n": 5,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "artist_name",
+          "gross_revenue",
+          "territory"
+        ],
+        "chosen_columns": [
+          "territory",
+          "gross_revenue"
+        ],
+        "top_n": 5,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "exploration",
+          "decision_type": "strategy",
+          "horizon": "short_term",
+          "entity_scope": "artist",
+          "persona": "tour_manager",
+          "asks_external_context": true
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "territory_analysis",
+      "detected_persona": "tour_manager",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "check-4",
+    "question": "Compare last 12 weeks vs prior 12 weeks by territory and platform, and tell me what changed most.",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 8.69,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 10,
+      "actionability": 10,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "period_comparison",
+    "quality_outcome": "unknown",
+    "response_excerpt": "In the last 12 weeks, notable revenue changes occurred in several territories. For example, in territory AL, net revenue increased to 17,541 from 0 in the prior period. Additionally, territory AN saw a gross revenue of 2,742,396, up from 0. Other territories like BR and CE also reported gross revenues of 24.0472 and...",
+    "diagnostics": {
+      "intent": "period_comparison",
+      "confidence": "medium",
+      "used_fields": [
+        "territory",
+        "platform",
+        "net_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "anomaly_flags": [
+        "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+      ],
+      "analysis_plan": {
+        "intent": "period_comparison",
+        "metrics": [
+          "net_revenue"
+        ],
+        "dimensions": [
+          "territory",
+          "platform"
+        ],
+        "filters": [
+          {
+            "column": "__period_compare__",
+            "op": "=",
+            "value": "12:week"
+          },
+          {
+            "column": "__relative_window__",
+            "op": "=",
+            "value": "12:week"
+          }
+        ],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "net_revenue",
+          "territory",
+          "platform"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "net_revenue",
+        "territory",
+        "platform"
+      ],
+      "chosen_columns": [
+        "period_bucket",
+        "period_start",
+        "period_end",
+        "territory",
+        "platform",
+        "net_revenue",
+        "gross_revenue",
+        "quantity"
+      ],
+      "top_n": 1,
+      "sort_by": "net_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "exploration",
+        "decision_type": "ranking",
+        "horizon": "unspecified",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-check-4",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Revenue Changes Overview",
+      "executive_answer": "In the last 12 weeks, notable revenue changes occurred in several territories. For example, in territory AL, net revenue increased to 17,541 from 0 in the prior period. Additionally, territory AN saw a gross revenue of 2,742,396, up from 0. Other territories like BR and CE also reported gross revenues of 24.0472 and 24.016 respectively, both previously at 0. Largest change: Spotify / AL is up by $17.5K in net revenue.",
+      "why_this_matters": "The significant increase in revenue in territories AL and AN suggests a potential for further investment in marketing and promotion in these areas. Consider exploring local DSP playlists and promotional opportunities to capitalize on this growth.",
+      "evidence": {
+        "row_count": 54,
+        "scanned_rows": 54,
+        "from_date": "2000-03-11",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "net_revenue",
+          "period_bucket",
+          "period_end",
+          "period_start",
+          "platform",
+          "quantity",
+          "territory"
+        ],
+        "rows": [
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AL",
+            "period_end": "2026-02-16",
+            "net_revenue": 17541,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0076,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Amazon Prime",
+            "quantity": 0,
+            "territory": "BR",
+            "period_end": "2026-02-16",
+            "net_revenue": 26.5244,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0028,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AN",
+            "period_end": "2026-02-16",
+            "net_revenue": 0.0003,
+            "period_start": "2025-11-25",
+            "gross_revenue": 2742396,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "Unknown",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0192,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "Unknown",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AL",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AN",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AR",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0215,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "AR",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Amazon Prime",
+            "quantity": 0,
+            "territory": "BR",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "BR",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 24.0472,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "BR",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CE",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 24.016,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CE",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CL",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0072,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CL",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CZ",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0052,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "CZ",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "DE",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0236,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "DE",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spondy",
+            "quantity": 0,
+            "territory": "ES",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0076,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Spondy",
+            "quantity": 0,
+            "territory": "ES",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Unknown",
+            "quantity": 0,
+            "territory": "ES",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0,
+            "period_bucket": "last_12_weeks"
+          },
+          {
+            "platform": "Unknown",
+            "quantity": 0,
+            "territory": "ES",
+            "period_end": "2025-11-24",
+            "net_revenue": 0,
+            "period_start": "2025-09-02",
+            "gross_revenue": 0,
+            "period_bucket": "prior_12_weeks"
+          },
+          {
+            "platform": "Spotify",
+            "quantity": 0,
+            "territory": "Unknown",
+            "period_end": "2026-02-16",
+            "net_revenue": 0,
+            "period_start": "2025-11-25",
+            "gross_revenue": 0.0001,
+            "period_bucket": "last_12_weeks"
+          }
+        ],
+        "title": "Revenue Changes Overview"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What specific strategies led to the revenue increase in AL?",
+        "Are there any emerging trends in other territories?",
+        "How does this revenue growth compare to historical data?"
+      ],
+      "recommendations": [
+        {
+          "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+          "rationale": "Spotify is currently carrying a large share of monetized performance ($17.5K observed).",
+          "impact": "Concentrates spend where observed return is strongest.",
+          "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+        },
+        {
+          "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+          "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+          "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+          "risk": "Skipping this step can over-invest in the wrong channel."
+        },
+        {
+          "action": "Set a platform delta target for Spotify: sustain and extend lift from last_12_weeks versus prior_12_weeks.",
+          "rationale": "Spotify shows a measurable shift across compared periods.",
+          "impact": "Turns period comparison into a specific, measurable execution target.",
+          "risk": "If period attribution is incomplete, delta targets can be misread."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Revenue Changes Overview",
+            "text": "In the last 12 weeks, notable revenue changes occurred in several territories. For example, in territory AL, net revenue increased to 17,541 from 0 in the prior period. Additionally, territory AN saw a gross revenue of 2,742,396, up from 0. Other territories like BR and CE also reported gross revenues of 24.0472 and 24.016 respectively, both previously at 0. Largest change: Spotify / AL is up by $17.5K in net revenue."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "The significant increase in revenue in territories AL and AN suggests a potential for further investment in marketing and promotion in these areas. Consider exploring local DSP playlists and promotional opportunities to capitalize on this growth."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Revenue Changes Overview",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "net_revenue",
+              "period_bucket",
+              "period_end",
+              "period_start",
+              "platform",
+              "quantity",
+              "territory"
+            ],
+            "rows": [
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AL",
+                "period_end": "2026-02-16",
+                "net_revenue": 17541,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0076,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Amazon Prime",
+                "quantity": 0,
+                "territory": "BR",
+                "period_end": "2026-02-16",
+                "net_revenue": 26.5244,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0028,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AN",
+                "period_end": "2026-02-16",
+                "net_revenue": 0.0003,
+                "period_start": "2025-11-25",
+                "gross_revenue": 2742396,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "Unknown",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0192,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "Unknown",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AL",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AN",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AR",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0215,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "AR",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Amazon Prime",
+                "quantity": 0,
+                "territory": "BR",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "BR",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 24.0472,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "BR",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CE",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 24.016,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CE",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CL",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0072,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CL",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CZ",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0052,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "CZ",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "DE",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0236,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "DE",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spondy",
+                "quantity": 0,
+                "territory": "ES",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0076,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Spondy",
+                "quantity": 0,
+                "territory": "ES",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Unknown",
+                "quantity": 0,
+                "territory": "ES",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0,
+                "period_bucket": "last_12_weeks"
+              },
+              {
+                "platform": "Unknown",
+                "quantity": 0,
+                "territory": "ES",
+                "period_end": "2025-11-24",
+                "net_revenue": 0,
+                "period_start": "2025-09-02",
+                "gross_revenue": 0,
+                "period_bucket": "prior_12_weeks"
+              },
+              {
+                "platform": "Spotify",
+                "quantity": 0,
+                "territory": "Unknown",
+                "period_end": "2026-02-16",
+                "net_revenue": 0,
+                "period_start": "2025-11-25",
+                "gross_revenue": 0.0001,
+                "period_bucket": "last_12_weeks"
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+                "rationale": "Spotify is currently carrying a large share of monetized performance ($17.5K observed).",
+                "impact": "Concentrates spend where observed return is strongest.",
+                "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+              },
+              {
+                "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+                "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+                "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+                "risk": "Skipping this step can over-invest in the wrong channel."
+              },
+              {
+                "action": "Set a platform delta target for Spotify: sustain and extend lift from last_12_weeks versus prior_12_weeks.",
+                "rationale": "Spotify shows a measurable shift across compared periods.",
+                "impact": "Turns period comparison into a specific, measurable execution target.",
+                "risk": "If period attribution is incomplete, delta targets can be misread."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "period_comparison",
+        "confidence": "medium",
+        "used_fields": [
+          "territory",
+          "platform",
+          "net_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "anomaly_flags": [
+          "Revenue distribution is highly skewed; top-row strategy should be treated as directional until validated."
+        ],
+        "analysis_plan": {
+          "intent": "period_comparison",
+          "metrics": [
+            "net_revenue"
+          ],
+          "dimensions": [
+            "territory",
+            "platform"
+          ],
+          "filters": [
+            {
+              "column": "__period_compare__",
+              "op": "=",
+              "value": "12:week"
+            },
+            {
+              "column": "__relative_window__",
+              "op": "=",
+              "value": "12:week"
+            }
+          ],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "net_revenue",
+            "territory",
+            "platform"
+          ],
+          "top_n": 1,
+          "sort_by": "net_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "net_revenue",
+          "territory",
+          "platform"
+        ],
+        "chosen_columns": [
+          "period_bucket",
+          "period_start",
+          "period_end",
+          "territory",
+          "platform",
+          "net_revenue",
+          "gross_revenue",
+          "quantity"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "exploration",
+          "decision_type": "ranking",
+          "horizon": "unspecified",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "period_comparison",
+      "detected_persona": "marketer",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  }
+]

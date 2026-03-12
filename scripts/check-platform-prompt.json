@@ -1,0 +1,3 @@
+[
+  {"id":"check-platform","question":"Which platforms are creating the biggest concentration risk right now, and what 3 actions should we take next quarter?","persona":"marketer","intent":"platform_concentration","required_evidence":["platform","net_revenue"],"expected_depth":"decision","requires_external":false,"expect_answerable":true}
+]

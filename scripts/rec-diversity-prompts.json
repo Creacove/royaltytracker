@@ -1,0 +1,6 @@
+[
+  {"id":"rec-div-1","question":"If budget is limited, what 2 no-regret moves should we make this quarter?","persona":"executive","intent":"budget_no_regret","required_evidence":["net_revenue"],"expected_depth":"decision","requires_external":false,"expect_answerable":true},
+  {"id":"rec-div-2","question":"Which platforms are driving revenue concentration risk, and what should we do next quarter?","persona":"marketer","intent":"platform_concentration","required_evidence":["platform","net_revenue"],"expected_depth":"decision","requires_external":false,"expect_answerable":true},
+  {"id":"rec-div-3","question":"Where should this artiste tour and why?","persona":"tour_manager","intent":"touring_live","required_evidence":["territory","gross_revenue"],"expected_depth":"deep","requires_external":true,"expect_answerable":true},
+  {"id":"rec-div-4","question":"Which tracks in this artist's catalog have high usage but low effective royalty rate by rights type this year, and what contract/data issue should we investigate first?","persona":"publisher","intent":"rights_leakage","required_evidence":["track_title","rights_type","net_revenue"],"expected_depth":"deep","requires_external":false,"expect_answerable":true}
+]

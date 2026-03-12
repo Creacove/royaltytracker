@@ -183,6 +183,98 @@ function blockText(block: AiInsightsAnswerBlock, key = "text"): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+type RecommendationMeta = { label: string; value: string; tone?: "neutral" | "good" | "caution" };
+type RecommendationCardModel = {
+  title: string;
+  body?: string;
+  bullets: string[];
+  meta: RecommendationMeta[];
+  cta?: { label: string; href: string };
+};
+
+function toLabelCase(value: string): string {
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function normalizeRecommendationItem(item: Record<string, unknown>, idx: number): RecommendationCardModel {
+  const title =
+    (typeof item.action === "string" && item.action.trim()) ||
+    (typeof item.title === "string" && item.title.trim()) ||
+    (typeof item.label === "string" && item.label.trim()) ||
+    `Recommendation ${idx + 1}`;
+
+  const bodyCandidate =
+    (typeof item.rationale === "string" && item.rationale.trim()) ||
+    (typeof item.reason === "string" && item.reason.trim()) ||
+    (typeof item.why === "string" && item.why.trim()) ||
+    (typeof item.summary === "string" && item.summary.trim()) ||
+    "";
+
+  const bullets: string[] = [];
+  const pushArray = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const row of value) {
+      if (typeof row === "string" && row.trim().length > 0) bullets.push(row.trim());
+    }
+  };
+  pushArray(item.steps);
+  pushArray(item.next_steps);
+  pushArray(item.checklist);
+
+  const meta: RecommendationMeta[] = [];
+  const impact = typeof item.impact === "string" ? item.impact.trim() : "";
+  const risk = typeof item.risk === "string" ? item.risk.trim() : "";
+  const timeline = typeof item.timeline === "string" ? item.timeline.trim() : "";
+  const owner = typeof item.owner === "string" ? item.owner.trim() : "";
+  if (impact) meta.push({ label: "Impact", value: impact, tone: "good" });
+  if (risk) meta.push({ label: "Risk", value: risk, tone: "caution" });
+  if (timeline) meta.push({ label: "Timeline", value: timeline, tone: "neutral" });
+  if (owner) meta.push({ label: "Owner", value: owner, tone: "neutral" });
+
+  const knownKeys = new Set([
+    "action",
+    "title",
+    "label",
+    "rationale",
+    "reason",
+    "why",
+    "summary",
+    "impact",
+    "risk",
+    "timeline",
+    "owner",
+    "steps",
+    "next_steps",
+    "checklist",
+    "href",
+    "url",
+    "cta_label",
+  ]);
+  for (const [key, value] of Object.entries(item)) {
+    if (knownKeys.has(key)) continue;
+    if (typeof value === "string" && value.trim().length > 0) {
+      bullets.push(`${toLabelCase(key)}: ${value.trim()}`);
+    }
+  }
+
+  const href =
+    (typeof item.href === "string" && item.href.trim()) ||
+    (typeof item.url === "string" && item.url.trim()) ||
+    "";
+  const ctaLabel = (typeof item.cta_label === "string" && item.cta_label.trim()) || "Open";
+  const cta = href ? { label: ctaLabel, href } : undefined;
+
+  return {
+    title,
+    body: bodyCandidate || undefined,
+    bullets: Array.from(new Set(bullets)).slice(0, 6),
+    meta,
+    cta,
+  };
+}
+
 function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
   const blocks = Array.isArray(payload.answer_blocks) ? [...payload.answer_blocks].sort((a, b) => a.priority - b.priority) : [];
   if (blocks.length === 0) return <LegacyAnswerView payload={payload} />;
@@ -345,24 +437,69 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
           if (items.length === 0 && !questionPrompt) return null;
           const heading = block.type === "recommendations" ? "Recommendations" : block.type === "action_plan" ? "Action Plan" : "Scenario Options";
           const Icon = block.type === "recommendations" ? Lightbulb : ListChecks;
+          const cards = items.map((item, idx) => normalizeRecommendationItem(item, idx));
           return (
             <Card key={block.id} className="rounded-sm border-black/15">
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-1">
                 <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest">
                   <Icon className="h-4 w-4" />
                   {heading}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-4">
                 {questionPrompt && (
-                  <p className="text-sm font-medium text-black/80">{questionPrompt}</p>
+                  <p className="text-sm font-medium leading-relaxed text-black/75">{questionPrompt}</p>
                 )}
-                {items.map((item, idx) => (
-                  <div key={`${block.id}-${idx}`} className="rounded-sm border border-black/10 bg-black/[0.015] p-3">
-                    <p className="text-sm font-bold text-black">{String(item.action ?? item.label ?? `Option ${idx + 1}`)}</p>
-                    {typeof item.rationale === "string" && <p className="mt-1 text-xs text-black/70">{item.rationale}</p>}
-                    {typeof item.impact === "string" && <p className="mt-1 text-[11px] font-mono text-black/65">Impact: {item.impact}</p>}
-                    {typeof item.risk === "string" && <p className="mt-1 text-[11px] font-mono text-black/65">Risk: {item.risk}</p>}
+                {cards.map((card, idx) => (
+                  <div key={`${block.id}-${idx}`} className="rounded-sm border border-black/10 bg-white p-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-black text-[10px] font-bold text-white">
+                        {idx + 1}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="break-words text-[13px] font-bold leading-5 text-black">{card.title}</p>
+                        {card.body && (
+                          <p className="break-words text-xs leading-relaxed text-black/72">{card.body}</p>
+                        )}
+                        {card.meta.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {card.meta.map((m, mIdx) => {
+                              const toneClass = m.tone === "good"
+                                ? "border-emerald-700/20 bg-emerald-50 text-emerald-900"
+                                : m.tone === "caution"
+                                  ? "border-amber-700/20 bg-amber-50 text-amber-900"
+                                  : "border-black/15 bg-black/[0.03] text-black/80";
+                              return (
+                                <span key={`${block.id}-${idx}-meta-${mIdx}`} className={cn("inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] font-mono", toneClass)}>
+                                  <span className="uppercase tracking-wide opacity-70">{m.label}</span>
+                                  <span className="font-semibold">{m.value}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {card.bullets.length > 0 && (
+                          <div className="space-y-1">
+                            {card.bullets.map((bullet, bIdx) => (
+                              <p key={`${block.id}-${idx}-bullet-${bIdx}`} className="break-words text-[11px] leading-relaxed text-black/72">
+                                {bullet}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {card.cta && (
+                          <a
+                            href={card.cta.href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-sm border border-black/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-black hover:bg-black hover:text-white"
+                          >
+                            {card.cta.label}
+                            <ArrowUpRight className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </CardContent>

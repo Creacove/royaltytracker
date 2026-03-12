@@ -1,0 +1,4 @@
+[
+  {"id":"rights-order","question":"Which rights/mapping gaps are most likely causing payout leakage, and what is the 30-day remediation order by financial impact?","persona":"publisher","intent":"rights_leakage","required_evidence":["track_title","rights_type","net_revenue","mapping_confidence"],"expected_depth":"deep","requires_external":false,"expect_answerable":true},
+  {"id":"rights-high-usage","question":"Which tracks in this artist's catalog have high usage but low effective royalty rate by rights type this year, and what contract/data issue should we investigate first?","persona":"publisher","intent":"rights_leakage","required_evidence":["track_title","rights_type","net_revenue","mapping_confidence"],"expected_depth":"deep","requires_external":false,"expect_answerable":true}
+]

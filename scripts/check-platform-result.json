@@ -1,0 +1,357 @@
+[
+  {
+    "prompt_id": "check-platform",
+    "question": "Which platforms are creating the biggest concentration risk right now, and what 3 actions should we take next quarter?",
+    "context": {
+      "artist_key": "artist:never ending project",
+      "from_date": "2000-03-11",
+      "to_date": "2026-03-12",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 8.34,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 5,
+      "actionability": 10,
+      "risk_uncertainty": 9,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 7
+    },
+    "safety_flags": [],
+    "critical_flags": [],
+    "intent_detected": "risk_analysis",
+    "quality_outcome": "unknown",
+    "response_excerpt": "Spotify is currently the largest concentration risk, generating $110,678,240.97 in gross revenue. The second highest is from an unknown platform at $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this ...",
+    "diagnostics": {
+      "intent": "risk_analysis",
+      "confidence": "medium",
+      "used_fields": [
+        "platform",
+        "gross_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": false,
+      "data_notes": [
+        "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+      ],
+      "anomaly_flags": [
+        "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+      ],
+      "analysis_plan": {
+        "intent": "risk_analysis",
+        "metrics": [
+          "gross_revenue"
+        ],
+        "dimensions": [
+          "platform"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "top_n": 3,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "gross_revenue",
+        "platform"
+      ],
+      "chosen_columns": [
+        "platform",
+        "gross_revenue"
+      ],
+      "top_n": 3,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "passed",
+      "insufficiency_reason": null,
+      "compiler_source": "model",
+      "stage": "verify",
+      "decision_frame": {
+        "objective": "risk_control",
+        "decision_type": "strategy",
+        "horizon": "short_term",
+        "entity_scope": "artist",
+        "persona": "executive_decision_maker",
+        "asks_external_context": false
+      },
+      "evidence_fit": {
+        "score": 1,
+        "reasons": []
+      }
+    },
+    "citations_count": 0,
+    "pass": true,
+    "response": {
+      "conversation_id": "artist-bm-check-platform",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "artist:never ending project",
+        "artist_name": "Never Ending Project"
+      },
+      "answer_title": "Top Revenue Concentration Risks",
+      "executive_answer": "Spotify is currently the largest concentration risk, generating $110,678,240.97 in gross revenue. The second highest is from an unknown platform at $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope.",
+      "why_this_matters": "Given the significant revenue concentration on Spotify, it is crucial to diversify revenue streams. Consider increasing efforts on emerging platforms and exploring partnerships with the unknown platform to mitigate risks.",
+      "evidence": {
+        "row_count": 3,
+        "scanned_rows": 3,
+        "from_date": "2000-03-11",
+        "to_date": "2026-03-12",
+        "provenance": [
+          "artist_assistant_scope_v1",
+          "royalty_transactions.custom_properties"
+        ],
+        "system_confidence": "medium"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "table",
+        "columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "rows": [
+          {
+            "platform": "Spotify",
+            "gross_revenue": 110678240.9659
+          },
+          {
+            "platform": "Unknown",
+            "gross_revenue": 6917390.0556
+          },
+          {
+            "platform": "Deezer",
+            "gross_revenue": 0.033
+          }
+        ],
+        "title": "Top Revenue Concentration Risks"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=Never%20Ending%20Project",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "What strategies can we implement to diversify revenue?",
+        "How can we better understand the unknown platform?",
+        "What are the growth trends on Deezer?"
+      ],
+      "recommendations": [
+        {
+          "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+          "rationale": "Spotify is currently carrying a large share of monetized performance ($110.7M observed).",
+          "impact": "Concentrates spend where observed return is strongest.",
+          "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+        },
+        {
+          "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+          "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+          "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+          "risk": "Skipping this step can over-invest in the wrong channel."
+        },
+        {
+          "action": "Set platform-level ROI thresholds and pause channels below floor targets.",
+          "rationale": "Channel strategy is only as strong as attribution and threshold discipline.",
+          "impact": "Improves channel allocation defensibility and ROI consistency.",
+          "risk": "Weak attribution or no thresholds increases budget drift risk."
+        }
+      ],
+      "citations": [],
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "title": "Top Revenue Concentration Risks",
+            "text": "Spotify is currently the largest concentration risk, generating $110,678,240.97 in gross revenue. The second highest is from an unknown platform at $6,917,390.06, followed by Deezer with a negligible amount of $0.03. Data-quality caveat: this result is directionally useful, but signal reliability is limited in this scope."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "text": "Given the significant revenue concentration on Spotify, it is crucial to diversify revenue streams. Consider increasing efforts on emerging platforms and exploring partnerships with the unknown platform to mitigate risks."
+          }
+        },
+        {
+          "id": "table-main",
+          "type": "table",
+          "priority": 4,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "title": "Top Revenue Concentration Risks",
+          "payload": {
+            "columns": [
+              "gross_revenue",
+              "platform"
+            ],
+            "rows": [
+              {
+                "platform": "Spotify",
+                "gross_revenue": 110678240.9659
+              },
+              {
+                "platform": "Unknown",
+                "gross_revenue": 6917390.0556
+              },
+              {
+                "platform": "Deezer",
+                "gross_revenue": 0.033
+              }
+            ]
+          }
+        },
+        {
+          "id": "recommendations",
+          "type": "recommendations",
+          "priority": 5,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              {
+                "action": "Treat Spotify as the priority channel for the next cycle with platform-specific creative and playlist strategy.",
+                "rationale": "Spotify is currently carrying a large share of monetized performance ($110.7M observed).",
+                "impact": "Concentrates spend where observed return is strongest.",
+                "risk": "Concentration risk if top segment is anomaly-driven; validate against prior periods."
+              },
+              {
+                "action": "Audit and classify all 'Unknown' platform revenue before reallocating budget.",
+                "rationale": "Unattributed platform revenue blocks reliable channel ROI decisions.",
+                "impact": "Improves attribution quality and makes platform-level budget allocation defendable.",
+                "risk": "Skipping this step can over-invest in the wrong channel."
+              },
+              {
+                "action": "Set platform-level ROI thresholds and pause channels below floor targets.",
+                "rationale": "Channel strategy is only as strong as attribution and threshold discipline.",
+                "impact": "Improves channel allocation defensibility and ROI consistency.",
+                "risk": "Weak attribution or no thresholds increases budget drift risk."
+              }
+            ]
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "medium",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "table",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "table-main": "workspace_data",
+        "recommendations": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "unknowns": [
+        "Confidence is below high for this answer."
+      ],
+      "diagnostics": {
+        "intent": "risk_analysis",
+        "confidence": "medium",
+        "used_fields": [
+          "platform",
+          "gross_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": false,
+        "data_notes": [
+          "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+        ],
+        "anomaly_flags": [
+          "An unusually large revenue value was detected; confirm source mapping and currency normalization."
+        ],
+        "analysis_plan": {
+          "intent": "risk_analysis",
+          "metrics": [
+            "gross_revenue"
+          ],
+          "dimensions": [
+            "platform"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "gross_revenue",
+            "platform"
+          ],
+          "top_n": 3,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "gross_revenue",
+          "platform"
+        ],
+        "chosen_columns": [
+          "platform",
+          "gross_revenue"
+        ],
+        "top_n": 3,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "passed",
+        "insufficiency_reason": null,
+        "compiler_source": "model",
+        "stage": "verify",
+        "decision_frame": {
+          "objective": "risk_control",
+          "decision_type": "strategy",
+          "horizon": "short_term",
+          "entity_scope": "artist",
+          "persona": "executive_decision_maker",
+          "asks_external_context": false
+        },
+        "evidence_fit": {
+          "score": 1,
+          "reasons": []
+        }
+      },
+      "detected_intent": "risk_analysis",
+      "detected_persona": "executive_decision_maker",
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  }
+]

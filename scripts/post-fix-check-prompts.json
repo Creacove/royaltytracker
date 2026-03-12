@@ -1,0 +1,6 @@
+[
+  {"id":"check-1","question":"Show the top 5 tracks by net revenue this year, and explain what separates #1 from #2–#5.","persona":"label_head","intent":"track_ranking_gap","required_evidence":["track_title","net_revenue"],"expected_depth":"decision","requires_external":false,"expect_answerable":true},
+  {"id":"check-2","question":"Which platforms are creating the biggest concentration risk right now, and what 3 actions should we take next quarter?","persona":"marketer","intent":"platform_concentration","required_evidence":["platform","net_revenue"],"expected_depth":"decision","requires_external":false,"expect_answerable":true},
+  {"id":"check-3","question":"Where should this artiste tour next quarter, and what city-level checks must pass before booking dates?","persona":"tour_manager","intent":"touring_live_future","required_evidence":["territory","gross_revenue","net_revenue"],"expected_depth":"deep","requires_external":true,"expect_answerable":true},
+  {"id":"check-4","question":"Compare last 12 weeks vs prior 12 weeks by territory and platform, and tell me what changed most.","persona":"marketer","intent":"campaign_compare","required_evidence":["territory","platform","period_bucket","net_revenue"],"expected_depth":"deep","requires_external":false,"expect_answerable":true}
+]
