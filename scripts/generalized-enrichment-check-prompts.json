@@ -1,0 +1,7 @@
+[
+  {"id":"gen-1","question":"If we only had one quarter to grow this artist, where would you put the budget first and why?","persona":"executive","intent":"budget_no_regret","required_evidence":["platform","gross_revenue"],"expected_depth":"decision","requires_external":true,"expect_answerable":true},
+  {"id":"gen-2","question":"Which tracks look commercially strong but operationally risky because of rights, mapping, or payout issues?","persona":"publisher","intent":"rights_leakage","required_evidence":["track_title","gross_revenue","net_revenue","mapping_confidence"],"expected_depth":"deep","requires_external":true,"expect_answerable":true},
+  {"id":"gen-3","question":"Which platform is most worth defending right now, and which one is most worth deprioritizing?","persona":"marketer","intent":"platform_concentration","required_evidence":["platform","gross_revenue"],"expected_depth":"decision","requires_external":true,"expect_answerable":true},
+  {"id":"gen-4","question":"What is the single weakest part of this artist’s revenue picture right now, and what would you fix in the next 30 days?","persona":"executive","intent":"stop_doing","required_evidence":["track_title","net_revenue"],"expected_depth":"decision","requires_external":true,"expect_answerable":true},
+  {"id":"gen-5","question":"Where should this artiste tour and why?","persona":"tour_manager","intent":"touring_live","required_evidence":["territory","gross_revenue"],"expected_depth":"deep","requires_external":true,"expect_answerable":true}
+]

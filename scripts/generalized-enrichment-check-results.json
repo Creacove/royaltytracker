@@ -1,15 +1,15 @@
 [
   {
-    "prompt_id": "check-1",
-    "question": "Show the top 5 tracks by net revenue this year, and explain what separates #1 from #2�#5.",
+    "prompt_id": "gen-1",
+    "question": "If we only had one quarter to grow this artist, where would you put the budget first and why?",
     "context": {
-      "artist_key": "Noah Adams",
-      "from_date": "2020-03-13",
+      "artist_key": "Miles Monroe",
+      "from_date": "2000-03-13",
       "to_date": "2026-03-13",
       "conversation_seed": "artist-bm"
     },
     "status": "ok",
-    "quality_score": 4.59,
+    "quality_score": 4.34,
     "quality_breakdown": {
       "directness": 10,
       "evidence_fidelity": 0,
@@ -17,260 +17,35 @@
       "risk_uncertainty": 4,
       "recommendation_relevance": 9,
       "consistency": 8,
-      "enrichment_usefulness": 7
+      "enrichment_usefulness": 2
     },
-    "safety_flags": [],
+    "safety_flags": [
+      "missing_external_citations"
+    ],
     "critical_flags": [],
-    "intent_detected": "ranking",
+    "intent_detected": "top_entities",
     "quality_outcome": "unknown",
     "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
     "diagnostics": {
-      "intent": "ranking",
+      "intent": "top_entities",
       "confidence": "high",
       "used_fields": [
-        "track_title",
-        "net_revenue"
-      ],
-      "missing_fields": [],
-      "strict_mode": true,
-      "analysis_plan": {
-        "intent": "ranking",
-        "metrics": [
-          "net_revenue"
-        ],
-        "dimensions": [
-          "track_title"
-        ],
-        "filters": [
-          {
-            "column": "__relative_window__",
-            "op": "=",
-            "value": "1:year"
-          }
-        ],
-        "grain": "none",
-        "time_window": "implicit",
-        "confidence": "high",
-        "required_columns": [
-          "artist_name",
-          "track_key",
-          "track_title",
-          "net_revenue"
-        ],
-        "top_n": 5,
-        "sort_by": "net_revenue",
-        "sort_dir": "desc"
-      },
-      "required_columns": [
         "artist_name",
-        "track_key",
-        "track_title",
-        "net_revenue"
-      ],
-      "top_n": 5,
-      "sort_by": "net_revenue",
-      "sort_dir": "desc",
-      "verifier_status": "failed",
-      "insufficiency_reason": "zero_scope_rows",
-      "stage": "verify"
-    },
-    "citations_count": 0,
-    "pass": false,
-    "response": {
-      "conversation_id": "artist-bm-check-1",
-      "resolved_mode": "artist",
-      "resolved_entities": {
-        "artist_key": "Noah Adams"
-      },
-      "answer_title": "No Data Found",
-      "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
-      "why_this_matters": "There is no transaction data in scope to answer this question.",
-      "evidence": {
-        "row_count": 0,
-        "scanned_rows": 0,
-        "from_date": "2020-03-13",
-        "to_date": "2026-03-13",
-        "provenance": [
-          "get_artist_assistant_catalog_v1"
-        ],
-        "system_confidence": "low"
-      },
-      "kpis": [],
-      "visual": {
-        "type": "none"
-      },
-      "actions": [
-        {
-          "label": "Open Artist Transactions",
-          "href": "/transactions?q=",
-          "kind": "primary"
-        },
-        {
-          "label": "Open Reviews",
-          "href": "/review-queue",
-          "kind": "secondary"
-        },
-        {
-          "label": "Open Statements",
-          "href": "/reports",
-          "kind": "ghost"
-        }
-      ],
-      "follow_up_questions": [
-        "Try a broader date range.",
-        "Ask for net revenue by platform or territory.",
-        "Check data mapping completeness for this artist."
-      ],
-      "diagnostics": {
-        "intent": "ranking",
-        "confidence": "high",
-        "used_fields": [
-          "track_title",
-          "net_revenue"
-        ],
-        "missing_fields": [],
-        "strict_mode": true,
-        "analysis_plan": {
-          "intent": "ranking",
-          "metrics": [
-            "net_revenue"
-          ],
-          "dimensions": [
-            "track_title"
-          ],
-          "filters": [
-            {
-              "column": "__relative_window__",
-              "op": "=",
-              "value": "1:year"
-            }
-          ],
-          "grain": "none",
-          "time_window": "implicit",
-          "confidence": "high",
-          "required_columns": [
-            "artist_name",
-            "track_key",
-            "track_title",
-            "net_revenue"
-          ],
-          "top_n": 5,
-          "sort_by": "net_revenue",
-          "sort_dir": "desc"
-        },
-        "required_columns": [
-          "artist_name",
-          "track_key",
-          "track_title",
-          "net_revenue"
-        ],
-        "top_n": 5,
-        "sort_by": "net_revenue",
-        "sort_dir": "desc",
-        "verifier_status": "failed",
-        "insufficiency_reason": "zero_scope_rows",
-        "stage": "verify"
-      },
-      "recommendations": [],
-      "detected_intent": "ranking",
-      "detected_persona": "executive_decision_maker",
-      "answer_blocks": [
-        {
-          "id": "direct-answer",
-          "type": "direct_answer",
-          "priority": 1,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "title": "No Data Found",
-            "text": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions."
-          }
-        },
-        {
-          "id": "deep-summary",
-          "type": "deep_summary",
-          "priority": 2,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "text": "There is no transaction data in scope to answer this question."
-          }
-        },
-        {
-          "id": "risk-flags",
-          "type": "risk_flags",
-          "priority": 8,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "items": [
-              "Confidence is not high; validate with broader scope before major spend decisions.",
-              "Low row count can hide market variability.",
-              "Missing fields detected: track_title, net_revenue."
-            ]
-          }
-        }
-      ],
-      "render_hints": {
-        "layout": "adaptive_card_stack",
-        "density": "compact",
-        "visual_preference": "none",
-        "show_confidence_badges": true
-      },
-      "evidence_map": {
-        "direct-answer": "workspace_data",
-        "deep-summary": "workspace_data",
-        "risk-flags": "workspace_data"
-      },
-      "citations": [],
-      "unknowns": [
-        "Confidence is below high for this answer.",
-        "No validated rows were returned for this scope."
-      ],
-      "runtime_patch": "router-hotfix-2026-03-12-0228z"
-    }
-  },
-  {
-    "prompt_id": "check-2",
-    "question": "Which platforms are creating the biggest concentration risk right now, and what 3 actions should we take next quarter?",
-    "context": {
-      "artist_key": "Noah Adams",
-      "from_date": "2020-03-13",
-      "to_date": "2026-03-13",
-      "conversation_seed": "artist-bm"
-    },
-    "status": "ok",
-    "quality_score": 4.59,
-    "quality_breakdown": {
-      "directness": 10,
-      "evidence_fidelity": 0,
-      "actionability": 0,
-      "risk_uncertainty": 4,
-      "recommendation_relevance": 9,
-      "consistency": 8,
-      "enrichment_usefulness": 7
-    },
-    "safety_flags": [],
-    "critical_flags": [],
-    "intent_detected": "risk_analysis",
-    "quality_outcome": "unknown",
-    "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
-    "diagnostics": {
-      "intent": "risk_analysis",
-      "confidence": "high",
-      "used_fields": [
         "platform",
+        "territory",
         "gross_revenue"
       ],
       "missing_fields": [],
       "strict_mode": true,
       "analysis_plan": {
-        "intent": "risk_analysis",
+        "intent": "top_entities",
         "metrics": [
           "gross_revenue"
         ],
         "dimensions": [
-          "platform"
+          "artist_name",
+          "platform",
+          "territory"
         ],
         "filters": [],
         "grain": "none",
@@ -278,17 +53,21 @@
         "confidence": "high",
         "required_columns": [
           "gross_revenue",
-          "platform"
+          "artist_name",
+          "platform",
+          "territory"
         ],
-        "top_n": 3,
+        "top_n": 5,
         "sort_by": "gross_revenue",
         "sort_dir": "desc"
       },
       "required_columns": [
         "gross_revenue",
-        "platform"
+        "artist_name",
+        "platform",
+        "territory"
       ],
-      "top_n": 3,
+      "top_n": 5,
       "sort_by": "gross_revenue",
       "sort_dir": "desc",
       "verifier_status": "failed",
@@ -298,10 +77,10 @@
     "citations_count": 0,
     "pass": false,
     "response": {
-      "conversation_id": "artist-bm-check-2",
+      "conversation_id": "artist-bm-gen-1",
       "resolved_mode": "artist",
       "resolved_entities": {
-        "artist_key": "Noah Adams"
+        "artist_key": "Miles Monroe"
       },
       "answer_title": "No Data Found",
       "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
@@ -309,7 +88,7 @@
       "evidence": {
         "row_count": 0,
         "scanned_rows": 0,
-        "from_date": "2020-03-13",
+        "from_date": "2000-03-13",
         "to_date": "2026-03-13",
         "provenance": [
           "get_artist_assistant_catalog_v1"
@@ -343,21 +122,25 @@
         "Check data mapping completeness for this artist."
       ],
       "diagnostics": {
-        "intent": "risk_analysis",
+        "intent": "top_entities",
         "confidence": "high",
         "used_fields": [
+          "artist_name",
           "platform",
+          "territory",
           "gross_revenue"
         ],
         "missing_fields": [],
         "strict_mode": true,
         "analysis_plan": {
-          "intent": "risk_analysis",
+          "intent": "top_entities",
           "metrics": [
             "gross_revenue"
           ],
           "dimensions": [
-            "platform"
+            "artist_name",
+            "platform",
+            "territory"
           ],
           "filters": [],
           "grain": "none",
@@ -365,17 +148,21 @@
           "confidence": "high",
           "required_columns": [
             "gross_revenue",
-            "platform"
+            "artist_name",
+            "platform",
+            "territory"
           ],
-          "top_n": 3,
+          "top_n": 5,
           "sort_by": "gross_revenue",
           "sort_dir": "desc"
         },
         "required_columns": [
           "gross_revenue",
-          "platform"
+          "artist_name",
+          "platform",
+          "territory"
         ],
-        "top_n": 3,
+        "top_n": 5,
         "sort_by": "gross_revenue",
         "sort_dir": "desc",
         "verifier_status": "failed",
@@ -383,7 +170,7 @@
         "stage": "verify"
       },
       "recommendations": [],
-      "detected_intent": "risk_analysis",
+      "detected_intent": "top_entities",
       "detected_persona": "executive_decision_maker",
       "answer_blocks": [
         {
@@ -442,11 +229,686 @@
     }
   },
   {
-    "prompt_id": "check-3",
-    "question": "Where should this artiste tour next quarter, and what city-level checks must pass before booking dates?",
+    "prompt_id": "gen-2",
+    "question": "Which tracks look commercially strong but operationally risky because of rights, mapping, or payout issues?",
     "context": {
-      "artist_key": "Noah Adams",
-      "from_date": "2020-03-13",
+      "artist_key": "Miles Monroe",
+      "from_date": "2000-03-13",
+      "to_date": "2026-03-13",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 4.34,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "missing_external_citations"
+    ],
+    "critical_flags": [],
+    "intent_detected": "quality_risk_impact",
+    "quality_outcome": "unknown",
+    "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+    "diagnostics": {
+      "intent": "quality_risk_impact",
+      "confidence": "high",
+      "used_fields": [
+        "track_title",
+        "platform",
+        "gross_revenue",
+        "net_revenue",
+        "mapping_confidence"
+      ],
+      "missing_fields": [],
+      "strict_mode": true,
+      "analysis_plan": {
+        "intent": "quality_risk_impact",
+        "metrics": [
+          "gross_revenue",
+          "net_revenue",
+          "mapping_confidence"
+        ],
+        "dimensions": [
+          "track_title",
+          "platform"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "gross_revenue",
+          "track_title",
+          "platform",
+          "net_revenue",
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "gross_revenue",
+        "track_title",
+        "platform",
+        "net_revenue",
+        "mapping_confidence",
+        "validation_status"
+      ],
+      "top_n": 1,
+      "sort_by": "gross_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "failed",
+      "insufficiency_reason": "zero_scope_rows",
+      "stage": "verify"
+    },
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "conversation_id": "artist-bm-gen-2",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "Miles Monroe"
+      },
+      "answer_title": "No Data Found",
+      "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+      "why_this_matters": "There is no transaction data in scope to answer this question.",
+      "evidence": {
+        "row_count": 0,
+        "scanned_rows": 0,
+        "from_date": "2000-03-13",
+        "to_date": "2026-03-13",
+        "provenance": [
+          "get_artist_assistant_catalog_v1"
+        ],
+        "system_confidence": "low"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "none"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "Try a broader date range.",
+        "Ask for net revenue by platform or territory.",
+        "Check data mapping completeness for this artist."
+      ],
+      "diagnostics": {
+        "intent": "quality_risk_impact",
+        "confidence": "high",
+        "used_fields": [
+          "track_title",
+          "platform",
+          "gross_revenue",
+          "net_revenue",
+          "mapping_confidence"
+        ],
+        "missing_fields": [],
+        "strict_mode": true,
+        "analysis_plan": {
+          "intent": "quality_risk_impact",
+          "metrics": [
+            "gross_revenue",
+            "net_revenue",
+            "mapping_confidence"
+          ],
+          "dimensions": [
+            "track_title",
+            "platform"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "gross_revenue",
+            "track_title",
+            "platform",
+            "net_revenue",
+            "mapping_confidence",
+            "validation_status"
+          ],
+          "top_n": 1,
+          "sort_by": "gross_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "gross_revenue",
+          "track_title",
+          "platform",
+          "net_revenue",
+          "mapping_confidence",
+          "validation_status"
+        ],
+        "top_n": 1,
+        "sort_by": "gross_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "failed",
+        "insufficiency_reason": "zero_scope_rows",
+        "stage": "verify"
+      },
+      "recommendations": [],
+      "detected_intent": "quality_risk_impact",
+      "detected_persona": "executive_decision_maker",
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "title": "No Data Found",
+            "text": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "text": "There is no transaction data in scope to answer this question."
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "Missing fields detected: mapping_confidence, validation_status."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "none",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "citations": [],
+      "unknowns": [
+        "Confidence is below high for this answer.",
+        "No validated rows were returned for this scope."
+      ],
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "gen-3",
+    "question": "Which platform is most worth defending right now, and which one is most worth deprioritizing?",
+    "context": {
+      "artist_key": "Miles Monroe",
+      "from_date": "2000-03-13",
+      "to_date": "2026-03-13",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 4.34,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "missing_external_citations"
+    ],
+    "critical_flags": [],
+    "intent_detected": "ranking",
+    "quality_outcome": "unknown",
+    "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+    "diagnostics": {
+      "intent": "ranking",
+      "confidence": "high",
+      "used_fields": [
+        "platform",
+        "net_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": true,
+      "analysis_plan": {
+        "intent": "ranking",
+        "metrics": [
+          "net_revenue"
+        ],
+        "dimensions": [
+          "platform"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "net_revenue",
+          "platform"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc"
+      },
+      "required_columns": [
+        "net_revenue",
+        "platform"
+      ],
+      "top_n": 1,
+      "sort_by": "net_revenue",
+      "sort_dir": "desc",
+      "verifier_status": "failed",
+      "insufficiency_reason": "zero_scope_rows",
+      "stage": "verify"
+    },
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "conversation_id": "artist-bm-gen-3",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "Miles Monroe"
+      },
+      "answer_title": "No Data Found",
+      "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+      "why_this_matters": "There is no transaction data in scope to answer this question.",
+      "evidence": {
+        "row_count": 0,
+        "scanned_rows": 0,
+        "from_date": "2000-03-13",
+        "to_date": "2026-03-13",
+        "provenance": [
+          "get_artist_assistant_catalog_v1"
+        ],
+        "system_confidence": "low"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "none"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "Try a broader date range.",
+        "Ask for net revenue by platform or territory.",
+        "Check data mapping completeness for this artist."
+      ],
+      "diagnostics": {
+        "intent": "ranking",
+        "confidence": "high",
+        "used_fields": [
+          "platform",
+          "net_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": true,
+        "analysis_plan": {
+          "intent": "ranking",
+          "metrics": [
+            "net_revenue"
+          ],
+          "dimensions": [
+            "platform"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "net_revenue",
+            "platform"
+          ],
+          "top_n": 1,
+          "sort_by": "net_revenue",
+          "sort_dir": "desc"
+        },
+        "required_columns": [
+          "net_revenue",
+          "platform"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "desc",
+        "verifier_status": "failed",
+        "insufficiency_reason": "zero_scope_rows",
+        "stage": "verify"
+      },
+      "recommendations": [],
+      "detected_intent": "ranking",
+      "detected_persona": "executive_decision_maker",
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "title": "No Data Found",
+            "text": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "text": "There is no transaction data in scope to answer this question."
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "Missing fields detected: net_revenue."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "none",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "citations": [],
+      "unknowns": [
+        "Confidence is below high for this answer.",
+        "No validated rows were returned for this scope."
+      ],
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "gen-4",
+    "question": "What is the single weakest part of this artist�s revenue picture right now, and what would you fix in the next 30 days?",
+    "context": {
+      "artist_key": "Miles Monroe",
+      "from_date": "2000-03-13",
+      "to_date": "2026-03-13",
+      "conversation_seed": "artist-bm"
+    },
+    "status": "ok",
+    "quality_score": 4.34,
+    "quality_breakdown": {
+      "directness": 10,
+      "evidence_fidelity": 0,
+      "actionability": 0,
+      "risk_uncertainty": 4,
+      "recommendation_relevance": 9,
+      "consistency": 8,
+      "enrichment_usefulness": 2
+    },
+    "safety_flags": [
+      "missing_external_citations"
+    ],
+    "critical_flags": [],
+    "intent_detected": "worst",
+    "quality_outcome": "unknown",
+    "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+    "diagnostics": {
+      "intent": "worst",
+      "confidence": "high",
+      "used_fields": [
+        "artist_name",
+        "track_title",
+        "net_revenue"
+      ],
+      "missing_fields": [],
+      "strict_mode": true,
+      "analysis_plan": {
+        "intent": "worst",
+        "metrics": [
+          "net_revenue"
+        ],
+        "dimensions": [
+          "artist_name",
+          "track_title"
+        ],
+        "filters": [],
+        "grain": "none",
+        "time_window": "implicit",
+        "confidence": "high",
+        "required_columns": [
+          "net_revenue",
+          "artist_name",
+          "track_title"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "asc"
+      },
+      "required_columns": [
+        "net_revenue",
+        "artist_name",
+        "track_title"
+      ],
+      "top_n": 1,
+      "sort_by": "net_revenue",
+      "sort_dir": "asc",
+      "verifier_status": "failed",
+      "insufficiency_reason": "zero_scope_rows",
+      "stage": "verify"
+    },
+    "citations_count": 0,
+    "pass": false,
+    "response": {
+      "conversation_id": "artist-bm-gen-4",
+      "resolved_mode": "artist",
+      "resolved_entities": {
+        "artist_key": "Miles Monroe"
+      },
+      "answer_title": "No Data Found",
+      "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
+      "why_this_matters": "There is no transaction data in scope to answer this question.",
+      "evidence": {
+        "row_count": 0,
+        "scanned_rows": 0,
+        "from_date": "2000-03-13",
+        "to_date": "2026-03-13",
+        "provenance": [
+          "get_artist_assistant_catalog_v1"
+        ],
+        "system_confidence": "low"
+      },
+      "kpis": [],
+      "visual": {
+        "type": "none"
+      },
+      "actions": [
+        {
+          "label": "Open Artist Transactions",
+          "href": "/transactions?q=",
+          "kind": "primary"
+        },
+        {
+          "label": "Open Reviews",
+          "href": "/review-queue",
+          "kind": "secondary"
+        },
+        {
+          "label": "Open Statements",
+          "href": "/reports",
+          "kind": "ghost"
+        }
+      ],
+      "follow_up_questions": [
+        "Try a broader date range.",
+        "Ask for net revenue by platform or territory.",
+        "Check data mapping completeness for this artist."
+      ],
+      "diagnostics": {
+        "intent": "worst",
+        "confidence": "high",
+        "used_fields": [
+          "artist_name",
+          "track_title",
+          "net_revenue"
+        ],
+        "missing_fields": [],
+        "strict_mode": true,
+        "analysis_plan": {
+          "intent": "worst",
+          "metrics": [
+            "net_revenue"
+          ],
+          "dimensions": [
+            "artist_name",
+            "track_title"
+          ],
+          "filters": [],
+          "grain": "none",
+          "time_window": "implicit",
+          "confidence": "high",
+          "required_columns": [
+            "net_revenue",
+            "artist_name",
+            "track_title"
+          ],
+          "top_n": 1,
+          "sort_by": "net_revenue",
+          "sort_dir": "asc"
+        },
+        "required_columns": [
+          "net_revenue",
+          "artist_name",
+          "track_title"
+        ],
+        "top_n": 1,
+        "sort_by": "net_revenue",
+        "sort_dir": "asc",
+        "verifier_status": "failed",
+        "insufficiency_reason": "zero_scope_rows",
+        "stage": "verify"
+      },
+      "recommendations": [],
+      "detected_intent": "worst",
+      "detected_persona": "executive_decision_maker",
+      "answer_blocks": [
+        {
+          "id": "direct-answer",
+          "type": "direct_answer",
+          "priority": 1,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "title": "No Data Found",
+            "text": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions."
+          }
+        },
+        {
+          "id": "deep-summary",
+          "type": "deep_summary",
+          "priority": 2,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "text": "There is no transaction data in scope to answer this question."
+          }
+        },
+        {
+          "id": "risk-flags",
+          "type": "risk_flags",
+          "priority": 8,
+          "source": "workspace_data",
+          "confidence": "low",
+          "payload": {
+            "items": [
+              "Confidence is not high; validate with broader scope before major spend decisions.",
+              "Low row count can hide market variability.",
+              "Missing fields detected: net_revenue, track_title."
+            ]
+          }
+        }
+      ],
+      "render_hints": {
+        "layout": "adaptive_card_stack",
+        "density": "compact",
+        "visual_preference": "none",
+        "show_confidence_badges": true
+      },
+      "evidence_map": {
+        "direct-answer": "workspace_data",
+        "deep-summary": "workspace_data",
+        "risk-flags": "workspace_data"
+      },
+      "citations": [],
+      "unknowns": [
+        "Confidence is below high for this answer.",
+        "No validated rows were returned for this scope."
+      ],
+      "runtime_patch": "router-hotfix-2026-03-12-0228z"
+    }
+  },
+  {
+    "prompt_id": "gen-5",
+    "question": "Where should this artiste tour and why?",
+    "context": {
+      "artist_key": "Miles Monroe",
+      "from_date": "2000-03-13",
       "to_date": "2026-03-13",
       "conversation_seed": "artist-bm"
     },
@@ -473,6 +935,7 @@
       "confidence": "high",
       "used_fields": [
         "territory",
+        "artist_name",
         "gross_revenue"
       ],
       "missing_fields": [],
@@ -483,7 +946,8 @@
           "gross_revenue"
         ],
         "dimensions": [
-          "territory"
+          "territory",
+          "artist_name"
         ],
         "filters": [],
         "grain": "none",
@@ -513,10 +977,10 @@
     "citations_count": 0,
     "pass": false,
     "response": {
-      "conversation_id": "artist-bm-check-3",
+      "conversation_id": "artist-bm-gen-5",
       "resolved_mode": "artist",
       "resolved_entities": {
-        "artist_key": "Noah Adams"
+        "artist_key": "Miles Monroe"
       },
       "answer_title": "No Data Found",
       "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
@@ -524,7 +988,7 @@
       "evidence": {
         "row_count": 0,
         "scanned_rows": 0,
-        "from_date": "2020-03-13",
+        "from_date": "2000-03-13",
         "to_date": "2026-03-13",
         "provenance": [
           "get_artist_assistant_catalog_v1"
@@ -562,6 +1026,7 @@
         "confidence": "high",
         "used_fields": [
           "territory",
+          "artist_name",
           "gross_revenue"
         ],
         "missing_fields": [],
@@ -572,7 +1037,8 @@
             "gross_revenue"
           ],
           "dimensions": [
-            "territory"
+            "territory",
+            "artist_name"
           ],
           "filters": [],
           "grain": "none",
@@ -635,246 +1101,6 @@
               "Confidence is not high; validate with broader scope before major spend decisions.",
               "Low row count can hide market variability.",
               "Missing fields detected: gross_revenue, territory."
-            ]
-          }
-        }
-      ],
-      "render_hints": {
-        "layout": "adaptive_card_stack",
-        "density": "compact",
-        "visual_preference": "none",
-        "show_confidence_badges": true
-      },
-      "evidence_map": {
-        "direct-answer": "workspace_data",
-        "deep-summary": "workspace_data",
-        "risk-flags": "workspace_data"
-      },
-      "citations": [],
-      "unknowns": [
-        "Confidence is below high for this answer.",
-        "No validated rows were returned for this scope."
-      ],
-      "runtime_patch": "router-hotfix-2026-03-12-0228z"
-    }
-  },
-  {
-    "prompt_id": "check-4",
-    "question": "Compare last 12 weeks vs prior 12 weeks by territory and platform, and tell me what changed most.",
-    "context": {
-      "artist_key": "Noah Adams",
-      "from_date": "2020-03-13",
-      "to_date": "2026-03-13",
-      "conversation_seed": "artist-bm"
-    },
-    "status": "ok",
-    "quality_score": 4.59,
-    "quality_breakdown": {
-      "directness": 10,
-      "evidence_fidelity": 0,
-      "actionability": 0,
-      "risk_uncertainty": 4,
-      "recommendation_relevance": 9,
-      "consistency": 8,
-      "enrichment_usefulness": 7
-    },
-    "safety_flags": [],
-    "critical_flags": [],
-    "intent_detected": "period_comparison",
-    "quality_outcome": "unknown",
-    "response_excerpt": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
-    "diagnostics": {
-      "intent": "period_comparison",
-      "confidence": "high",
-      "used_fields": [
-        "territory",
-        "platform",
-        "net_revenue"
-      ],
-      "missing_fields": [],
-      "strict_mode": true,
-      "analysis_plan": {
-        "intent": "period_comparison",
-        "metrics": [
-          "net_revenue"
-        ],
-        "dimensions": [
-          "territory",
-          "platform"
-        ],
-        "filters": [
-          {
-            "column": "__period_compare__",
-            "op": "=",
-            "value": "12:week"
-          },
-          {
-            "column": "__relative_window__",
-            "op": "=",
-            "value": "12:week"
-          }
-        ],
-        "grain": "none",
-        "time_window": "implicit",
-        "confidence": "high",
-        "required_columns": [
-          "net_revenue",
-          "territory",
-          "platform"
-        ],
-        "top_n": 1,
-        "sort_by": "net_revenue",
-        "sort_dir": "desc"
-      },
-      "required_columns": [
-        "net_revenue",
-        "territory",
-        "platform"
-      ],
-      "top_n": 1,
-      "sort_by": "net_revenue",
-      "sort_dir": "desc",
-      "verifier_status": "failed",
-      "insufficiency_reason": "zero_scope_rows",
-      "stage": "verify"
-    },
-    "citations_count": 0,
-    "pass": false,
-    "response": {
-      "conversation_id": "artist-bm-check-4",
-      "resolved_mode": "artist",
-      "resolved_entities": {
-        "artist_key": "Noah Adams"
-      },
-      "answer_title": "No Data Found",
-      "executive_answer": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions.",
-      "why_this_matters": "There is no transaction data in scope to answer this question.",
-      "evidence": {
-        "row_count": 0,
-        "scanned_rows": 0,
-        "from_date": "2020-03-13",
-        "to_date": "2026-03-13",
-        "provenance": [
-          "get_artist_assistant_catalog_v1"
-        ],
-        "system_confidence": "low"
-      },
-      "kpis": [],
-      "visual": {
-        "type": "none"
-      },
-      "actions": [
-        {
-          "label": "Open Artist Transactions",
-          "href": "/transactions?q=",
-          "kind": "primary"
-        },
-        {
-          "label": "Open Reviews",
-          "href": "/review-queue",
-          "kind": "secondary"
-        },
-        {
-          "label": "Open Statements",
-          "href": "/reports",
-          "kind": "ghost"
-        }
-      ],
-      "follow_up_questions": [
-        "Try a broader date range.",
-        "Ask for net revenue by platform or territory.",
-        "Check data mapping completeness for this artist."
-      ],
-      "diagnostics": {
-        "intent": "period_comparison",
-        "confidence": "high",
-        "used_fields": [
-          "territory",
-          "platform",
-          "net_revenue"
-        ],
-        "missing_fields": [],
-        "strict_mode": true,
-        "analysis_plan": {
-          "intent": "period_comparison",
-          "metrics": [
-            "net_revenue"
-          ],
-          "dimensions": [
-            "territory",
-            "platform"
-          ],
-          "filters": [
-            {
-              "column": "__period_compare__",
-              "op": "=",
-              "value": "12:week"
-            },
-            {
-              "column": "__relative_window__",
-              "op": "=",
-              "value": "12:week"
-            }
-          ],
-          "grain": "none",
-          "time_window": "implicit",
-          "confidence": "high",
-          "required_columns": [
-            "net_revenue",
-            "territory",
-            "platform"
-          ],
-          "top_n": 1,
-          "sort_by": "net_revenue",
-          "sort_dir": "desc"
-        },
-        "required_columns": [
-          "net_revenue",
-          "territory",
-          "platform"
-        ],
-        "top_n": 1,
-        "sort_by": "net_revenue",
-        "sort_dir": "desc",
-        "verifier_status": "failed",
-        "insufficiency_reason": "zero_scope_rows",
-        "stage": "verify"
-      },
-      "recommendations": [],
-      "detected_intent": "period_comparison",
-      "detected_persona": "executive_decision_maker",
-      "answer_blocks": [
-        {
-          "id": "direct-answer",
-          "type": "direct_answer",
-          "priority": 1,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "title": "No Data Found",
-            "text": "No artist-scoped rows were found for the selected context and date range. Try expanding the date range or check if this artist has imported transactions."
-          }
-        },
-        {
-          "id": "deep-summary",
-          "type": "deep_summary",
-          "priority": 2,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "text": "There is no transaction data in scope to answer this question."
-          }
-        },
-        {
-          "id": "risk-flags",
-          "type": "risk_flags",
-          "priority": 8,
-          "source": "workspace_data",
-          "confidence": "low",
-          "payload": {
-            "items": [
-              "Confidence is not high; validate with broader scope before major spend decisions.",
-              "Low row count can hide market variability."
             ]
           }
         }

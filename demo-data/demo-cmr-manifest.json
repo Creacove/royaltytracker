@@ -1,0 +1,468 @@
+{
+  "generated_at": "2026-03-12T14:24:06.169Z",
+  "config": {
+    "rowsPerFile": 500,
+    "files": 3,
+    "artists": 10,
+    "from": "2019-01-01",
+    "to": "2026-03-12",
+    "profile": "demo-realistic",
+    "seed": "20260312",
+    "anomaly_rate": 0.05,
+    "headers": [
+      "Report Item",
+      "Report Date",
+      "Sales Start",
+      "Sales End",
+      "Track Title",
+      "Track Artist",
+      "Artist Name",
+      "Release Title",
+      "Release UPC",
+      "ISRC",
+      "ISWC",
+      "Label",
+      "Publisher",
+      "Channel",
+      "Platform",
+      "Country",
+      "Territory",
+      "Config Type",
+      "Usage Type",
+      "Quantity",
+      "Unit",
+      "Gross Revenue",
+      "Commission",
+      "Net Revenue",
+      "Publisher Share",
+      "Royalty Revenue",
+      "Amount in Original Currency",
+      "Original Currency",
+      "Amount in Reporting Currency",
+      "Reporting Currency",
+      "Exchange Rate",
+      "Rights Type",
+      "Contract ID",
+      "Deal ID",
+      "License Type",
+      "Distribution Cycle",
+      "Society",
+      "Claim Status"
+    ]
+  },
+  "roster": {
+    "artists": [
+      {
+        "artist_name": "Noah Hughes",
+        "track_count": 11,
+        "release_count": 3
+      },
+      {
+        "artist_name": "Zara Hughes",
+        "track_count": 11,
+        "release_count": 4
+      },
+      {
+        "artist_name": "Nia Santos",
+        "track_count": 13,
+        "release_count": 5
+      },
+      {
+        "artist_name": "Jordan Santos",
+        "track_count": 8,
+        "release_count": 2
+      },
+      {
+        "artist_name": "Jordan Hughes",
+        "track_count": 11,
+        "release_count": 4
+      },
+      {
+        "artist_name": "Zara Nolan",
+        "track_count": 6,
+        "release_count": 5
+      },
+      {
+        "artist_name": "Jude Adebayo",
+        "track_count": 11,
+        "release_count": 3
+      },
+      {
+        "artist_name": "Leo Fischer",
+        "track_count": 7,
+        "release_count": 2
+      },
+      {
+        "artist_name": "Miles Monroe",
+        "track_count": 14,
+        "release_count": 4
+      },
+      {
+        "artist_name": "Noah Adams",
+        "track_count": 9,
+        "release_count": 3
+      }
+    ],
+    "total_tracks": 101
+  },
+  "files": [
+    {
+      "file_name": "demo-cmr-01_dsp_streaming.xlsx",
+      "profile": "dsp_streaming",
+      "rows": 500,
+      "artists_count": 10,
+      "tracks_count": 101,
+      "date_min": "2019-01-01",
+      "date_max": "2026-06-24",
+      "platform_mix": [
+        {
+          "value": "Spotify",
+          "count": 156
+        },
+        {
+          "value": "Apple Music",
+          "count": 100
+        },
+        {
+          "value": "YouTube",
+          "count": 93
+        },
+        {
+          "value": "Amazon Music",
+          "count": 63
+        },
+        {
+          "value": "TikTok Music",
+          "count": 42
+        },
+        {
+          "value": "Deezer",
+          "count": 40
+        },
+        {
+          "value": "AppleMusic",
+          "count": 3
+        },
+        {
+          "value": "Spotify Premium",
+          "count": 1
+        }
+      ],
+      "territory_mix": [
+        {
+          "value": "US",
+          "count": 93
+        },
+        {
+          "value": "GB",
+          "count": 56
+        },
+        {
+          "value": "CA",
+          "count": 42
+        },
+        {
+          "value": "NG",
+          "count": 40
+        },
+        {
+          "value": "FR",
+          "count": 37
+        },
+        {
+          "value": "DE",
+          "count": 35
+        },
+        {
+          "value": "ZA",
+          "count": 32
+        },
+        {
+          "value": "JP",
+          "count": 31
+        }
+      ],
+      "currency_mix": [
+        {
+          "value": "USD",
+          "count": 217
+        },
+        {
+          "value": "EUR",
+          "count": 96
+        },
+        {
+          "value": "GBP",
+          "count": 60
+        },
+        {
+          "value": "ZAR",
+          "count": 49
+        },
+        {
+          "value": "NGN",
+          "count": 41
+        },
+        {
+          "value": "JPY",
+          "count": 37
+        }
+      ],
+      "anomalies": {
+        "gross_net_mismatch": 7,
+        "missing_non_critical": 6,
+        "mapping_friction_alias": 6,
+        "unknown_classification": 6
+      },
+      "anomaly_rows": 25,
+      "financial_pass_rate": 0.986,
+      "date_validity_pass_rate": 1,
+      "invalid_financial_row_rate": 0.014,
+      "required_coverage": {
+        "Track Title": 1,
+        "Platform": 1,
+        "Territory": 1
+      }
+    },
+    {
+      "file_name": "demo-cmr-02_public_performance.xlsx",
+      "profile": "public_performance",
+      "rows": 500,
+      "artists_count": 10,
+      "tracks_count": 100,
+      "date_min": "2019-01-01",
+      "date_max": "2026-06-28",
+      "platform_mix": [
+        {
+          "value": "Broadcast Radio",
+          "count": 182
+        },
+        {
+          "value": "Public Venue",
+          "count": 105
+        },
+        {
+          "value": "Television",
+          "count": 92
+        },
+        {
+          "value": "YouTube",
+          "count": 49
+        },
+        {
+          "value": "Spotify",
+          "count": 44
+        },
+        {
+          "value": "Apple Music",
+          "count": 23
+        },
+        {
+          "value": "Amazon Unlimited",
+          "count": 2
+        },
+        {
+          "value": "YT Music",
+          "count": 1
+        }
+      ],
+      "territory_mix": [
+        {
+          "value": "US",
+          "count": 79
+        },
+        {
+          "value": "GB",
+          "count": 70
+        },
+        {
+          "value": "DE",
+          "count": 46
+        },
+        {
+          "value": "FR",
+          "count": 37
+        },
+        {
+          "value": "NG",
+          "count": 32
+        },
+        {
+          "value": "CA",
+          "count": 29
+        },
+        {
+          "value": "JP",
+          "count": 29
+        },
+        {
+          "value": "NL",
+          "count": 26
+        }
+      ],
+      "currency_mix": [
+        {
+          "value": "USD",
+          "count": 132
+        },
+        {
+          "value": "EUR",
+          "count": 110
+        },
+        {
+          "value": "GBP",
+          "count": 89
+        },
+        {
+          "value": "JPY",
+          "count": 65
+        },
+        {
+          "value": "ZAR",
+          "count": 55
+        },
+        {
+          "value": "NGN",
+          "count": 49
+        }
+      ],
+      "anomalies": {
+        "gross_net_mismatch": 7,
+        "missing_non_critical": 6,
+        "mapping_friction_alias": 6,
+        "unknown_classification": 6
+      },
+      "anomaly_rows": 25,
+      "financial_pass_rate": 0.986,
+      "date_validity_pass_rate": 1,
+      "invalid_financial_row_rate": 0.014,
+      "required_coverage": {
+        "Track Title": 1,
+        "Platform": 1,
+        "Territory": 1
+      }
+    },
+    {
+      "file_name": "demo-cmr-03_mixed_rights_fx.xlsx",
+      "profile": "mixed_rights_fx",
+      "rows": 500,
+      "artists_count": 10,
+      "tracks_count": 100,
+      "date_min": "2019-01-01",
+      "date_max": "2026-06-22",
+      "platform_mix": [
+        {
+          "value": "Spotify",
+          "count": 93
+        },
+        {
+          "value": "YouTube",
+          "count": 78
+        },
+        {
+          "value": "Public Venue",
+          "count": 73
+        },
+        {
+          "value": "Broadcast Radio",
+          "count": 66
+        },
+        {
+          "value": "Apple Music",
+          "count": 66
+        },
+        {
+          "value": "Amazon Music",
+          "count": 52
+        },
+        {
+          "value": "TikTok Music",
+          "count": 36
+        },
+        {
+          "value": "Deezer",
+          "count": 32
+        }
+      ],
+      "territory_mix": [
+        {
+          "value": "US",
+          "count": 94
+        },
+        {
+          "value": "GB",
+          "count": 59
+        },
+        {
+          "value": "FR",
+          "count": 42
+        },
+        {
+          "value": "ZA",
+          "count": 42
+        },
+        {
+          "value": "NG",
+          "count": 37
+        },
+        {
+          "value": "DE",
+          "count": 37
+        },
+        {
+          "value": "MX",
+          "count": 25
+        },
+        {
+          "value": "JP",
+          "count": 25
+        }
+      ],
+      "currency_mix": [
+        {
+          "value": "EUR",
+          "count": 105
+        },
+        {
+          "value": "GBP",
+          "count": 84
+        },
+        {
+          "value": "JPY",
+          "count": 82
+        },
+        {
+          "value": "NGN",
+          "count": 82
+        },
+        {
+          "value": "USD",
+          "count": 78
+        },
+        {
+          "value": "ZAR",
+          "count": 69
+        }
+      ],
+      "anomalies": {
+        "gross_net_mismatch": 7,
+        "missing_non_critical": 6,
+        "mapping_friction_alias": 6,
+        "unknown_classification": 6
+      },
+      "anomaly_rows": 25,
+      "financial_pass_rate": 0.986,
+      "date_validity_pass_rate": 1,
+      "invalid_financial_row_rate": 0.014,
+      "required_coverage": {
+        "Track Title": 1,
+        "Platform": 1,
+        "Territory": 1
+      }
+    }
+  ],
+  "quality_gate": {
+    "pass": true,
+    "errors": []
+  }
+}

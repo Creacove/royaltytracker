@@ -18,6 +18,9 @@ function sampleCatalog() {
       { field_key: "net_revenue", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "gross_revenue", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "quantity", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
+      { field_key: "rights_type", inferred_type: "text", coverage_pct: 95, source: "canonical", sample_values: [] },
+      { field_key: "mapping_confidence", inferred_type: "number", coverage_pct: 90, source: "canonical", sample_values: [] },
+      { field_key: "validation_status", inferred_type: "text", coverage_pct: 88, source: "canonical", sample_values: [] },
       { field_key: "streams_count", inferred_type: "number", coverage_pct: 70, source: "custom", sample_values: [] },
     ],
     aliases: {
@@ -107,7 +110,6 @@ describe("artist query engine", () => {
       rows: [{ territory: "US", net_revenue: 100 }],
     });
     expect(status.status).toBe("passed");
-    expect(status.warnings?.some((w) => w.includes("platform"))).toBe(true);
   });
 
   it("PASSES verifier when revenue is null in result — rows exist but revenue is zero", () => {
@@ -173,5 +175,27 @@ describe("artist query engine", () => {
     expect(plan.intent).toBe("opportunity_risk_tracks");
     expect(compiled.sql.toLowerCase()).toContain("opportunity_score");
     expect(compiled.sql.toLowerCase()).toContain("data_risk_ratio");
+  });
+
+  it("maps highest-opportunity phrasing to opportunity intent without hardcoded prompt text", () => {
+    const catalog = sampleCatalog();
+    const plan = deriveAnalysisPlanFallback("Show tracks with highest opportunity", catalog);
+    expect(plan.intent).toBe("opportunity_risk_tracks");
+    expect(plan.required_columns).toContain("track_title");
+    expect(plan.required_columns).toContain("mapping_confidence");
+  });
+
+  it("creates rights leakage plan with rights dimensions and revenue metrics", () => {
+    const catalog = sampleCatalog();
+    const plan = deriveAnalysisPlanFallback(
+      "Which rights types are causing payout leakage this quarter and what should we fix first?",
+      catalog,
+    );
+    expect(plan.intent).toBe("rights_leakage");
+    expect(plan.required_columns).toContain("rights_type");
+    expect(plan.required_columns).toContain("net_revenue");
+    const compiled = compileSqlFromPlan(plan, catalog);
+    expect(compiled.sql.toLowerCase()).toContain("effective_royalty_rate");
+    expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
   });
 });

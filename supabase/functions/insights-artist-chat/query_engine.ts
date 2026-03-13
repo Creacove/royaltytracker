@@ -282,15 +282,18 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   const relativeWindow = parseRelativeWindow(question);
   const asksPeriodComparison = comparisonWindow !== null || /\b(compare|comparison|vs\s+prior|versus\s+prior|compared\s+to\s+prior)\b/i.test(q);
   const asksOpportunityRisk = /\b(opportunity|potential)\b.*\b(risk|data risk|quality risk)\b|\b(highest opportunity)\b.*\b(highest data risk)\b/i.test(q);
+  const asksHighestOpportunity = /\b(highest opportunity|top opportunity|best opportunity|tracks? with highest opportunity)\b/i.test(q);
   const asksGrossNetGap = /\b(gross[\s-]*to[\s-]*net|gross\s*-\s*net|gap)\b/i.test(q) &&
     /\b(gross|net|revenue|payout|leakage|leak)\b/i.test(q);
   const asksConfidenceRisk = /\b(confidence risk|mapping|validation|low confidence|high confidence|quality issue|quality risk|attribution|rights|rights-related|payout leak|payout leakage|leakage)\b/i.test(q);
+  const asksRightsLeakage = /\b(rights|rights type|royalty rate|payout leakage|leakage|contract issue|effective royalty)\b/i.test(q);
   const asksPoor = /\b(poor|worst|lowest|underperform|bottom)\b/i.test(q);
   const asksStrategyAllocation = /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate)\b/i.test(q);
 
   const dimensions: string[] = [];
   if (asksPlatform) dimensions.push("platform");
   if (asksTerritory) dimensions.push("territory");
+  if (asksRightsLeakage) dimensions.push("rights_type");
   if (/\b(rights|rights[-\s]?type|royalty type)\b/i.test(q)) dimensions.push("rights_type");
   if (asksTrend && !asksPeriodComparison) dimensions.push("event_date");
   // For "underperforming / worst" track questions, group by track
@@ -313,6 +316,9 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (!dimensions.includes("track_title") && /\b(track|song|title)\b/i.test(q)) {
     dimensions.push("track_title");
   }
+  if (asksHighestOpportunity && !dimensions.includes("track_title")) dimensions.push("track_title");
+  if (asksRightsLeakage && !dimensions.includes("platform")) dimensions.push("platform");
+  if (asksRightsLeakage && !dimensions.includes("territory")) dimensions.push("territory");
   if (asksStrategyAllocation && dimensions.length === 0) {
     dimensions.push("track_title");
   }
@@ -324,8 +330,10 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     ...(asksRevenue ? [metrics[0] ?? "net_revenue"] : []),
     ...(asksTrend && !asksPeriodComparison ? ["event_date"] : []),
     ...(asksOpportunityRisk ? ["track_title", "net_revenue", "mapping_confidence", "validation_status"] : []),
+    ...(asksHighestOpportunity ? ["track_title", "net_revenue", "mapping_confidence", "validation_status"] : []),
     ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
     ...(asksConfidenceRisk ? ["mapping_confidence", "validation_status", "gross_revenue", "net_revenue"] : []),
+    ...(asksRightsLeakage ? ["rights_type", "net_revenue", "gross_revenue"] : []),
   ]);
   const planFilters: AnalysisPlan["filters"] = [];
   if (comparisonWindow) {
@@ -346,9 +354,11 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     ? "period_comparison"
     : asksGrossNetGap
     ? "gap_analysis"
+    : asksRightsLeakage
+    ? "rights_leakage"
     : asksConfidenceRisk
     ? "quality_risk_impact"
-    : asksOpportunityRisk
+    : asksOpportunityRisk || asksHighestOpportunity
     ? "opportunity_risk_tracks"
     : asksPlatform
       ? "platform_analysis"
@@ -375,6 +385,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
       ...metrics,
       ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
       ...(asksConfidenceRisk ? ["gross_revenue", "net_revenue", "mapping_confidence"] : []),
+      ...(asksRightsLeakage ? ["gross_revenue", "net_revenue"] : []),
     ]).slice(0, 3),
     dimensions: unique(dimensions).slice(0, 3),
     filters: planFilters,
@@ -677,6 +688,51 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     };
   }
 
+  if (plan.intent === "rights_leakage") {
+    const resolveDims = (names: string[]): CatalogColumn[] => {
+      const cols: CatalogColumn[] = [];
+      for (const name of unique(names)) {
+        const direct = byKey.get(name);
+        if (direct) {
+          cols.push(direct);
+          continue;
+        }
+        const resolved = resolveColumnByAlias(name, catalog);
+        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
+      }
+      return cols;
+    };
+    const dims = resolveDims(plan.dimensions)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 4);
+    if (!dims.some((d) => d.field_key === "rights_type") && byKey.has("rights_type")) dims.push(byKey.get("rights_type")!);
+    if (!dims.some((d) => d.field_key === "track_title") && byKey.has("track_title")) dims.push(byKey.get("track_title")!);
+    const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
+    const dimAliases = dims.map((d) => d.field_key);
+    const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
+    const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
+    const sql = `${rowEnrichedCte}
+    SELECT
+      ${dimWithComma}SUM(COALESCE(r.quantity, 0))::numeric AS quantity,
+      SUM(COALESCE(r.gross_revenue, 0))::numeric AS gross_revenue,
+      SUM(COALESCE(r.net_revenue, 0))::numeric AS net_revenue,
+      CASE
+        WHEN SUM(COALESCE(r.gross_revenue, 0)) = 0 THEN NULL
+        ELSE (SUM(COALESCE(r.net_revenue, 0)) / NULLIF(SUM(COALESCE(r.gross_revenue, 0)), 0))::numeric
+      END AS effective_royalty_rate
+    FROM row_enriched r
+    ${groupBy}
+    ORDER BY effective_royalty_rate ASC NULLS LAST, quantity DESC NULLS LAST
+    LIMIT ${limit}`;
+    return {
+      sql,
+      chosen_columns: [...dimAliases, "quantity", "gross_revenue", "net_revenue", "effective_royalty_rate"],
+    };
+  }
+
   // Resolve plan dimension/metric names through alias lookup — never hard-fail on a missing name
   const resolveCols = (names: string[]): CatalogColumn[] => {
     const result: CatalogColumn[] = [];
@@ -771,7 +827,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     whereClauses.push(`r.event_date::date > ((SELECT MAX(c.event_date)::date FROM scoped_core c) - ${relativeOffsetSql})::date`);
   }
 
-  const selectList = [...selectDimensionExprs, ...metricExprs].join(",\n      ");
+  let selectList = [...selectDimensionExprs, ...metricExprs].join(",\n      ");
   const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
   const groupBySql = aliases.length > 0 ? `GROUP BY ${aliases.map((_, i) => String(i + 1)).join(", ")}` : "";
   const limit = Math.min(50, Math.max(1, Number(plan.top_n || 5)));
@@ -782,8 +838,14 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   const requestedSortKey = requestedSort?.field_key ?? null;
   const hasProjectedSortField = requestedSortKey !== null &&
     (metricAliases.includes(requestedSortKey) || aliases.includes(requestedSortKey));
-  const orderByMetric = hasProjectedSortField
-    ? requestedSortKey!
+  if (requestedSort && requestedSort.inferred_type === "number" && requestedSort.source === "canonical" && !hasProjectedSortField) {
+    finalMetrics = [...finalMetrics, requestedSort].slice(0, 4);
+    metricExprs.push(buildMetricExpr(requestedSort));
+    metricAliases.push(requestedSort.field_key);
+    selectList = [...selectDimensionExprs, ...metricExprs].join(",\n      ");
+  }
+  const orderByMetric = (requestedSortKey !== null && metricAliases.includes(requestedSortKey))
+    ? requestedSortKey
     : (finalMetrics[0]?.field_key ?? aliases[0] ?? "1");
   const orderDir = plan.sort_dir === "asc" ? "ASC" : "DESC";
 

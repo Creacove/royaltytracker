@@ -200,16 +200,16 @@ function toLabelCase(value: string): string {
 
 function normalizeRecommendationItem(item: Record<string, unknown>, idx: number): RecommendationCardModel {
   const title =
-    (typeof item.action === "string" && item.action.trim()) ||
     (typeof item.title === "string" && item.title.trim()) ||
+    (typeof item.action === "string" && item.action.trim()) ||
     (typeof item.label === "string" && item.label.trim()) ||
     `Recommendation ${idx + 1}`;
 
   const bodyCandidate =
+    (typeof item.summary === "string" && item.summary.trim()) ||
     (typeof item.rationale === "string" && item.rationale.trim()) ||
     (typeof item.reason === "string" && item.reason.trim()) ||
     (typeof item.why === "string" && item.why.trim()) ||
-    (typeof item.summary === "string" && item.summary.trim()) ||
     "";
 
   const bullets: string[] = [];
@@ -222,6 +222,9 @@ function normalizeRecommendationItem(item: Record<string, unknown>, idx: number)
   pushArray(item.steps);
   pushArray(item.next_steps);
   pushArray(item.checklist);
+  if (typeof item.action === "string" && item.action.trim().length > 0 && item.action.trim() !== title) {
+    bullets.push(item.action.trim());
+  }
 
   const meta: RecommendationMeta[] = [];
   const impact = typeof item.impact === "string" ? item.impact.trim() : "";
@@ -541,35 +544,6 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-black/75">{blockText(block) ?? "Pattern inference available from historical data."}</p>
-              </CardContent>
-            </Card>
-          );
-        }
-
-        if (block.type === "citations") {
-          const items = blockItems(block);
-          if (items.length === 0) return null;
-          return (
-            <Card key={block.id} className="rounded-sm border-black/15">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm uppercase tracking-widest">Evidence Sources</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1.5">
-                {items.map((item, idx) => {
-                  const title = typeof item.title === "string" ? item.title : `Source ${idx + 1}`;
-                  const url = typeof item.url === "string" ? item.url : null;
-                  return (
-                    <div key={`${block.id}-${idx}`} className="text-xs text-black/70">
-                      {url ? (
-                        <a href={url} target="_blank" rel="noreferrer" className="font-medium text-[hsl(var(--brand-accent))] hover:underline">
-                          {title}
-                        </a>
-                      ) : (
-                        <span>{title}</span>
-                      )}
-                    </div>
-                  );
-                })}
               </CardContent>
             </Card>
           );

@@ -16,6 +16,7 @@
     "benchmark:artist:score": "node scripts/artist-benchmark.mjs score",
     "benchmark:artist:cycle": "node scripts/artist-benchmark.mjs cycle",
     "benchmark:artist:autoloop": "node scripts/artist-benchmark.mjs autoloop",
+    "generate:cmr-demo": "node scripts/generate-cmr-demo-data.mjs",
     "build:video": "remotion render remotion.index.tsx LaunchFilm out/video.mp4"
   },
   "dependencies": {
@@ -73,6 +74,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
+    "xlsx": "^0.18.5",
     "zod": "4.3.6"
   },
   "devDependencies": {

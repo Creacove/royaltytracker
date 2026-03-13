@@ -1,4 +1,4 @@
-import { aggregateResults, scoreResult } from "../../scripts/artist-benchmark.mjs";
+import { aggregateResults, applyRepetitionPenalty, scoreResult } from "../../scripts/artist-benchmark.mjs";
 
 describe("artist benchmark scoring", () => {
   const basePrompt = {
@@ -52,6 +52,82 @@ describe("artist benchmark scoring", () => {
     expect(scored.safety_flags).toContain("cross_intent_recommendation_drift");
     expect(scored.critical_flags).toContain("cross_intent_recommendation_drift");
     expect(scored.pass).toBe(false);
+  });
+
+  it("flags intent-family mismatch when detected intent conflicts with prompt intent", () => {
+    const mismatchRun = {
+      ...okRun,
+      response: {
+        ...okRun.response,
+        executive_answer: "Run a rights mapping audit and fix validation status before revenue decisions.",
+        recommendations: [{ action: "Run a rights-mapping audit and fix validation status." }],
+        diagnostics: { intent: "rights_leakage" },
+      },
+    };
+    const scored = scoreResult(basePrompt, mismatchRun);
+    expect(scored.safety_flags).toContain("intent_family_mismatch");
+    expect(scored.critical_flags).toContain("intent_family_mismatch");
+    expect(scored.pass).toBe(false);
+  });
+
+  it("flags summary/take collapse and template leakage in visible narrative", () => {
+    const weakRun = {
+      ...okRun,
+      response: {
+        ...okRun.response,
+        executive_answer: "Below is a concise market-context brief for this artist. Data tabulate shows Germany is strongest.",
+        why_this_matters: "Below is a concise market-context brief for this artist. Data tabulate shows Germany is strongest.",
+      },
+    };
+    const scored = scoreResult(basePrompt, weakRun);
+    expect(scored.safety_flags).toContain("summary_take_overlap");
+    expect(scored.safety_flags).toContain("template_leakage");
+    expect(scored.quality_breakdown.consistency).toBeLessThanOrEqual(5);
+  });
+
+  it("flags unknown anchor visibility when known entities exist in evidence", () => {
+    const weakRun = {
+      ...okRun,
+      response: {
+        ...okRun.response,
+        executive_answer: "Unknown should be the top priority market right now.",
+        why_this_matters: "Unknown leads the signal.",
+        visual: {
+          type: "table",
+          columns: ["territory", "gross_revenue"],
+          rows: [
+            { territory: "Germany (DE)", gross_revenue: 100 },
+            { territory: "Unknown", gross_revenue: 80 },
+          ],
+        },
+      },
+    };
+    const scored = scoreResult(basePrompt, weakRun);
+    expect(scored.safety_flags).toContain("unknown_anchor_visible");
+    expect(scored.quality_breakdown.recommendation_relevance).toBeLessThanOrEqual(4);
+  });
+
+  it("applies repetition penalty when same recommendation appears too frequently", () => {
+    const repeatedAction = "Audit and classify all 'Unknown' platform revenue before reallocating budget.";
+    const rows = Array.from({ length: 10 }).map((_, i) => ({
+      ...scoreResult(
+        { ...basePrompt, id: `p-${i}`, question: `Q${i}`, intent: "platform_concentration", requires_external: false },
+        {
+          ...okRun,
+          response: {
+            ...okRun.response,
+            diagnostics: { intent: "platform_concentration" },
+            recommendations: [{ action: repeatedAction }, { action: "Set platform ROI thresholds and pause weak channels." }],
+            citations: [],
+          },
+        },
+      ),
+      quality_score: 8.8,
+      pass: true,
+    }));
+    const penalized = applyRepetitionPenalty(rows);
+    expect(penalized.some((row) => row.safety_flags.includes("recommendation_repetition"))).toBe(true);
+    expect(penalized.some((row) => row.quality_score < 8.8)).toBe(true);
   });
 
   it("fails gate when critical failures or quality thresholds are not met", () => {

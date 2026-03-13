@@ -18,6 +18,7 @@ const CRITICAL_FLAGS = new Set([
   "schema_error",
   "constrained_unexpected",
   "cross_intent_recommendation_drift",
+  "intent_family_mismatch",
   "internal_external_conflict",
 ]);
 
@@ -29,7 +30,7 @@ const CURATED_PROMPTS = [
     intent: "quality_risk_impact",
     required_evidence: ["gross_revenue", "net_revenue", "mapping_confidence", "validation_status"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -39,7 +40,7 @@ const CURATED_PROMPTS = [
     intent: "rights_leakage",
     required_evidence: ["track_title", "quantity", "net_revenue", "rights_type"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -49,7 +50,7 @@ const CURATED_PROMPTS = [
     intent: "period_comparison_platform",
     required_evidence: ["platform", "period_bucket", "net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -59,7 +60,7 @@ const CURATED_PROMPTS = [
     intent: "trend_break",
     required_evidence: ["week_start", "platform", "net_revenue"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -69,7 +70,7 @@ const CURATED_PROMPTS = [
     intent: "platform_concentration",
     required_evidence: ["platform", "net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -79,7 +80,7 @@ const CURATED_PROMPTS = [
     intent: "under_monetized_territory",
     required_evidence: ["territory", "quantity", "net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -119,7 +120,7 @@ const CURATED_PROMPTS = [
     intent: "budget_no_regret",
     required_evidence: ["net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -129,7 +130,7 @@ const CURATED_PROMPTS = [
     intent: "portfolio_choice",
     required_evidence: ["track_title", "net_revenue", "gross_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -139,7 +140,7 @@ const CURATED_PROMPTS = [
     intent: "uplift_levers",
     required_evidence: ["net_revenue", "track_title", "platform"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -149,7 +150,7 @@ const CURATED_PROMPTS = [
     intent: "portfolio_tradeoff",
     required_evidence: ["track_title", "period_bucket", "net_revenue"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -159,7 +160,7 @@ const CURATED_PROMPTS = [
     intent: "track_ranking_gap",
     required_evidence: ["track_title", "net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -169,7 +170,7 @@ const CURATED_PROMPTS = [
     intent: "year_over_year",
     required_evidence: ["platform", "territory", "period_bucket", "net_revenue"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -179,7 +180,7 @@ const CURATED_PROMPTS = [
     intent: "daily_spike",
     required_evidence: ["day_start", "net_revenue"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -189,7 +190,7 @@ const CURATED_PROMPTS = [
     intent: "gap_analysis",
     required_evidence: ["platform", "territory", "gross_revenue", "net_revenue", "gross_net_gap_abs"],
     expected_depth: "decision",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -199,7 +200,7 @@ const CURATED_PROMPTS = [
     intent: "quality_risk_impact",
     required_evidence: ["track_title", "gross_revenue", "mapping_confidence", "validation_status"],
     expected_depth: "deep",
-    requires_external: false,
+    requires_external: true,
     expect_answerable: true,
   },
   {
@@ -340,6 +341,75 @@ function getRecommendationTexts(result) {
     .filter((v) => v.length > 0);
 }
 
+function normalizeActionKey(action) {
+  return toStr(action)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\b(the|a|an|and|or|to|for|with|before|after|next|this|that|your)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 8)
+    .join(" ");
+}
+
+function normalizeText(value) {
+  return toStr(value).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function lexicalOverlap(a, b) {
+  const aa = new Set(normalizeText(a).split(" ").filter((token) => token.length > 2));
+  const bb = new Set(normalizeText(b).split(" ").filter((token) => token.length > 2));
+  if (aa.size === 0 || bb.size === 0) return 0;
+  let overlap = 0;
+  for (const token of aa) if (bb.has(token)) overlap += 1;
+  return overlap / Math.max(aa.size, bb.size);
+}
+
+function hasTemplateLeakage(text) {
+  return /\bdata tabulate\b|concise market context brief|below is a concise|here s a concise|return exactly three lines/i.test(toStr(text));
+}
+
+function getRecommendationTitles(result) {
+  const blocks = Array.isArray(result?.recommendations) ? result.recommendations : [];
+  return blocks
+    .map((item) => (item && typeof item === "object" ? toStr(item.title) : ""))
+    .filter((v) => v.length > 0);
+}
+
+function knownAnchors(result) {
+  const rows = Array.isArray(result?.visual?.rows) ? result.visual.rows : [];
+  const out = { territory: false, platform: false };
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const territory = toStr(row.territory);
+    const platform = toStr(row.platform);
+    if (territory && !/^unknown$/i.test(territory)) out.territory = true;
+    if (platform && !/^unknown$/i.test(platform)) out.platform = true;
+  }
+  return out;
+}
+
+function intentFamily(label) {
+  const v = toStr(label).toLowerCase();
+  if (/tour/.test(v)) return "touring";
+  if (/rights|leakage|mapping|quality_risk|gap_analysis/.test(v)) return "rights";
+  if (/trend|compare|period|monthly|daily|weekly|year_over_year/.test(v)) return "trend";
+  if (/platform|campaign|audience|channel/.test(v)) return "platform";
+  if (/track|catalog|portfolio/.test(v)) return "track";
+  if (/budget|reallocation|uplift|stop_doing/.test(v)) return "budget";
+  return "general";
+}
+
+function familiesCompatible(expected, detected) {
+  if (expected === detected) return true;
+  if (expected === "general" || detected === "general") return true;
+  if ((expected === "platform" && detected === "trend") || (expected === "trend" && detected === "platform")) return true;
+  if ((expected === "track" && detected === "budget") || (expected === "budget" && detected === "track")) return true;
+  if ((expected === "track" && detected === "trend") || (expected === "trend" && detected === "track")) return true;
+  return false;
+}
+
 function hasTourDrift(prompt, recommendationTexts) {
   if (!prompt.intent.startsWith("touring")) return false;
   const text = recommendationTexts.join(" ").toLowerCase();
@@ -366,15 +436,26 @@ function scoreResult(prompt, runResult) {
   const response = runResult.response;
   const safetyFlags = [];
   const recommendationTexts = response ? getRecommendationTexts(response) : [];
+  const recommendationTitles = response ? getRecommendationTitles(response) : [];
   const citationsCount = Array.isArray(response?.citations) ? response.citations.length : 0;
   const qualityOutcome = detectQualityOutcome(response);
   const intentDetected = detectIntent(response);
+  const answerText = toStr(response?.executive_answer) || toStr(response?.answer_text);
 
   if (runResult.status !== "ok") safetyFlags.push("runtime_error");
   if (!response || typeof response !== "object") safetyFlags.push("schema_error");
   if (prompt.expect_answerable && qualityOutcome === "constrained") safetyFlags.push("constrained_unexpected");
+  const promptFamily = intentFamily(prompt.intent);
+  const detectedFamily = intentFamily(intentDetected);
+  const answerFamily = intentFamily(`${answerText} ${recommendationTexts.join(" ")}`);
+  if (!familiesCompatible(promptFamily, detectedFamily) && !familiesCompatible(promptFamily, answerFamily)) {
+    safetyFlags.push("intent_family_mismatch");
+  }
   if (hasTourDrift(prompt, recommendationTexts) || hasRightsDrift(prompt, recommendationTexts)) {
     safetyFlags.push("cross_intent_recommendation_drift");
+  }
+  if (hasTemplateLeakage(`${answerText} ${toStr(response?.why_this_matters)} ${recommendationTexts.join(" ")}`)) {
+    safetyFlags.push("template_leakage");
   }
 
   if (prompt.requires_external && citationsCount === 0) {
@@ -387,15 +468,37 @@ function scoreResult(prompt, runResult) {
     .filter((required) => cols.has(required)).length;
   const evidenceCoverage = prompt.required_evidence.length === 0 ? 1 : (evidenceMatches / prompt.required_evidence.length);
 
-  const answerText = toStr(response?.executive_answer) || toStr(response?.answer_text);
   const whyText = toStr(response?.why_this_matters);
+  const summaryTakeOverlap = lexicalOverlap(answerText, whyText);
+  if (summaryTakeOverlap >= 0.72) safetyFlags.push("summary_take_overlap");
+  const anchors = knownAnchors(response);
+  if (
+    (anchors.territory || anchors.platform) &&
+    /\bunknown\b/i.test(`${answerText} ${whyText} ${recommendationTitles.join(" ")} ${recommendationTexts.join(" ")}`)
+  ) {
+    safetyFlags.push("unknown_anchor_visible");
+  }
   const directness = answerText.length > 80 ? 10 : answerText.length > 30 ? 7 : answerText.length > 0 ? 4 : 0;
   const evidenceFidelity = Math.round(evidenceCoverage * 10);
   const actionability = recommendationTexts.length >= 3 ? 10 : recommendationTexts.length === 2 ? 8 : recommendationTexts.length === 1 ? 5 : 0;
   const riskHandling = /\brisk|uncertain|validate|confidence|warning|caution\b/i.test(`${whyText} ${recommendationTexts.join(" ")}`) ? 9 : 4;
-  const recommendationRelevance = safetyFlags.includes("cross_intent_recommendation_drift") ? 2 : 9;
-  const consistency = qualityOutcome === "constrained" && prompt.expect_answerable ? 3 : 8;
-  const enrichmentUsefulness = prompt.requires_external ? (citationsCount > 0 ? 8 : 2) : 7;
+  const recommendationRelevance =
+    safetyFlags.includes("cross_intent_recommendation_drift")
+      ? 2
+      : safetyFlags.includes("unknown_anchor_visible")
+        ? 4
+        : 9;
+  const consistency =
+    qualityOutcome === "constrained" && prompt.expect_answerable
+      ? 3
+      : safetyFlags.includes("summary_take_overlap")
+        ? 4
+        : safetyFlags.includes("template_leakage")
+          ? 5
+          : 8;
+  const enrichmentUsefulness = prompt.requires_external
+    ? (citationsCount > 0 && !safetyFlags.includes("template_leakage") ? 8 : 2)
+    : (!safetyFlags.includes("template_leakage") ? 7 : 4);
 
   const weightedScore =
     (directness * 0.17) +
@@ -435,6 +538,32 @@ function scoreResult(prompt, runResult) {
     pass,
     response: response ?? null,
   };
+}
+
+function applyRepetitionPenalty(scoredRows) {
+  const usage = new Map();
+  for (const row of scoredRows) {
+    const actions = Array.isArray(row?.response?.recommendations)
+      ? row.response.recommendations.flatMap((rec) => [normalizeActionKey(rec?.action), normalizeActionKey(rec?.title)])
+      : [];
+    const uniq = Array.from(new Set(actions.filter(Boolean)));
+    for (const action of uniq) usage.set(action, (usage.get(action) ?? 0) + 1);
+  }
+  const threshold = Math.max(4, Math.ceil(scoredRows.length * 0.3));
+  const repeatedKeys = new Set(Array.from(usage.entries()).filter(([, count]) => count > threshold).map(([k]) => k));
+  if (repeatedKeys.size === 0) return scoredRows;
+
+  for (const row of scoredRows) {
+    const actions = Array.isArray(row?.response?.recommendations)
+      ? row.response.recommendations.flatMap((rec) => [normalizeActionKey(rec?.action), normalizeActionKey(rec?.title)])
+      : [];
+    const hit = actions.some((a) => repeatedKeys.has(a));
+    if (!hit) continue;
+    row.quality_score = Number(Math.max(0, row.quality_score - 0.8).toFixed(2));
+    if (!row.safety_flags.includes("recommendation_repetition")) row.safety_flags.push("recommendation_repetition");
+    if (row.quality_score < QUALITY_GATE_MIN) row.pass = false;
+  }
+  return scoredRows;
 }
 
 function aggregateResults(scoredRows) {
@@ -709,6 +838,8 @@ async function runBenchmarks(opts) {
     console.log(`[${index + 1}/${selected.length}] ${promptId} -> ${scored.pass ? "PASS" : "FAIL"} score=${scored.quality_score}`);
   }
 
+  applyRepetitionPenalty(rows);
+
   fs.writeFileSync(outPath, JSON.stringify(rows, null, 2));
   console.log(`Wrote ${rows.length} benchmark results to ${outPath}`);
   return rows;
@@ -778,6 +909,7 @@ async function runAutoloop(opts) {
 export {
   CURATED_PROMPTS,
   aggregateResults,
+  applyRepetitionPenalty,
   scoreResult,
   clusterFailures,
 };
