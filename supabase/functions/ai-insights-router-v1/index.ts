@@ -390,8 +390,17 @@ function makeClaimId(seed: string, idx: number): string {
   return `claim_${Math.abs(h)}`;
 }
 
-function normalizeNarrativeText(text: string, maxLen = 420): string {
+function normalizeNarrativeText(text: string, maxLen = 1200): string {
   return text.replace(/\s+/g, " ").trim().slice(0, maxLen);
+}
+
+function normalizeNarrativeLines(text: string, maxLen = 2400): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, maxLen);
 }
 
 function normalizeForComparison(text: string): string {
@@ -424,7 +433,7 @@ function parseExternalContextSections(rawText: string): {
   advisoryTake: string;
   recommendationNote: string;
 } {
-  const cleaned = cleanExternalSummary(rawText);
+  const cleaned = cleanExternalSummary(rawText, { preserveLines: true });
   if (!cleaned) return { summary: "", advisoryTake: "", recommendationNote: "" };
   const lines = cleaned
     .split(/\n+/)
@@ -455,8 +464,11 @@ function parseExternalContextSections(rawText: string): {
   };
 }
 
-function cleanExternalSummary(summary: string): string {
-  return normalizeNarrativeText(summary, 900)
+function cleanExternalSummary(summary: string, options?: { preserveLines?: boolean }): string {
+  const normalized = options?.preserveLines
+    ? normalizeNarrativeLines(summary, 2400)
+    : normalizeNarrativeText(summary, 2400);
+  const cleaned = normalized
     .replace(/^here(?:'s| is)\s+(?:a\s+)?concise\s+market-context\s+brief\s+(?:to\s+frame|for)\s+/i, "")
     .replace(/^here(?:'s| is)\s+(?:a\s+)?market-context\s+brief\s+(?:to\s+frame|for)\s+/i, "")
     .replace(/^all dates given are .*?(?:\.|$)\s*/i, "")
@@ -464,6 +476,7 @@ function cleanExternalSummary(summary: string): string {
     .replace(/^market context:\s*/i, "")
     .replace(/^execution context:\s*/i, "")
     .trim();
+  return options?.preserveLines ? normalizeNarrativeLines(cleaned, 2400) : normalizeNarrativeText(cleaned, 2400);
 }
 
 function sanitizeVisibleNarrative(text: string, maxLen = 900): string {
@@ -599,10 +612,10 @@ function composeAdvisoryNarrative(params: {
   externalContext?: AdaptiveAnswerResponse["external_context"];
   intentFamily: IntentFamily;
 }): { executive: string; strategicTake: string } {
-  const baseExecutive = sanitizeVisibleNarrative(params.executive, 900);
-  const baseWhy = sanitizeVisibleNarrative(params.why, 900);
-  const marketContext = sanitizeVisibleNarrative(params.externalContext?.summary ?? "", 520);
-  const advisoryTake = sanitizeVisibleNarrative(params.externalContext?.advisory_take ?? "", 520);
+  const baseExecutive = sanitizeVisibleNarrative(params.executive, 1800);
+  const baseWhy = sanitizeVisibleNarrative(params.why, 1800);
+  const marketContext = sanitizeVisibleNarrative(params.externalContext?.summary ?? "", 900);
+  const advisoryTake = sanitizeVisibleNarrative(params.externalContext?.advisory_take ?? "", 900);
 
   const executiveDraft = distinctSentenceJoin(baseExecutive, marketContext);
   let strategicDraft = distinctSentenceJoin(baseWhy, advisoryTake || marketContext);
@@ -3627,13 +3640,8 @@ serve(async (req) => {
         ? `Requested top ${requestedTopN}; only ${returnedRows} ranked row${returnedRows === 1 ? "" : "s"} are available in current scope.`
         : null;
       const largestChange = buildLargestChangeStatement(question, visual);
-      const qualityCaveat = buildEarlyDataCaveat({
-        rowCount,
-        visual,
-        diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
-      });
       const executiveBase = tourBrief ? tourBrief.executive : finalExecutive;
-      const executiveDraft = [executiveBase, topCountCaveat, largestChange, qualityCaveat].filter(Boolean).join(" ");
+      const executiveDraft = [executiveBase, topCountCaveat, largestChange].filter(Boolean).join(" ");
       const whyDraft = tourBrief ? tourBrief.why : finalWhy;
       const advisoryNarrative = composeAdvisoryNarrative({
         executive: executiveDraft,

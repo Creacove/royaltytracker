@@ -3,44 +3,69 @@ type ExportElementToPdfOptions = {
   margin?: number;
 };
 
-function isMobileBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+function triggerDownload(objectUrl: string, filename: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function extractFilenameFromUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.split("/").filter(Boolean);
+    const last = pathname[pathname.length - 1];
+    if (!last) return null;
+    return decodeURIComponent(last.split("?")[0] ?? "").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function downloadUrlToFile(url: string, preferredFilename?: string): Promise<void> {
+  const filename = preferredFilename || extractFilenameFromUrl(url) || "export.pdf";
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "omit",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Download failed with status ${response.status}.`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+
+    try {
+      triggerDownload(objectUrl, filename);
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+    }
+    return;
+  } catch {
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }
 }
 
 async function deliverPdf(pdf: { output: (type: "blob") => Blob; save: (filename: string) => void }, filename: string): Promise<void> {
   const blob = pdf.output("blob");
-
-  if (typeof navigator !== "undefined" && typeof navigator.share === "function" && typeof File !== "undefined") {
-    const file = new File([blob], filename, { type: "application/pdf" });
-    const canShareFiles =
-      typeof (navigator as Navigator & { canShare?: (data?: ShareData) => boolean }).canShare === "function" &&
-      (navigator as Navigator & { canShare?: (data?: ShareData) => boolean }).canShare?.({ files: [file] });
-
-    if (canShareFiles) {
-      await navigator.share({
-        title: filename,
-        files: [file],
-      });
-      return;
-    }
-  }
-
   const objectUrl = URL.createObjectURL(blob);
 
   try {
-    if (isMobileBrowser()) {
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = filename;
-    anchor.rel = "noopener";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
+    triggerDownload(objectUrl, filename);
   } finally {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }

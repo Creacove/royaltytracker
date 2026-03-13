@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { toCompactMoney, toMoney } from "@/lib/royalty";
 import { FilterToolbar, KpiStrip, PageHeader } from "@/components/layout";
 import { cn } from "@/lib/utils";
+import { downloadUrlToFile } from "@/lib/pdf";
 import {
   clampPercent,
   defaultDateRange,
@@ -242,44 +243,6 @@ function toEvidenceSourceLabel(source: string): string {
   if (source === "track_assistant_scope_v2") return "Reviewed track performance data";
   if (source === "royalty_transactions.custom_properties") return "Custom statement fields";
   return source;
-}
-
-function openExportPlaceholder(message: string): Window | null {
-  const popup = window.open("", "_blank");
-  if (!popup) return null;
-  try {
-    popup.document.title = "Preparing export...";
-    popup.document.body.style.fontFamily = "Arial, sans-serif";
-    popup.document.body.style.padding = "16px";
-    popup.document.body.innerHTML = `<p>${message}</p>`;
-  } catch {
-    // Ignore cross-window write failures.
-  }
-  return popup;
-}
-
-function openExportUrl(url: string, pendingWindow: Window | null): void {
-  if (pendingWindow && !pendingWindow.closed) {
-    pendingWindow.location.href = url;
-    return;
-  }
-
-  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-  if (isMobile) {
-    window.location.assign(url);
-    return;
-  }
-
-  const popup = window.open(url, "_blank", "noopener,noreferrer");
-  if (popup) return;
-
-  const link = document.createElement("a");
-  link.href = url;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 }
 
 async function resolveEdgeFunctionError(error: unknown, data: unknown): Promise<string> {
@@ -605,14 +568,11 @@ export default function TrackInsightsDetail() {
       return;
     }
 
-    const pendingWindow = openExportPlaceholder("Preparing your AI export...");
     try {
       const result = await exportAnswerMutation.mutateAsync();
       const preferredUrl = result.pdfUrl ?? result.xlsxUrl;
       if (preferredUrl) {
-        openExportUrl(preferredUrl, pendingWindow);
-      } else if (pendingWindow && !pendingWindow.closed) {
-        pendingWindow.close();
+        await downloadUrlToFile(preferredUrl, result.pdfUrl ? "ai-insights-export.pdf" : "ai-insights-export.xlsx");
       }
 
       toast({
@@ -623,7 +583,6 @@ export default function TrackInsightsDetail() {
             : result.status ?? "Export queued.",
       });
     } catch (error) {
-      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
       toast({
         title: "Export failed",
         description: error instanceof Error ? error.message : "Unable to generate AI export.",
@@ -635,14 +594,11 @@ export default function TrackInsightsDetail() {
   const handleExportMonthlySnapshot = async () => {
     if (assistantTurnMutation.isPending || exportAnswerMutation.isPending || exportMonthlyMutation.isPending) return;
 
-    const pendingWindow = openExportPlaceholder("Preparing your monthly snapshot export...");
     try {
       const result = await exportMonthlyMutation.mutateAsync();
       const preferredUrl = result.pdfUrl ?? result.xlsxUrl;
       if (preferredUrl) {
-        openExportUrl(preferredUrl, pendingWindow);
-      } else if (pendingWindow && !pendingWindow.closed) {
-        pendingWindow.close();
+        await downloadUrlToFile(preferredUrl, result.pdfUrl ? "monthly-snapshot.pdf" : "monthly-snapshot.xlsx");
       }
 
       toast({
@@ -653,7 +609,6 @@ export default function TrackInsightsDetail() {
             : result.status ?? "Export queued.",
       });
     } catch (error) {
-      if (pendingWindow && !pendingWindow.closed) pendingWindow.close();
       toast({
         title: "Export failed",
         description: error instanceof Error ? error.message : "Unable to generate monthly snapshot.",

@@ -830,10 +830,19 @@ export default function AiInsights() {
                     >
                       <div className="flex w-full min-w-0 items-start gap-3 md:gap-4">
                         <div className={cn(
-                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border-2 border-black shadow-lg md:h-9 md:w-9",
+                          "relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm border-2 border-black shadow-lg md:h-9 md:w-9",
                           turn.role === "assistant" ? "bg-black text-white" : "bg-card text-black"
                         )}>
-                          {turn.role === "assistant" ? <Target className="h-4 w-4" /> : <User className="h-4 w-4" />}
+                          {turn.role === "assistant" && (
+                            <>
+                              <div
+                                className="absolute inset-0 bg-center bg-cover opacity-85"
+                                style={{ backgroundImage: "url('/logo-icon.png')" }}
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-white/10" />
+                            </>
+                          )}
+                          {turn.role === "assistant" ? null : <User className="h-4 w-4" />}
                         </div>
                         <div className="w-full min-w-0 flex-1 space-y-4 overflow-x-hidden">
                           <div className="flex min-w-0 items-center justify-between gap-3">
@@ -860,9 +869,13 @@ export default function AiInsights() {
                   ))}
                   {sendMutation.isPending && turns[turns.length - 1]?.role === "user" && (
                     <div className="flex items-start gap-6 opacity-60">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-sm border border-black bg-black text-white shadow-lg relative overflow-hidden">
-                        <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite] -translate-y-full"></div>
-                        <Bot className="h-5 w-5 relative" />
+                      <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-sm border border-black bg-black text-white shadow-lg">
+                        <div
+                          className="absolute inset-0 bg-center bg-cover opacity-85"
+                          style={{ backgroundImage: "url('/logo-icon.png')" }}
+                        />
+                        <div className="absolute inset-0 bg-black/20" />
+                        <div className="absolute inset-x-0 top-[-120%] h-[220%] bg-gradient-to-b from-transparent via-white/35 to-transparent animate-[shimmer_1.8s_infinite]" />
                       </div>
                       <div className="flex-1 space-y-4 pt-1">
                         <div className="flex items-center gap-2">
