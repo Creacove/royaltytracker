@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/layout";
 import {
   Select,
   SelectContent,
@@ -710,80 +711,78 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   const canShowNewWorkspaceInput = onboardingState.isPlatformAdmin && platformTargetMode === "new";
   const canShowCurrentWorkspaceHint = onboardingState.isPlatformAdmin && platformTargetMode === "current";
   const selectedPartnerCodeWorkspaceName = workspaceNameById.get(partnerCodeWorkspaceId) ?? "Workspace not selected";
+  const panelClass = "surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4";
+  const mutedPanelClass = "surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-4";
+  const intelligencePanelClass = "surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4";
+  const sectionHeaderClass = "border-b border-[hsl(var(--border)/0.1)] pb-4";
 
   return (
-    <div className="space-y-6">
-      <Card className="soft-elevation overflow-hidden border-border/60">
-        <CardContent className="relative grid gap-6 overflow-hidden bg-[linear-gradient(120deg,hsl(var(--brand-accent-ghost)/0.95),transparent_72%)] p-6 lg:grid-cols-[1.2fr_1fr]">
-          <div className="space-y-4">
-            <p className="font-display text-xs uppercase tracking-[0.1em] text-muted-foreground">Workspace Console</p>
-            <h1 className="font-display text-3xl tracking-[0.03em]">
-              {onboardingState.companyName ?? "Workspace Profile Pending"}
-            </h1>
-            <p className="max-w-xl text-sm text-muted-foreground">
-              A focused command center for billing, members, invites, and cross-workspace onboarding controls.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{roleBadgeLabel}</Badge>
-              <Badge variant="outline">{hasWorkspace ? `${members.length} members` : "No active workspace"}</Badge>
-              {onboardingState.isPlatformAdmin && <Badge variant="outline">{workspaceCount} visible workspaces</Badge>}
-            </div>
-          </div>
+    <div className="rhythm-page">
+      <PageHeader
+        eyebrow="Workspace Console"
+        title={onboardingState.companyName ?? "Workspace Profile Pending"}
+        subtitle="Billing, profile defaults, team access, and cross-workspace controls in one place."
+        meta={
+          <>
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+              {roleBadgeLabel}
+            </span>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {hasWorkspace ? `${members.length} members` : "No active workspace"}
+            </span>
+            {onboardingState.isPlatformAdmin ? (
+              <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+                {workspaceCount} visible workspaces
+              </span>
+            ) : null}
+          </>
+        }
+      />
 
-          <div className="grid gap-2 sm:grid-cols-3">
-            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Plan Status</p>
-              <p className="font-medium">
-                {subscriptionLoading || !subscriptionLoaded ? "Loading..." : subscriptionStatusLabel}
-              </p>
-            </div>
-            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Plan</p>
-              <p className="font-medium">{subscriptionLoading || !subscriptionLoaded ? "Loading..." : planSummaryLabel}</p>
-            </div>
-            <div className="rounded-sm border border-border/50 bg-background/85 p-3">
-              <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Pending Invites</p>
-              <p className="font-medium">{pendingInviteCount}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <div className={panelClass}>
+          <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Plan status</p>
+          <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+            {subscriptionLoading || !subscriptionLoaded ? "Loading..." : subscriptionStatusLabel}
+          </p>
+        </div>
+        <div className={panelClass}>
+          <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Plan</p>
+          <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+            {subscriptionLoading || !subscriptionLoaded ? "Loading..." : planSummaryLabel}
+          </p>
+        </div>
+        <div className={intelligencePanelClass}>
+          <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Pending invites</p>
+          <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">{pendingInviteCount}</p>
+        </div>
+      </div>
 
-      <Tabs value={activeSection} onValueChange={setActiveSection} className="space-y-4">
-        <TabsList className="w-full rounded-sm border border-border/60 bg-background/70 p-1 sm:w-auto">
-          <TabsTrigger
-            value="overview"
-            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
-          >
-            Overview
-          </TabsTrigger>
-          <TabsTrigger
-            value="access"
-            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
-          >
-            Access
-          </TabsTrigger>
-          <TabsTrigger
-            value="profile"
-            className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
-          >
-            Profile
-          </TabsTrigger>
-          {onboardingState.isPlatformAdmin && (
-            <TabsTrigger
-              value="platform"
-              className="flex-none rounded-sm border-b-0 px-3 py-1.5 text-[11px] data-[state=active]:border data-[state=active]:border-border/50 data-[state=active]:bg-[hsl(var(--brand-accent-ghost))]"
-            >
-              Platform
+      <Tabs value={activeSection} onValueChange={setActiveSection} className="space-y-5">
+        <div className="overflow-x-auto">
+          <TabsList variant="quiet" className="min-w-max">
+            <TabsTrigger value="overview" variant="quiet" className="flex-none">
+              Overview
             </TabsTrigger>
-          )}
-        </TabsList>
+            <TabsTrigger value="access" variant="quiet" className="flex-none">
+              Access
+            </TabsTrigger>
+            <TabsTrigger value="profile" variant="quiet" className="flex-none">
+              Profile
+            </TabsTrigger>
+            {onboardingState.isPlatformAdmin && (
+              <TabsTrigger value="platform" variant="quiet" className="flex-none">
+                Platform
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-5">
-          <Card className="soft-elevation border-border/60">
-              <CardHeader>
+          <Card surface="evidence" className="overflow-hidden">
+              <CardHeader className={sectionHeaderClass}>
                 <div className="flex items-center gap-2">
-                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+                  <CreditCard className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
                   <CardTitle>Plan &amp; Billing</CardTitle>
                 </div>
                 <CardDescription>
@@ -806,48 +805,48 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                 ) : (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <div className="rounded-sm border border-border/50 p-3">
-                        <p className="text-xs text-muted-foreground">Plan</p>
-                        <p className="font-medium">
+                      <div className={panelClass}>
+                        <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Plan</p>
+                        <p className="mt-2 font-semibold text-foreground">
                           {subscriptionState.planName ?? "Unassigned"}{" "}
                           {subscriptionState.priceMonthlyCents > 0
                             ? `($${(subscriptionState.priceMonthlyCents / 100).toFixed(0)}/mo)`
                             : ""}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {titleCaseStatus(subscriptionState.effectiveSubscriptionStatus)}
                         </p>
                       </div>
-                      <div className="rounded-sm border border-border/50 p-3">
-                        <p className="text-xs text-muted-foreground">Seats</p>
-                        <p className="font-medium">
+                      <div className={panelClass}>
+                        <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Seats</p>
+                        <p className="mt-2 font-semibold text-foreground">
                           {subscriptionState.seatsUsed}
                           {subscriptionState.seatLimit !== null ? ` / ${subscriptionState.seatLimit}` : ""}
                         </p>
                       </div>
-                      <div className="rounded-sm border border-border/50 p-3">
-                        <p className="text-xs text-muted-foreground">Statements</p>
-                        <p className="font-medium">
+                      <div className={panelClass}>
+                        <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Statements</p>
+                        <p className="mt-2 font-semibold text-foreground">
                           {subscriptionState.statementsUsed}
                           {subscriptionState.statementsLimit !== null ? ` / ${subscriptionState.statementsLimit}` : ""}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {toUsagePercent(subscriptionState.statementsUsageRatio)}
                         </p>
                       </div>
-                      <div className="rounded-sm border border-border/50 p-3">
-                        <p className="text-xs text-muted-foreground">AI Requests</p>
-                        <p className="font-medium">
+                      <div className={panelClass}>
+                        <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">AI Requests</p>
+                        <p className="mt-2 font-semibold text-foreground">
                           {subscriptionState.aiRequestsUsed}
                           {subscriptionState.aiRequestsLimit !== null ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{toUsagePercent(subscriptionState.aiUsageRatio)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{toUsagePercent(subscriptionState.aiUsageRatio)}</p>
                       </div>
                     </div>
 
                     {subscriptionState.sponsorExpiresAt &&
                       subscriptionState.effectiveSubscriptionStatus === "active_sponsored" && (
-                        <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                        <div className={mutedPanelClass}>
                           Partner sponsorship active through{" "}
                           {new Date(subscriptionState.sponsorExpiresAt).toLocaleDateString()}. After this date,
                           reactivate billing at $149/month to continue.
@@ -855,7 +854,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                       )}
 
                     {(subscriptionState.softLimitReached || subscriptionState.hardLimitReached) && (
-                      <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
+                      <div className={mutedPanelClass}>
                         Usage is near or above current limits. Upgrade to prevent operational friction as volume grows.
                       </div>
                     )}
@@ -884,8 +883,8 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
 
         <TabsContent value="profile" className="space-y-5">
           <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
-        <Card className="soft-elevation border-border/60">
-          <CardHeader>
+        <Card surface="evidence" className="overflow-hidden">
+          <CardHeader className={sectionHeaderClass}>
             <CardTitle>Workspace Profile</CardTitle>
             <CardDescription>
               {canManageWorkspace
@@ -978,15 +977,15 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                 )}
               </form>
             ) : (
-              <div className="rounded-sm border border-border/50 p-4 text-sm text-muted-foreground">
+              <div className={mutedPanelClass}>
                 This account is not currently attached to a workspace.
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="soft-elevation border-border/60">
-          <CardHeader>
+        <Card surface="muted" className="overflow-hidden">
+          <CardHeader className={sectionHeaderClass}>
             <CardTitle>Team Directory</CardTitle>
             <CardDescription>Everyone with access to this workspace.</CardDescription>
           </CardHeader>
@@ -1001,7 +1000,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                   const name = [member.first_name, member.last_name].filter(Boolean).join(" ").trim();
                   const displayName = name || member.email || "Unnamed user";
                   return (
-                    <div key={member.member_user_id} className="rounded-sm border border-border/50 p-3">
+                    <div key={member.member_user_id} className={panelClass}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="truncate font-medium">{displayName}</p>
@@ -1022,8 +1021,8 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
 
         {onboardingState.isPlatformAdmin && (
           <TabsContent value="platform" className="space-y-5">
-            <Card className="soft-elevation border-border/60">
-          <CardHeader>
+            <Card surface="intelligence" className="overflow-hidden">
+          <CardHeader className={sectionHeaderClass}>
             <CardTitle>Platform Admin Controls</CardTitle>
             <CardDescription>
               Cross-workspace visibility and partner sponsorship controls for onboarding new companies.
@@ -1039,7 +1038,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
               ) : (
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {globalWorkspaces.map((workspace) => (
-                    <div key={workspace.company_id} className="rounded-sm border border-border/50 p-3">
+                    <div key={workspace.company_id} className={panelClass}>
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate font-medium">{workspace.company_name}</p>
                         {workspace.company_id === onboardingState.companyId && <Badge variant="outline">Current</Badge>}
@@ -1050,7 +1049,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
               )}
             </div>
 
-            <div className="space-y-3 rounded-sm border border-border/50 p-4">
+            <div className={panelClass}>
               <p className="text-sm font-medium">Generate Partner Code</p>
               <form className="space-y-3" onSubmit={handleGeneratePartnerCode}>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -1095,7 +1094,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
               </form>
 
               {generatedPartnerCode && (
-                <div className="space-y-2 rounded-sm border border-border/50 bg-background/60 p-3">
+                <div className={`${mutedPanelClass} mt-4 space-y-2`}>
                   <p className="text-xs text-muted-foreground">
                     {generatedPartnerCode.companyName} | {generatedPartnerCode.sponsorMonths} month sponsorship
                   </p>
@@ -1143,94 +1142,96 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
         )}
 
         <TabsContent value="access" className="space-y-5">
-          <Card className="soft-elevation border-border/60">
-        <CardHeader>
-          <CardTitle>Access & Invitations</CardTitle>
-          <CardDescription>
-            {canManageWorkspace
-              ? onboardingState.isPlatformAdmin
-                ? "Invite users to your own workspace, any existing workspace, or a newly created workspace."
-                : "Invite teammates and monitor invitation status."
-              : "Only workspace owners/admins can send invites."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {canManageWorkspace ? (
-            <form className="space-y-4" onSubmit={handleSendInvite}>
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="inviteEmail">Invite email</Label>
-                  <Input
-                    id="inviteEmail"
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(event) => setInviteEmail(event.target.value)}
-                    placeholder="teammate@publisher.com"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select value={inviteRole} onValueChange={setInviteRole}>
-                    <SelectTrigger id="inviteRole">
-                      <SelectValue placeholder="Select role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(onboardingState.isPlatformAdmin && platformTargetMode === "new"
-                        ? bootstrapRoleOptions
-                        : roleOptions
-                      ).map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {titleCaseRole(value)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {onboardingState.isPlatformAdmin && platformTargetMode === "new" && (
-                    <p className="text-xs text-muted-foreground">
-                      First invite into a new workspace must be Owner or Admin.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-2">
-                  <Label>Invite expiry</Label>
-                  <Select value={String(inviteExpiryDays)} onValueChange={(value) => setInviteExpiryDays(Number(value))}>
-                    <SelectTrigger id="expiryDays">
-                      <SelectValue placeholder="Select expiry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {expiryOptions.map((days) => (
-                        <SelectItem key={days} value={String(days)}>
-                          {days} days
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {onboardingState.isPlatformAdmin && (
-                  <>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Workspace target mode</Label>
-                      <Select
-                        value={platformTargetMode}
-                        onValueChange={(value) => setPlatformTargetMode(value as PlatformTargetMode)}
-                      >
-                        <SelectTrigger id="workspaceTargetMode">
-                          <SelectValue placeholder="Select target mode" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {hasWorkspace && <SelectItem value="current">Current workspace</SelectItem>}
-                          <SelectItem value="existing">Existing workspace</SelectItem>
-                          <SelectItem value="new">New workspace</SelectItem>
-                        </SelectContent>
-                      </Select>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <Card surface="evidence" className="overflow-hidden">
+              <CardHeader className={sectionHeaderClass}>
+                <CardTitle>Invite Access</CardTitle>
+                <CardDescription>
+                  {canManageWorkspace
+                    ? onboardingState.isPlatformAdmin
+                      ? "Invite users into the current workspace, an existing workspace, or a newly created workspace."
+                      : "Invite teammates and define role, expiry, and access scope."
+                    : "Only workspace owners and admins can send invites."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {canManageWorkspace ? (
+                  <form className="space-y-4" onSubmit={handleSendInvite}>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="inviteEmail">Invite email</Label>
+                        <Input
+                          id="inviteEmail"
+                          type="email"
+                          value={inviteEmail}
+                          onChange={(event) => setInviteEmail(event.target.value)}
+                          placeholder="teammate@publisher.com"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Role</Label>
+                        <Select value={inviteRole} onValueChange={setInviteRole}>
+                          <SelectTrigger id="inviteRole">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(onboardingState.isPlatformAdmin && platformTargetMode === "new"
+                              ? bootstrapRoleOptions
+                              : roleOptions
+                            ).map((value) => (
+                              <SelectItem key={value} value={value}>
+                                {titleCaseRole(value)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {onboardingState.isPlatformAdmin && platformTargetMode === "new" ? (
+                          <p className="text-xs text-muted-foreground">
+                            First invite into a new workspace must be Owner or Admin.
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
 
-                    {canShowWorkspaceTargetSelect && (
-                      <div className="space-y-2 md:col-span-3">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <Label>Invite expiry</Label>
+                        <Select value={String(inviteExpiryDays)} onValueChange={(value) => setInviteExpiryDays(Number(value))}>
+                          <SelectTrigger id="expiryDays">
+                            <SelectValue placeholder="Select expiry" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {expiryOptions.map((days) => (
+                              <SelectItem key={days} value={String(days)}>
+                                {days} days
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {onboardingState.isPlatformAdmin ? (
+                        <div className="space-y-2 md:col-span-2">
+                          <Label>Workspace target mode</Label>
+                          <Select
+                            value={platformTargetMode}
+                            onValueChange={(value) => setPlatformTargetMode(value as PlatformTargetMode)}
+                          >
+                            <SelectTrigger id="workspaceTargetMode">
+                              <SelectValue placeholder="Select target mode" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {hasWorkspace ? <SelectItem value="current">Current workspace</SelectItem> : null}
+                              <SelectItem value="existing">Existing workspace</SelectItem>
+                              <SelectItem value="new">New workspace</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {onboardingState.isPlatformAdmin && canShowWorkspaceTargetSelect ? (
+                      <div className="space-y-2">
                         <Label>Target workspace</Label>
                         <Select value={selectedWorkspaceId || undefined} onValueChange={setSelectedWorkspaceId}>
                           <SelectTrigger id="targetWorkspace">
@@ -1246,14 +1247,14 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                             ))}
                           </SelectContent>
                         </Select>
-                        {globalWorkspaces.length === 0 && (
+                        {globalWorkspaces.length === 0 ? (
                           <p className="text-xs text-muted-foreground">No workspace records found yet.</p>
-                        )}
+                        ) : null}
                       </div>
-                    )}
+                    ) : null}
 
-                    {canShowNewWorkspaceInput && (
-                      <div className="space-y-2 md:col-span-3">
+                    {onboardingState.isPlatformAdmin && canShowNewWorkspaceInput ? (
+                      <div className="space-y-2">
                         <Label htmlFor="newWorkspaceName">New workspace name</Label>
                         <Input
                           id="newWorkspaceName"
@@ -1262,112 +1263,116 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
                           placeholder="Nexus Music Publishing"
                         />
                       </div>
-                    )}
+                    ) : null}
 
-                    {canShowCurrentWorkspaceHint && (
-                      <div className="space-y-2 md:col-span-3">
+                    {onboardingState.isPlatformAdmin && canShowCurrentWorkspaceHint ? (
+                      <div className="space-y-2">
                         <Label>Target workspace</Label>
-                        <div className="rounded-sm border border-border/50 p-3 text-sm">
+                        <div className={panelClass}>
                           {onboardingState.companyName ?? "No current workspace selected"}
                         </div>
                       </div>
-                    )}
+                    ) : null}
 
-                  </>
-                )}
-              </div>
-
-              {onboardingState.isPlatformAdmin && (
-                <p className="text-xs text-muted-foreground">Invite target: {inviteTargetLabel}</p>
-              )}
-
-              <Button type="submit" disabled={sendingInvite} className="w-full sm:w-auto">
-                <MailPlus className="mr-2 h-4 w-4" />
-                {sendingInvite ? "Sending invite..." : "Send Invite"}
-              </Button>
-            </form>
-          ) : (
-            <div className="rounded-sm border border-border/50 p-4 text-sm text-muted-foreground">
-              Admins manage invitations for this workspace. Contact your workspace owner/admin for access updates.
-            </div>
-          )}
-
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Users2 className="h-4 w-4 text-muted-foreground" />
-              <p className="font-medium">Recent invitations</p>
-            </div>
-            {loading ? (
-              <p className="text-sm text-muted-foreground">Loading invitations...</p>
-            ) : invites.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No invitations recorded yet.</p>
-            ) : (
-              <div className="space-y-2">
-                {invites.map((invite) => (
-                  <div key={invite.invitation_id} className="rounded-sm border border-border/50 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{invite.email}</p>
-                      <Badge variant="outline">{titleCaseRole(invite.role)}</Badge>
-                      <Badge variant="outline">{titleCaseStatus(invite.status)}</Badge>
-                      <Badge variant="outline">{titleCaseStatus(invite.auth_delivery_status)}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {invite.company_name ?? "Workspace pending"} | Created {formatDateTime(invite.created_at)} |
-                      Expires {formatDateTime(invite.expires_at)}
-                    </p>
-                    {invite.auth_delivery_error && (
-                      <p className="mt-1 text-xs text-muted-foreground">{invite.auth_delivery_error}</p>
-                    )}
-                    {invite.latest_invite_link && (
-                      <div className="mt-2 space-y-2">
-                        <Input
-                          readOnly
-                          value={invite.latest_invite_link}
-                          className="h-8 text-xs"
-                          onFocus={(event) => event.currentTarget.select()}
-                        />
-                        <div className="flex flex-wrap items-center gap-2">
-                          {invite.latest_invite_link_generated_at && (
-                            <p className="text-xs text-muted-foreground">
-                              Generated {formatDateTime(invite.latest_invite_link_generated_at)}
-                            </p>
-                          )}
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-[10px]"
-                            onClick={async () => {
-                              try {
-                                await navigator.clipboard.writeText(invite.latest_invite_link ?? "");
-                                toast({ title: "Invite link copied" });
-                              } catch {
-                                toast({
-                                  title: "Copy failed",
-                                  description: invite.latest_invite_link ?? "",
-                                  variant: "destructive",
-                                });
-                              }
-                            }}
-                          >
-                            <Copy className="mr-1 h-3 w-3" />
-                            Copy Link
-                          </Button>
-                        </div>
+                    {onboardingState.isPlatformAdmin ? (
+                      <div className={mutedPanelClass}>
+                        Invite target: {inviteTargetLabel}
                       </div>
-                    )}
+                    ) : null}
+
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button type="submit" disabled={sendingInvite}>
+                        <MailPlus className="mr-2 h-4 w-4" />
+                        {sendingInvite ? "Sending invite..." : "Send Invite"}
+                      </Button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className={mutedPanelClass}>
+                    Admins manage invitations for this workspace. Contact your workspace owner/admin for access updates.
                   </div>
-                ))}
-              </div>
-            )}
+                )}
+              </CardContent>
+            </Card>
+
+            <Card surface="muted" className="overflow-hidden">
+              <CardHeader className={sectionHeaderClass}>
+                <div className="flex items-center gap-2">
+                  <Users2 className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
+                  <CardTitle>Recent Invitations</CardTitle>
+                </div>
+                <CardDescription>Delivery status, workspace target, and reusable invite links.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {loading ? (
+                  <p className="text-sm text-muted-foreground">Loading invitations...</p>
+                ) : invites.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No invitations recorded yet.</p>
+                ) : (
+                  invites.map((invite) => (
+                    <div key={invite.invitation_id} className={panelClass}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{invite.email}</p>
+                        <Badge variant="outline">{titleCaseRole(invite.role)}</Badge>
+                        <Badge variant="outline">{titleCaseStatus(invite.status)}</Badge>
+                        <Badge variant="outline">{titleCaseStatus(invite.auth_delivery_status)}</Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {invite.company_name ?? "Workspace pending"} | Created {formatDateTime(invite.created_at)} | Expires{" "}
+                        {formatDateTime(invite.expires_at)}
+                      </p>
+                      {invite.auth_delivery_error ? (
+                        <p className="mt-1 text-xs text-muted-foreground">{invite.auth_delivery_error}</p>
+                      ) : null}
+                      {invite.latest_invite_link ? (
+                        <div className="mt-3 space-y-2">
+                          <Input
+                            readOnly
+                            value={invite.latest_invite_link}
+                            className="h-8 text-xs"
+                            onFocus={(event) => event.currentTarget.select()}
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            {invite.latest_invite_link_generated_at ? (
+                              <p className="text-xs text-muted-foreground">
+                                Generated {formatDateTime(invite.latest_invite_link_generated_at)}
+                              </p>
+                            ) : null}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-[10px]"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(invite.latest_invite_link ?? "");
+                                  toast({ title: "Invite link copied" });
+                                } catch {
+                                  toast({
+                                    title: "Copy failed",
+                                    description: invite.latest_invite_link ?? "",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }}
+                            >
+                              <Copy className="mr-1 h-3 w-3" />
+                              Copy Link
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
 
       {!schemaReady && (
-        <Card className="soft-elevation border-border/60">
+        <Card surface="muted" className="overflow-hidden">
           <CardContent className="flex items-start gap-2 p-4 text-sm text-muted-foreground">
             <Shield className="mt-0.5 h-4 w-4" />
             <p>

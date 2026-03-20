@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Trash2, Search, Layers3, Building2, X } from "lucide-react";
+import { Upload, FileText, Trash2, Search, Layers3, Building2, X, SlidersHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -108,6 +108,7 @@ export default function Reports() {
   const [selectedCmo, setSelectedCmo] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [layout, setLayout] = useState<"grouped" | "flat">("flat");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
 
   const { data: reports = [], isLoading } = useQuery({
@@ -201,27 +202,29 @@ export default function Reports() {
 
   const appliedFilters = useMemo(() => {
     const filters: string[] = [];
-    if (selectedCmo !== "all") filters.push(`CMO: ${selectedCmo}`);
+    if (selectedCmo !== "all") filters.push(`Source: ${selectedCmo}`);
     if (selectedStatus !== "all") filters.push(`Status: ${selectedStatus}`);
     if (search.trim()) filters.push(`Search: ${search.trim()}`);
     return filters;
   }, [search, selectedCmo, selectedStatus]);
 
+  const hasSecondaryFilters = selectedCmo !== "all" || selectedStatus !== "all";
+
+  useEffect(() => {
+    if (hasSecondaryFilters) setShowMoreFilters(true);
+  }, [hasSecondaryFilters]);
+
   const clearFilters = useCallback(() => {
     setSearch("");
     setSelectedCmo("all");
     setSelectedStatus("all");
+    setShowMoreFilters(false);
   }, []);
 
-  const stats = useMemo(() => {
-    const completed = filteredReports.filter((r) =>
-      ["completed", "completed_passed", "completed_with_warnings"].includes(r.status)
-    ).length;
-    const processing = filteredReports.filter((r) => r.status === "processing").length;
-    const lines = filteredReports.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0);
-    const revenue = filteredReports.reduce((sum, r) => sum + (r.total_revenue ?? 0), 0);
-    return { completed, processing, lines, revenue };
-  }, [filteredReports]);
+  const processingCount = useMemo(
+    () => filteredReports.filter((r) => r.status === "processing").length,
+    [filteredReports],
+  );
 
   const hasAnyReports = reports.length > 0;
   const emptyReportDescription = hasAnyReports
@@ -380,18 +383,15 @@ export default function Reports() {
         variant="compact"
         title="Statements"
         meta={
-          <>
-            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
-              {filteredReports.length.toLocaleString()} visible
-            </span>
+          processingCount > 0 ? (
             <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
-              {stats.processing} processing
+              {processingCount} processing
             </span>
-          </>
+          ) : undefined
         }
         actions={
           <Button asChild size="sm" variant="quiet">
-            <Link to="/ai-insights">Open AI Insights</Link>
+            <Link to="/ai-insights">Ask Insights</Link>
           </Button>
         }
       />
@@ -487,76 +487,77 @@ export default function Reports() {
       <Card surface="evidence">
         <CardContent className="p-4 md:p-5">
           <Tabs value={layout} onValueChange={(v) => setLayout(v as "grouped" | "flat")} className="space-y-4">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.7)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
-                  {stats.completed.toLocaleString()} ready
-                </span>
-                {stats.processing > 0 ? (
-                  <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
-                    {stats.processing} in queue
-                  </span>
-                ) : null}
+            <div className="space-y-3">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.5fr)_auto_auto] xl:items-center">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    variant="quiet"
+                    className="pl-9"
+                    placeholder="Search statement, file, or source..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <TabsList variant="quiet" className="self-start">
+                  <TabsTrigger value="flat" variant="quiet" className="flex-none">
+                    <Layers3 className="mr-1.5 h-4 w-4" />
+                    All Statements
+                  </TabsTrigger>
+                  <TabsTrigger value="grouped" variant="quiet" className="flex-none">
+                    <Building2 className="mr-1.5 h-4 w-4" />
+                    By Source
+                  </TabsTrigger>
+                </TabsList>
+                <Button
+                  type="button"
+                  variant={showMoreFilters ? "secondary" : "quiet"}
+                  className="h-10 w-full px-4 xl:w-auto"
+                  onClick={() => setShowMoreFilters((current) => !current)}
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  {showMoreFilters ? "Hide filters" : "More filters"}
+                </Button>
               </div>
-              <TabsList variant="quiet" className="h-auto w-auto gap-5 self-start">
-                <TabsTrigger value="flat" variant="quiet" className="flex-none">
-                  <Layers3 className="mr-1.5 h-4 w-4" />
-                  All Statements
-                </TabsTrigger>
-                <TabsTrigger value="grouped" variant="quiet" className="flex-none">
-                  <Building2 className="mr-1.5 h-4 w-4" />
-                  By Source
-                </TabsTrigger>
-              </TabsList>
-            </div>
 
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  variant="quiet"
-                  className="pl-9"
-                  placeholder="Search statement, file, or source..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <Select value={selectedCmo} onValueChange={setSelectedCmo}>
-                <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
-                  <SelectValue placeholder="All sources" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All sources</SelectItem>
-                  {cmoOptions.map((cmo) => (
-                    <SelectItem key={cmo} value={cmo}>
-                      {cmo}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
-                  <SelectValue placeholder="All statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  {statusOptions.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {status}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              {showMoreFilters ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:max-w-[420px]">
+                  <Select value={selectedCmo} onValueChange={setSelectedCmo}>
+                    <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
+                      <SelectValue placeholder="All sources" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All sources</SelectItem>
+                      {cmoOptions.map((cmo) => (
+                        <SelectItem key={cmo} value={cmo}>
+                          {cmo}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All statuses</SelectItem>
+                      {statusOptions.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
 
-            <AppliedFiltersRow
-              filters={appliedFilters}
-              onClear={clearFilters}
-              emptyLabel={
-                hasAnyReports ? `${reports.length.toLocaleString()} statements` : "No statements yet."
-              }
-              className="pt-0"
-            />
+              <AppliedFiltersRow
+                filters={appliedFilters}
+                onClear={clearFilters}
+                hideWhenEmpty
+                className="pt-0"
+              />
+            </div>
 
             <TabsContent value="grouped" className="space-y-5">
               {isLoading ? (

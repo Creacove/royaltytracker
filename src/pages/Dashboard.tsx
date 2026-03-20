@@ -1,4 +1,3 @@
-﻿
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -6,30 +5,20 @@ import { Link } from "react-router-dom";
 import {
   ResponsiveContainer,
   ComposedChart,
-  BarChart,
   Bar,
   Line,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Globe2,
-  RadioTower,
-  ShieldAlert,
-} from "lucide-react";
+import { AlertTriangle, ShieldAlert } from "lucide-react";
+
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { parseLooseNumber, safePercent, toCompactMoney, toMoney } from "@/lib/royalty";
 import { KpiStrip, PageHeader } from "@/components/layout";
 
@@ -80,32 +69,33 @@ type ExtractorPayload = {
   available: boolean;
 };
 
-const CHART_CATEGORY_COLORS = [
-  "hsl(var(--brand-accent))",
-  "hsl(var(--tone-pending))",
-  "hsl(var(--tone-success))",
-  "hsl(var(--tone-info))",
-  "hsl(var(--tone-warning))",
-  "hsl(var(--tone-archived))",
-];
-const CHART_STATUS_COLORS: Record<string, string> = {
-  completed: "hsl(var(--tone-success))",
-  completed_passed: "hsl(var(--tone-success))",
-  completed_with_warnings: "hsl(var(--tone-warning))",
-  needs_review: "hsl(var(--brand-accent))",
-  processing: "hsl(var(--tone-pending))",
-  pending: "hsl(var(--tone-pending))",
-  failed: "hsl(var(--tone-critical))",
+type SourceRankingRow = {
+  cmo: string;
+  docs: number;
+  net: number;
+  avgAccuracy: number | null;
+  sharePct: number;
 };
+
+type PlatformMixRow = {
+  name: string;
+  value: number;
+  sharePct: number;
+};
+
+const DASHBOARD_BATCH_SIZE = 1000;
+
 const CHART_TICK_STYLE = {
   fontSize: 10,
   fill: "hsl(0 0% 33%)",
   fontFamily: "var(--font-mono)",
 };
+
 const CHART_AXIS_STYLE = {
   stroke: "hsl(0 0% 20%)",
   strokeWidth: 1,
 };
+
 const CHART_TOOLTIP_CONTENT_STYLE = {
   backgroundColor: "hsl(44 14% 90%)",
   border: "1px solid hsl(0 0% 9%)",
@@ -114,6 +104,7 @@ const CHART_TOOLTIP_CONTENT_STYLE = {
   fontFamily: "var(--font-mono)",
   fontSize: "11px",
 };
+
 const CHART_TOOLTIP_LABEL_STYLE = {
   color: "hsl(0 0% 9%)",
   fontFamily: "var(--font-display)",
@@ -130,6 +121,24 @@ function isMissingRelationError(error: unknown, relation: string): boolean {
   return haystack.includes(relation.toLowerCase());
 }
 
+async function fetchAllRows<T>(
+  fetchBatch: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }>
+): Promise<T[]> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += DASHBOARD_BATCH_SIZE) {
+    const { data, error } = await fetchBatch(from, from + DASHBOARD_BATCH_SIZE - 1);
+    if (error) throw error;
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < DASHBOARD_BATCH_SIZE) break;
+  }
+
+  return rows;
+}
+
 function monthKey(input: string | null): string | null {
   if (!input) return null;
   const date = new Date(input);
@@ -143,13 +152,6 @@ function formatMonthLabel(month: string): string {
   return format(date, "MMM yy");
 }
 
-function safeDateLabel(input: string | null | undefined, pattern = "MMM d, yyyy"): string {
-  if (!input) return "-";
-  const date = new Date(input);
-  if (Number.isNaN(date.getTime())) return "-";
-  return format(date, pattern);
-}
-
 function extractorRevenue(row: Item): number {
   return (
     parseLooseNumber(row.amount_in_reporting_currency) ??
@@ -161,10 +163,6 @@ function extractorRevenue(row: Item): number {
 
 function extractorCommission(row: Item): number {
   return parseLooseNumber(row.master_commission) ?? 0;
-}
-
-function nonEmptyValue(value: string | null | undefined): boolean {
-  return !!value && value.trim() !== "";
 }
 
 export default function Dashboard() {
@@ -192,14 +190,14 @@ export default function Dashboard() {
     error: txError,
   } = useQuery({
     queryKey: ["dashboard-transactions"],
-    queryFn: async (): Promise<Tx[]> => {
-      const { data, error } = await supabase
-        .from("royalty_transactions")
-        .select("report_id,territory,platform,gross_revenue,net_revenue,commission,quantity,track_title,artist_name")
-        .limit(9000);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: async (): Promise<Tx[]> =>
+      fetchAllRows<Tx>((from, to) =>
+        supabase
+          .from("royalty_transactions")
+          .select("report_id,territory,platform,gross_revenue,net_revenue,commission,quantity,track_title,artist_name")
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      ),
   });
 
   const {
@@ -209,21 +207,31 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ["dashboard-document-ai-items"],
     queryFn: async (): Promise<ExtractorPayload> => {
-      const { data, error } = await supabase
-        .from("document_ai_report_items")
-        .select(
-          "report_id,country,channel,report_date,isrc,track_title,amount_in_original_currency,amount_in_reporting_currency,royalty_revenue,master_commission"
-        )
-        .limit(12000);
+      const rows: Item[] = [];
 
-      if (error) {
-        if (isMissingRelationError(error, "document_ai_report_items")) {
-          return { rows: [], available: false };
+      for (let from = 0; ; from += DASHBOARD_BATCH_SIZE) {
+        const { data, error } = await supabase
+          .from("document_ai_report_items")
+          .select(
+            "report_id,country,channel,report_date,isrc,track_title,amount_in_original_currency,amount_in_reporting_currency,royalty_revenue,master_commission"
+          )
+          .order("created_at", { ascending: false })
+          .range(from, from + DASHBOARD_BATCH_SIZE - 1);
+
+        if (error) {
+          if (from === 0 && isMissingRelationError(error, "document_ai_report_items")) {
+            return { rows: [], available: false };
+          }
+          throw error;
         }
-        throw error;
+
+        const batch = data ?? [];
+        rows.push(...batch);
+
+        if (batch.length < DASHBOARD_BATCH_SIZE) break;
       }
 
-      return { rows: data ?? [], available: true };
+      return { rows, available: true };
     },
   });
 
@@ -247,7 +255,6 @@ export default function Dashboard() {
     const hasTxFinance = grossFromTx > 0 || netFromTx > 0;
     const gross = hasTxFinance ? grossFromTx : grossFromExtractor;
     const net = hasTxFinance ? netFromTx : Math.max(0, grossFromExtractor - commissionFromExtractor);
-    const commission = hasTxFinance ? commissionFromTx : commissionFromExtractor;
 
     const totalReports = reports.length;
     const completedReports = reports.filter((r) =>
@@ -260,24 +267,26 @@ export default function Dashboard() {
 
     const accuracyValues = reports
       .map((r) => r.accuracy_score)
-      .filter((v): v is number => typeof v === "number");
+      .filter((value): value is number => typeof value === "number");
+
     const avgAccuracy =
       accuracyValues.length > 0
         ? accuracyValues.reduce((sum, value) => sum + value, 0) / accuracyValues.length
         : null;
 
-    const extractedLines =
-      transactions.length > 0
-        ? transactions.length
-        : items.length > 0
-          ? items.length
-          : reports.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0);
+    const activeArtists = transactions.length
+      ? new Set(transactions.map((tx) => tx.artist_name).filter((value): value is string => Boolean(value?.trim()))).size
+      : null;
+
+    const activeTitles = new Set(
+      (transactions.length > 0 ? transactions.map((tx) => tx.track_title) : items.map((item) => item.track_title)).filter(
+        (value): value is string => Boolean(value?.trim())
+      )
+    ).size;
 
     return {
       gross,
       net,
-      commission,
-      commissionRate: gross > 0 ? (commission / gross) * 100 : null,
       totalReports,
       completedReports,
       failedReports,
@@ -285,7 +294,8 @@ export default function Dashboard() {
       processingRate,
       activeCmos,
       avgAccuracy,
-      extractedLines,
+      activeArtists,
+      activeTitles,
     };
   }, [items, reports, transactions]);
 
@@ -334,27 +344,9 @@ export default function Dashboard() {
       .slice(-12);
   }, [items, reportById, reports, transactions]);
 
-  const territoryData = useMemo(() => {
+  const platformMix = useMemo<PlatformMixRow[]>(() => {
     const map = new Map<string, number>();
-    if (transactions.length > 0) {
-      for (const tx of transactions) {
-        const key = tx.territory ?? "Unknown";
-        map.set(key, (map.get(key) ?? 0) + (tx.net_revenue ?? 0));
-      }
-    } else {
-      for (const row of items) {
-        const key = row.country ?? "Unknown";
-        map.set(key, (map.get(key) ?? 0) + extractorRevenue(row));
-      }
-    }
-    return Array.from(map.entries())
-      .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-  }, [items, transactions]);
 
-  const platformData = useMemo(() => {
-    const map = new Map<string, number>();
     if (transactions.length > 0) {
       for (const tx of transactions) {
         const key = tx.platform ?? "Unknown";
@@ -366,28 +358,29 @@ export default function Dashboard() {
         map.set(key, (map.get(key) ?? 0) + extractorRevenue(row));
       }
     }
-    return Array.from(map.entries())
+
+    const ranked = Array.from(map.entries())
       .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 6);
+
+    const total = ranked.reduce((sum, row) => sum + row.value, 0);
+
+    return ranked.map((row) => ({
+      ...row,
+      sharePct: total > 0 ? (row.value / total) * 100 : 0,
+    }));
   }, [items, transactions]);
 
-  const cmoScorecard = useMemo(() => {
+  const sourceRanking = useMemo<SourceRankingRow[]>(() => {
     const map = new Map<
       string,
       {
         cmo: string;
         docs: number;
-        lines: number;
-        gross: number;
         net: number;
-        failed: number;
-        processing: number;
         accuracySum: number;
         accuracyCount: number;
-        lastUpload: string | null;
-        territoryTotals: Map<string, number>;
-        platformTotals: Map<string, number>;
       }
     >();
 
@@ -396,31 +389,17 @@ export default function Dashboard() {
         map.set(report.cmo_name, {
           cmo: report.cmo_name,
           docs: 0,
-          lines: 0,
-          gross: 0,
           net: 0,
-          failed: 0,
-          processing: 0,
           accuracySum: 0,
           accuracyCount: 0,
-          lastUpload: null,
-          territoryTotals: new Map<string, number>(),
-          platformTotals: new Map<string, number>(),
         });
       }
 
       const row = map.get(report.cmo_name)!;
       row.docs += 1;
-      row.lines += report.transaction_count ?? 0;
-      if (report.status === "failed") row.failed += 1;
-      if (report.status === "processing" || report.status === "pending") row.processing += 1;
       if (report.accuracy_score != null) {
         row.accuracySum += report.accuracy_score;
         row.accuracyCount += 1;
-      }
-
-      if (!row.lastUpload || new Date(report.created_at) > new Date(row.lastUpload)) {
-        row.lastUpload = report.created_at;
       }
     }
 
@@ -430,20 +409,7 @@ export default function Dashboard() {
         if (!report) continue;
         const row = map.get(report.cmo_name);
         if (!row) continue;
-        row.gross += tx.gross_revenue ?? 0;
         row.net += tx.net_revenue ?? 0;
-        if (tx.territory) {
-          row.territoryTotals.set(
-            tx.territory,
-            (row.territoryTotals.get(tx.territory) ?? 0) + (tx.net_revenue ?? 0)
-          );
-        }
-        if (tx.platform) {
-          row.platformTotals.set(
-            tx.platform,
-            (row.platformTotals.get(tx.platform) ?? 0) + (tx.net_revenue ?? 0)
-          );
-        }
       }
     } else {
       for (const item of items) {
@@ -452,81 +418,27 @@ export default function Dashboard() {
         const row = map.get(report.cmo_name);
         if (!row) continue;
         const gross = extractorRevenue(item);
-        row.gross += gross;
         row.net += Math.max(0, gross - extractorCommission(item));
-        if (item.country) {
-          row.territoryTotals.set(item.country, (row.territoryTotals.get(item.country) ?? 0) + gross);
-        }
-        if (item.channel) {
-          row.platformTotals.set(item.channel, (row.platformTotals.get(item.channel) ?? 0) + gross);
-        }
       }
     }
 
-    const toTopKey = (bucket: Map<string, number>): string | null => {
-      let bestKey: string | null = null;
-      let bestValue = -1;
-      for (const [key, value] of bucket.entries()) {
-        if (value > bestValue) {
-          bestValue = value;
-          bestKey = key;
-        }
-      }
-      return bestKey;
-    };
-
-    return Array.from(map.values())
+    const ranked = Array.from(map.values())
       .map((row) => ({
         cmo: row.cmo,
         docs: row.docs,
-        lines: row.lines,
-        gross: row.gross,
         net: row.net,
-        failed: row.failed,
-        processing: row.processing,
         avgAccuracy: row.accuracyCount > 0 ? row.accuracySum / row.accuracyCount : null,
-        lastUpload: row.lastUpload,
-        topTerritory: toTopKey(row.territoryTotals),
-        topPlatform: toTopKey(row.platformTotals),
       }))
-      .sort((a, b) => b.net - a.net);
+      .sort((a, b) => b.net - a.net)
+      .slice(0, 6);
+
+    const total = ranked.reduce((sum, row) => sum + Math.max(0, row.net), 0);
+
+    return ranked.map((row) => ({
+      ...row,
+      sharePct: total > 0 ? (Math.max(0, row.net) / total) * 100 : 0,
+    }));
   }, [items, reportById, reports, transactions]);
-
-  const reportStatusMix = useMemo(() => {
-    const order = ["completed", "completed_passed", "completed_with_warnings", "needs_review", "processing", "pending", "failed"];
-    const labelFor = (status: string) => {
-      switch (status) {
-        case "completed":
-        case "completed_passed":
-          return "Completed";
-        case "completed_with_warnings":
-          return "Completed w/ Warnings";
-        case "needs_review":
-          return "Needs Review";
-        case "processing":
-          return "Processing";
-        case "pending":
-          return "Pending";
-        case "failed":
-          return "Failed";
-        default:
-          return status;
-      }
-    };
-
-    const byStatus = new Map<string, number>();
-    for (const report of reports) {
-      byStatus.set(report.status, (byStatus.get(report.status) ?? 0) + 1);
-    }
-
-    return order
-      .filter((status) => (byStatus.get(status) ?? 0) > 0)
-      .map((status) => ({
-        status,
-        label: labelFor(status),
-        value: byStatus.get(status) ?? 0,
-      }));
-  }, [reports]);
 
   const loading = reportsLoading || txLoading || extractorLoading;
   const criticalError = reportsError || txError || extractorError;
@@ -536,14 +448,9 @@ export default function Dashboard() {
       <PageHeader
         title="Dashboard"
         meta={
-          <>
-            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
-              {metrics.activeCmos} sources
-            </span>
-            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.84)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
-              {metrics.extractedLines.toLocaleString()} lines
-            </span>
-          </>
+          <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+            {metrics.activeCmos} sources
+          </span>
         }
         actions={
           <Button asChild size="sm">
@@ -554,33 +461,32 @@ export default function Dashboard() {
 
       {!extractorAvailable ? (
         <Card surface="muted">
-          <CardContent className="px-4 py-4">
-          <div className="flex items-start gap-2">
-            <ShieldAlert className="mt-0.5 h-4 w-4 text-foreground" />
-            <p>
-              Extractor table `document_ai_report_items` is not available in this environment yet.
-              The dashboard is running from normalized transactions only.
-            </p>
-          </div>
+          <CardContent className="p-4">
+            <div className="flex items-start gap-2 text-sm">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+              <p>
+                Extractor table `document_ai_report_items` is not available in this environment yet. The dashboard is
+                running from normalized transactions only.
+              </p>
+            </div>
           </CardContent>
         </Card>
       ) : null}
 
       {criticalError ? (
         <Card surface="critical">
-          <CardContent className="px-4 py-4">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 text-foreground" />
-            <p>
-              Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}
-            </p>
-          </div>
+          <CardContent className="p-4">
+            <div className="flex items-start gap-2 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+              <p>Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}</p>
+            </div>
           </CardContent>
         </Card>
       ) : null}
 
       <KpiStrip
         variant="hero"
+        columnsClassName="xl:grid-cols-4"
         items={[
           {
             label: "Net Revenue",
@@ -591,84 +497,40 @@ export default function Dashboard() {
           {
             label: "Statements",
             value: metrics.totalReports.toLocaleString(),
-            hint: `${metrics.completedReports} completed | ${metrics.processingReports} in-flight`,
+            hint: `${metrics.completedReports} completed across ${metrics.activeCmos} sources`,
             tone: "default",
           },
           {
-            label: "Commission",
-            value: toMoney(metrics.commission),
-            hint: `Effective rate ${safePercent(metrics.commissionRate)}`,
+            label: "Active Artists",
+            value: metrics.activeArtists != null ? metrics.activeArtists.toLocaleString() : "—",
+            hint: metrics.activeArtists != null ? "Artists represented in normalized lines" : "Available after normalization",
             tone: "default",
           },
           {
-            label: "Reports In Progress",
-            value: metrics.processingReports.toLocaleString(),
-            hint: "Currently being processed",
-            tone: metrics.processingReports > 0 ? "accent" : "default",
-          },
-          {
-            label: "Reports Needing Attention",
-            value: metrics.failedReports.toLocaleString(),
-            hint: "Require review or reprocessing",
-            tone: metrics.failedReports > 0 ? "critical" : "success",
+            label: "Active Titles",
+            value: metrics.activeTitles.toLocaleString(),
+            hint: "Tracks represented in current portfolio data",
+            tone: "default",
           },
         ]}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.75fr)]">
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.85fr)]">
         <Card surface="hero">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
-            <CardTitle className="text-[1.2rem]">Operational confidence</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
-              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Processing success</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.processingRate)}</p>
-              <Progress
-                value={Math.max(0, Math.min(100, metrics.processingRate))}
-                className="mt-4 h-3"
-              />
+          <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
+            <div className="min-w-0">
+              <CardTitle className="text-base">Revenue Trend</CardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">Net line and gross bars across the last 12 months.</p>
             </div>
-            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
-              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">System confidence</p>
-              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.avgAccuracy)}</p>
-              <Progress
-                value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
-                className="mt-4 h-3"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card surface="evidence">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
-            <CardTitle className="text-[1.2rem]">Backlog</CardTitle>
+            <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.8)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+              12 months
+            </span>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-3">
-                <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Needs attention</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{metrics.failedReports.toLocaleString()}</p>
-              </div>
-              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-3">
-                <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">In progress</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{metrics.processingReports.toLocaleString()}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-5">
-        <Card surface="hero" className="xl:col-span-3">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
-            <CardTitle className="text-base">Revenue Trend (12 Months)</CardTitle>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="pt-5">
             {monthlyTrend.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={320}>
                 <ComposedChart data={monthlyTrend}>
-                  <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.16} vertical={false} />
+                  <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
                   <XAxis dataKey="label" tick={CHART_TICK_STYLE} axisLine={CHART_AXIS_STYLE} tickLine={false} />
                   <YAxis
                     yAxisId="revenue"
@@ -676,7 +538,7 @@ export default function Dashboard() {
                     axisLine={CHART_AXIS_STYLE}
                     tickLine={false}
                     tickFormatter={(value: number) => toCompactMoney(value)}
-                    width={68}
+                    width={70}
                   />
                   <Tooltip
                     formatter={(value: number, name: string) => [
@@ -687,16 +549,16 @@ export default function Dashboard() {
                     contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
                     labelStyle={CHART_TOOLTIP_LABEL_STYLE}
                     itemStyle={{ color: "hsl(0 0% 9%)" }}
-                    cursor={{ fill: "hsla(0, 0%, 9%, 0.06)" }}
+                    cursor={{ fill: "hsla(0, 0%, 9%, 0.05)" }}
                   />
                   <Bar
                     yAxisId="revenue"
                     dataKey="gross"
                     name="Gross Revenue"
                     fill="hsl(var(--tone-pending))"
-                    fillOpacity={0.4}
+                    fillOpacity={0.38}
                     maxBarSize={30}
-                    radius={[2, 2, 0, 0]}
+                    radius={[3, 3, 0, 0]}
                   />
                   <Line
                     yAxisId="revenue"
@@ -705,227 +567,141 @@ export default function Dashboard() {
                     name="Net Revenue"
                     stroke="hsl(var(--brand-accent))"
                     strokeWidth={2.4}
-                    dot={{ r: 2.5, strokeWidth: 1, fill: "hsl(var(--brand-accent))", stroke: "hsl(var(--background))" }}
+                    dot={{ r: 2.4, strokeWidth: 1, fill: "hsl(var(--brand-accent))", stroke: "hsl(var(--background))" }}
                     activeDot={{ r: 4 }}
                   />
                 </ComposedChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+              <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                 {loading ? "Loading trend..." : "No trend data yet."}
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card surface="evidence" className="xl:col-span-2">
+        <Card surface="evidence">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
+            <CardTitle className="text-base">Operations Snapshot</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 pt-5 sm:grid-cols-2">
+            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Processing Success</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.processingRate)}</p>
+              <Progress value={Math.max(0, Math.min(100, metrics.processingRate))} className="mt-4 h-3" />
+              <p className="mt-3 text-xs text-muted-foreground">{metrics.completedReports.toLocaleString()} completed statements</p>
+            </div>
+
+            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">System Confidence</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.avgAccuracy)}</p>
+              <Progress value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))} className="mt-4 h-3" />
+              <p className="mt-3 text-xs text-muted-foreground">Average extractor confidence across statements</p>
+            </div>
+
+            <div
+              className={`${metrics.processingReports > 0 ? "surface-intelligence" : "surface-muted"} forensic-frame rounded-[calc(var(--radius-sm))] p-4`}
+            >
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">In Progress</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{metrics.processingReports.toLocaleString()}</p>
+              <p className="mt-3 text-xs text-muted-foreground">Statements waiting for normalized output</p>
+            </div>
+
+            <div
+              className={`${metrics.failedReports > 0 ? "surface-critical" : "surface-muted"} forensic-frame rounded-[calc(var(--radius-sm))] p-4`}
+            >
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Needs Attention</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{metrics.failedReports.toLocaleString()}</p>
+              <p className="mt-3 text-xs text-muted-foreground">Statements requiring review or reprocessing</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+        <Card surface="evidence">
+          <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
+            <div className="min-w-0">
+              <CardTitle className="text-base">Top Sources</CardTitle>
+              <p className="mt-2 text-sm text-muted-foreground">Ranked by net revenue contribution.</p>
+            </div>
+            <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.8)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+              {sourceRanking.length} ranked
+            </span>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-5">
+            {sourceRanking.length > 0 ? (
+              sourceRanking.map((row, index) => (
+                <article key={row.cmo} className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.75)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <p className="truncate text-[1rem] font-semibold text-foreground">{row.cmo}</p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.65)] px-2.5 py-1 text-muted-foreground">
+                          {row.docs.toLocaleString()} statements
+                        </span>
+                        <span className="rounded-full border border-[hsl(var(--brand-accent)/0.14)] bg-[hsl(var(--brand-accent-ghost)/0.55)] px-2.5 py-1 text-[hsl(var(--brand-accent))]">
+                          {row.avgAccuracy != null ? safePercent(row.avgAccuracy) : "No confidence"}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full border border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-muted)/0.65)]">
+                        <div
+                          className="h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--brand-accent)),hsl(var(--brand-accent-soft)))]"
+                          style={{ width: `${Math.max(0, Math.min(100, row.sharePct))}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Net Revenue</p>
+                      <p className="mt-1 font-mono text-lg text-foreground">{toCompactMoney(row.net)}</p>
+                    </div>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+                {loading ? "Loading sources..." : "No source ranking data yet."}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card surface="evidence">
           <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
             <CardTitle className="text-base">Platform Revenue Mix</CardTitle>
           </CardHeader>
-          <CardContent>
-            {platformData.length > 0 ? (
-              <div className="flex items-center gap-3">
-                <ResponsiveContainer width="55%" height={300}>
-                  <PieChart>
-                    <Pie
-                      data={platformData}
-                      dataKey="value"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={56}
-                      outerRadius={98}
-                      paddingAngle={2}
-                    >
-                      {platformData.map((_, idx) => (
-                        <Cell key={idx} fill={CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value: number) => toMoney(value)}
-                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
-                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
-                      itemStyle={{ color: "hsl(0 0% 9%)" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2">
-                  {platformData.map((row, idx) => (
-                    <div key={row.name} className="flex items-center gap-2 text-xs">
-                      <span
-                        className="h-2.5 w-2.5 border border-border"
-                        style={{ backgroundColor: CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length] }}
-                      />
-                      <span className="max-w-[130px] truncate text-muted-foreground">{row.name}</span>
-                      <span className="font-mono">{toCompactMoney(row.value)}</span>
+          <CardContent className="space-y-3 pt-5">
+            {platformMix.length > 0 ? (
+              platformMix.map((row) => (
+                <article key={row.name} className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{row.name}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{safePercent(row.sharePct)} of visible revenue</p>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <p className="shrink-0 font-mono text-sm text-foreground">{toCompactMoney(row.value)}</p>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full border border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-elevated)/0.78)]">
+                    <div
+                      className="h-full rounded-full bg-[linear-gradient(90deg,hsl(var(--tone-pending)),hsl(var(--brand-accent-soft)))]"
+                      style={{ width: `${Math.max(0, Math.min(100, row.sharePct))}%` }}
+                    />
+                  </div>
+                </article>
+              ))
             ) : (
-              <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
                 {loading ? "Loading platforms..." : "No platform distribution yet."}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
-
-      <div className="grid gap-6 xl:grid-cols-5">
-        <Card surface="evidence" className="xl:col-span-2">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Globe2 className="h-4 w-4" />
-              Top Territories
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {territoryData.length > 0 ? (
-              <div className="space-y-4">
-                <ResponsiveContainer width="100%" height={190}>
-                  <BarChart data={territoryData} layout="vertical" margin={{ left: 8 }}>
-                    <CartesianGrid stroke="hsl(0 0% 9%)" strokeDasharray="2 4" strokeOpacity={0.14} vertical={false} />
-                    <XAxis
-                      type="number"
-                      tick={CHART_TICK_STYLE}
-                      axisLine={CHART_AXIS_STYLE}
-                      tickLine={false}
-                      tickFormatter={(value) => toCompactMoney(Number(value))}
-                    />
-                    <YAxis
-                      dataKey="name"
-                      type="category"
-                      width={84}
-                      tick={CHART_TICK_STYLE}
-                      axisLine={CHART_AXIS_STYLE}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(value: number) => toMoney(value)}
-                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
-                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
-                      itemStyle={{ color: "hsl(0 0% 9%)" }}
-                    />
-                    <Bar dataKey="value" fill="hsl(var(--tone-pending))" radius={[0, 0, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-
-                <div className="border-t border-black/20 pt-3">
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">Report Status Mix</p>
-                  {reportStatusMix.length > 0 ? (
-                    <div className="flex items-center gap-3">
-                      <ResponsiveContainer width="50%" height={130}>
-                        <PieChart>
-                          <Pie
-                            data={reportStatusMix}
-                            dataKey="value"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={28}
-                            outerRadius={46}
-                            paddingAngle={2}
-                          >
-                            {reportStatusMix.map((_, idx) => (
-                              <Cell
-                                key={idx}
-                                fill={CHART_STATUS_COLORS[reportStatusMix[idx].status] ?? CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value: number) => `${value.toLocaleString()} report(s)`}
-                            contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
-                            labelStyle={CHART_TOOLTIP_LABEL_STYLE}
-                            itemStyle={{ color: "hsl(0 0% 9%)" }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="space-y-1">
-                        {reportStatusMix.map((row, idx) => (
-                          <div key={row.status} className="flex items-center gap-2 text-[11px]">
-                            <span
-                              className="h-2.5 w-2.5 border border-border"
-                              style={{
-                                backgroundColor:
-                                  CHART_STATUS_COLORS[row.status] ?? CHART_CATEGORY_COLORS[idx % CHART_CATEGORY_COLORS.length],
-                              }}
-                            />
-                            <span className="max-w-[120px] truncate text-muted-foreground">{row.label}</span>
-                            <span className="font-mono">{row.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex h-[130px] items-center justify-center text-xs text-muted-foreground">
-                      No report status data yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="flex h-[324px] items-center justify-center text-sm text-muted-foreground">
-                {loading ? "Loading territories..." : "No territory data yet."}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card surface="evidence" className="xl:col-span-3">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <RadioTower className="h-4 w-4" />
-              CMO Performance Scorecard
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {cmoScorecard.length > 0 ? (
-                <Table className="min-w-[860px]" variant="evidence" density="compact">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>CMO</TableHead>
-                      <TableHead className="text-right">Docs</TableHead>
-                      <TableHead className="text-right">Lines</TableHead>
-                      <TableHead className="text-right">Net</TableHead>
-                      <TableHead className="text-right">Confidence</TableHead>
-                      <TableHead>Top Territory</TableHead>
-                      <TableHead>Top Platform</TableHead>
-                      <TableHead>Last Upload</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {cmoScorecard.slice(0, 10).map((row) => (
-                      <TableRow key={row.cmo}>
-                        <TableCell className="font-medium">{row.cmo}</TableCell>
-                        <TableCell className="text-right font-mono">{row.docs}</TableCell>
-                        <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-mono">{toCompactMoney(row.net)}</TableCell>
-                        <TableCell className="text-right font-mono">{safePercent(row.avgAccuracy)}</TableCell>
-                        <TableCell>{row.topTerritory ?? "-"}</TableCell>
-                        <TableCell>{row.topPlatform ?? "-"}</TableCell>
-                        <TableCell>{safeDateLabel(row.lastUpload)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-            ) : (
-              <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
-                No CMO performance data yet.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {metrics.failedReports === 0 && metrics.processingReports === 0 && metrics.totalReports > 0 ? (
-        <Card surface="muted">
-          <CardContent className="pt-5">
-          <div className="flex items-center gap-2 text-sm">
-            <CheckCircle2 className="h-4 w-4 text-foreground" />
-            <span>All statements are completed with no current processing backlog.</span>
-          </div>
-          </CardContent>
-        </Card>
-      ) : null}
     </div>
   );
 }

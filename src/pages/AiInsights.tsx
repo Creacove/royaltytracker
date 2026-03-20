@@ -16,7 +16,6 @@ import {
   AlertTriangle,
   ArrowUpRight,
   MoveHorizontal,
-  Bot,
   CalendarRange,
   Copy,
   Lightbulb,
@@ -236,13 +235,6 @@ function confidenceToneClass(confidence: string | undefined): string {
     return "border-[hsl(var(--tone-warning)/0.2)] bg-[hsl(var(--tone-warning)/0.12)] text-[hsl(var(--tone-warning))]";
   }
   return "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.75)] text-muted-foreground";
-}
-
-function qualityOutcomeLabel(value: AiInsightsTurnResponse["quality_outcome"]): string | null {
-  if (value === "clarify") return "Clarification";
-  if (value === "constrained") return "Constrained";
-  if (value === "pass") return "Verified";
-  return null;
 }
 
 function axisLabel(value: string | number): string {
@@ -475,38 +467,15 @@ function AdaptiveAnswerStack({
               : "-",
         }))
       : payload.kpis.slice(0, 6).map((kpi) => ({ label: kpi.label, value: kpi.value }));
-  const qualityLabel = qualityOutcomeLabel(payload.quality_outcome);
-
   return (
     <div className="w-full min-w-0 flex-1 space-y-5">
       <section className="surface-hero forensic-frame spotlight-border relative min-w-0 overflow-hidden rounded-[calc(var(--radius)-2px)] p-5 md:p-6">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,hsl(var(--brand-accent)/0.22),transparent_62%)]" />
         <div className="pointer-events-none absolute bottom-0 right-0 h-28 w-28 translate-x-8 translate-y-8 rounded-full bg-[hsl(var(--brand-accent-ghost)/0.8)] blur-3xl" />
         <div className="relative min-w-0 space-y-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.84)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
-              {modeLabel(payload.resolved_mode)} scope
-            </span>
-            <span className={cn("rounded-full border px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em]", confidenceToneClass(payload.evidence.system_confidence))}>
-              {formatEvidenceConfidence(payload.evidence.system_confidence)}
-            </span>
-            <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.82)] px-3 py-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-              {payload.evidence.row_count.toLocaleString()} rows
-            </span>
-            {qualityLabel ? (
-              <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.82)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">
-                {qualityLabel}
-              </span>
-            ) : null}
-          </div>
-
           <div className="grid min-w-0 gap-4">
             <div className="min-w-0 space-y-5">
               <div className="min-w-0 space-y-3">
-                <div className="flex items-center gap-2 text-[10px] font-ui uppercase tracking-[0.2em] text-[hsl(var(--brand-accent))]">
-                  <Bot className="h-3.5 w-3.5" />
-                  <span>AI Briefing</span>
-                </div>
                 <h3 className="type-display-section w-full break-words text-[clamp(2rem,2.3vw+1.1rem,3.2rem)] leading-[0.98] tracking-tight text-foreground [overflow-wrap:anywhere]">
                   {leadTitle}
                 </h3>
@@ -539,7 +508,7 @@ function AdaptiveAnswerStack({
                 <p className="mt-2 break-words text-lg font-semibold tracking-tight text-foreground">
                   {activeScopeTitle(payload.resolved_entities)}
                 </p>
-                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">
+                <p className="mt-1 break-words text-xs uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))] [overflow-wrap:anywhere]">
                   {modeLabel(payload.resolved_mode)} scope • {formatDateWindow(payload.evidence.from_date, payload.evidence.to_date)}
                 </p>
               </div>
@@ -596,46 +565,48 @@ function AdaptiveAnswerStack({
           if (!Array.isArray(columns) || !Array.isArray(rows) || columns.length === 0 || rows.length === 0) return null;
           return (
             <Card key={block.id} surface="evidence">
-              <CardHeader className="flex flex-row items-center justify-between border-b border-[hsl(var(--border)/0.1)] pb-4">
-                <CardTitle className="text-[1rem]">{block.title ?? "Evidence Table"}</CardTitle>
+              <CardHeader className="flex flex-wrap items-start justify-between gap-3 border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <CardTitle className="min-w-0 break-words text-[1rem]">{block.title ?? "Evidence Table"}</CardTitle>
                 <Badge variant="outline" className="border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] font-mono text-[9px] uppercase tracking-[0.16em]">
                   {rows.length} rows
                 </Badge>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <Table
-                  variant="evidence"
-                  density="compact"
-                  style={{ minWidth: `${Math.max(720, columns.length * 138)}px` }}
-                >
-                  <TableHeader>
-                    <TableRow>
-                      {columns.map((column) => (
-                        <TableHead key={column}>{toAssistantLabel(column)}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.slice(0, 12).map((row, rIdx) => (
-                      <TableRow key={`${block.id}-${rIdx}`}>
+              <CardContent className="min-w-0 space-y-3">
+                <div className="mx-auto min-w-0 w-full max-w-[56rem] space-y-2">
+                  <Table
+                    variant="evidence"
+                    density="compact"
+                    style={{ minWidth: `${Math.max(560, columns.length * 128)}px` }}
+                  >
+                    <TableHeader>
+                      <TableRow>
                         {columns.map((column) => (
-                          <TableCell
-                            key={`${block.id}-${rIdx}-${column}`}
-                            className="whitespace-nowrap font-mono text-[11px]"
-                          >
-                            {formatAssistantValue(column, row[column])}
-                          </TableCell>
+                          <TableHead key={column}>{toAssistantLabel(column)}</TableHead>
                         ))}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {columns.length > 4 ? (
-                  <div className="flex items-center justify-end gap-1 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground md:hidden">
-                    <MoveHorizontal className="h-3 w-3" />
-                    <span>Swipe</span>
-                  </div>
-                ) : null}
+                    </TableHeader>
+                    <TableBody>
+                      {rows.slice(0, 12).map((row, rIdx) => (
+                        <TableRow key={`${block.id}-${rIdx}`}>
+                          {columns.map((column) => (
+                            <TableCell
+                              key={`${block.id}-${rIdx}-${column}`}
+                              className="whitespace-nowrap font-mono text-[11px]"
+                            >
+                              {formatAssistantValue(column, row[column])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {columns.length > 4 ? (
+                    <div className="flex items-center justify-end gap-1 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                      <MoveHorizontal className="h-3 w-3" />
+                      <span>Swipe</span>
+                    </div>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           );
@@ -1235,7 +1206,7 @@ export default function AiInsights() {
               </div>
             </div>
           ) : (
-            <ScrollArea className="relative z-[1] flex-1 px-3 md:px-4 xl:px-5">
+            <div className="relative z-[1] flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-4 xl:px-5 [scrollbar-gutter:stable]">
               <div className="mx-auto w-full min-w-0 max-w-5xl py-4 md:py-10 xl:max-w-none">
                 <div className="space-y-6 md:space-y-8">
                   {turns.map((turn, idx) => (
@@ -1264,7 +1235,7 @@ export default function AiInsights() {
                           )}
                           {turn.role === "assistant" ? null : <User className="h-4 w-4" />}
                         </div>
-                        <div className="w-full min-w-0 flex-1 space-y-4">
+                        <div className="min-w-0 flex-1 space-y-4">
                           <div className="flex min-w-0 items-center justify-between gap-3">
                             <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))]">
                               {turn.role === "assistant" ? "AI BRIEF" : "YOU ASKED"}
@@ -1275,7 +1246,7 @@ export default function AiInsights() {
                           </div>
 
                           {turn.payload ? (
-                            <div className="w-full min-w-0">
+                            <div className="min-w-0">
                               <AdaptiveAnswerStack payload={turn.payload} onUseQuestion={submitQuestionText} />
                             </div>
                           ) : (
@@ -1320,7 +1291,7 @@ export default function AiInsights() {
                   <div ref={chatEndRef} />
                 </div>
               </div>
-            </ScrollArea>
+            </div>
           )}
         </div>
 

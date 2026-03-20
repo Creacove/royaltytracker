@@ -4,10 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -15,9 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, ArrowRightLeft } from "lucide-react";
+import { Search, ArrowRightLeft, ChevronLeft, ChevronRight, SlidersHorizontal, X } from "lucide-react";
 import { toMoney } from "@/lib/royalty";
-import { format } from "date-fns";
 import {
   AppliedFiltersRow,
   DetailDrawerFrame,
@@ -26,7 +26,6 @@ import {
   KpiStrip,
   PageHeader,
 } from "@/components/layout";
-import type { TableDensity } from "@/types/ui";
 
 type Transaction = Tables<"royalty_transactions">;
 type Report = Pick<
@@ -34,10 +33,99 @@ type Report = Pick<
   "id" | "cmo_name" | "file_name" | "report_period" | "created_at" | "status"
 >;
 
-type GroupMode = "line" | "report" | "cmo" | "platform" | "territory" | "track";
+type GroupMode = "artist" | "line" | "report" | "cmo" | "platform" | "territory" | "track";
+
+const groupModeLabels: Record<GroupMode, string> = {
+  artist: "By artist",
+  report: "By statement",
+  cmo: "By source",
+  track: "By track",
+  territory: "By territory",
+  platform: "By platform",
+  line: "Line items",
+};
+
+const groupModeHeadings: Record<GroupMode, string> = {
+  artist: "ARTIST",
+  line: "LINE ITEMS",
+  report: "STATEMENT",
+  cmo: "SOURCE",
+  platform: "PLATFORM",
+  territory: "TERRITORY",
+  track: "TRACK",
+};
+
+const groupModeOrder: GroupMode[] = ["artist", "report", "cmo", "track", "territory", "platform", "line"];
+const ROWS_PER_PAGE = 50;
+
+type GroupedRow = {
+  key: string;
+  label: string;
+  lines: number;
+  quantity: number;
+  gross: number;
+  net: number;
+  distinctReports: number;
+  reportId?: string;
+};
 
 const normalizeIsrcValue = (value: string | null | undefined): string =>
   (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+const formatPercent = (value: number | null | undefined) => (value == null ? "-" : `${Math.round(value)}%`);
+
+function TablePagination({
+  page,
+  total,
+  pageSize,
+  onPageChange,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
+
+  if (total <= pageSize) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-[hsl(var(--border)/0.1)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-xs text-muted-foreground">
+        Showing {start.toLocaleString()}-{end.toLocaleString()} of {total.toLocaleString()}
+      </p>
+      <div className="flex items-center gap-2 self-start sm:self-auto">
+        <Button
+          type="button"
+          size="sm"
+          variant="quiet"
+          className="h-9 px-3"
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+        <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] px-3 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+          Page {page} of {totalPages}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="quiet"
+          className="h-9 px-3"
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+        >
+          Next
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -56,8 +144,9 @@ export default function Transactions() {
   const [selectedReportId, setSelectedReportId] = useState("all");
   const [selectedTerritory, setSelectedTerritory] = useState("all");
   const [selectedPlatform, setSelectedPlatform] = useState("all");
-  const [groupMode, setGroupMode] = useState<GroupMode>("line");
-  const [tableDensity, setTableDensity] = useState<TableDensity>("comfortable");
+  const [groupMode, setGroupMode] = useState<GroupMode>("artist");
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const { data: reports = [] } = useQuery({
     queryKey: ["tx-reports-lookup"],
@@ -74,15 +163,32 @@ export default function Transactions() {
   const { data: transactions = [], isLoading } = useQuery({
     queryKey: ["transactions", deepLinkTrackTitle, deepLinkArtistName, deepLinkIsrc],
     queryFn: async (): Promise<Transaction[]> => {
-      let query = supabase.from("royalty_transactions").select("*").order("created_at", { ascending: false });
-      if (deepLinkTrackTitle) query = query.ilike("track_title", `%${deepLinkTrackTitle}%`);
-      if (deepLinkArtistName) query = query.ilike("artist_name", `%${deepLinkArtistName}%`);
-      if (!deepLinkTrackTitle && !deepLinkArtistName && deepLinkIsrc) {
-        query = query.ilike("isrc", `%${deepLinkIsrc}%`);
+      const batchSize = 1000;
+      const rows: Transaction[] = [];
+
+      for (let from = 0; ; from += batchSize) {
+        let query = supabase
+          .from("royalty_transactions")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .range(from, from + batchSize - 1);
+
+        if (deepLinkTrackTitle) query = query.ilike("track_title", `%${deepLinkTrackTitle}%`);
+        if (deepLinkArtistName) query = query.ilike("artist_name", `%${deepLinkArtistName}%`);
+        if (!deepLinkTrackTitle && !deepLinkArtistName && deepLinkIsrc) {
+          query = query.ilike("isrc", `%${deepLinkIsrc}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const batch = data ?? [];
+        rows.push(...batch);
+
+        if (batch.length < batchSize) break;
       }
-      const { data, error } = await query.limit(hasTrackDeepLink ? 20000 : 5000);
-      if (error) throw error;
-      return data ?? [];
+
+      return rows;
     },
   });
 
@@ -112,6 +218,30 @@ export default function Transactions() {
     const qParam = searchParams.get("q") ?? "";
     setSearch(qParam);
   }, [searchParams]);
+
+  const hasSecondaryFilters =
+    selectedCmo !== "all" ||
+    selectedReportId !== "all" ||
+    selectedTerritory !== "all" ||
+    selectedPlatform !== "all";
+
+  useEffect(() => {
+    if (hasSecondaryFilters) setShowMoreFilters(true);
+  }, [hasSecondaryFilters]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    deepLinkArtistName,
+    deepLinkIsrc,
+    deepLinkTrackTitle,
+    groupMode,
+    search,
+    selectedCmo,
+    selectedPlatform,
+    selectedReportId,
+    selectedTerritory,
+  ]);
 
   const territoryOptions = useMemo(
     () =>
@@ -191,48 +321,65 @@ export default function Transactions() {
   const grouped = useMemo(() => {
     if (groupMode === "line") return null;
 
-    const getKey = (tx: Transaction): string => {
+    const getGroup = (
+      tx: Transaction
+    ): {
+      key: string;
+      label: string;
+      reportId?: string;
+    } => {
       const report = reportById.get(tx.report_id);
       switch (groupMode) {
+        case "artist":
+          return { key: `artist:${tx.artist_name ?? "unknown"}`, label: tx.artist_name ?? "Unknown Artist" };
         case "report":
-          return report ? `${report.cmo_name} | ${report.file_name}` : tx.report_id;
+          return {
+            key: `report:${tx.report_id}`,
+            label: report ? `${report.cmo_name} | ${report.file_name}` : tx.report_id,
+            reportId: tx.report_id,
+          };
         case "cmo":
-          return report?.cmo_name ?? "Unknown CMO";
+          return { key: `source:${report?.cmo_name ?? "unknown"}`, label: report?.cmo_name ?? "Unknown Source" };
         case "platform":
-          return tx.platform ?? "Unknown Platform";
+          return { key: `platform:${tx.platform ?? "unknown"}`, label: tx.platform ?? "Unknown Platform" };
         case "territory":
-          return tx.territory ?? "Unknown Territory";
+          return { key: `territory:${tx.territory ?? "unknown"}`, label: tx.territory ?? "Unknown Territory" };
         case "track":
-          return tx.track_title ?? "Unknown Track";
+          return { key: `track:${tx.track_title ?? "unknown"}`, label: tx.track_title ?? "Unknown Track" };
         default:
-          return "Unknown";
+          return { key: "unknown", label: "Unknown" };
       }
     };
 
-    const map = new Map<
-      string,
-      { key: string; lines: number; quantity: number; gross: number; net: number; distinctReports: number }
-    >();
+    const map = new Map<string, GroupedRow>();
     const reportsByGroup = new Map<string, Set<string>>();
 
     for (const tx of filteredTransactions) {
-      const key = getKey(tx);
-      if (!map.has(key)) {
-        map.set(key, { key, lines: 0, quantity: 0, gross: 0, net: 0, distinctReports: 0 });
-        reportsByGroup.set(key, new Set<string>());
+      const group = getGroup(tx);
+      if (!map.has(group.key)) {
+        map.set(group.key, {
+          key: group.key,
+          label: group.label,
+          lines: 0,
+          quantity: 0,
+          gross: 0,
+          net: 0,
+          distinctReports: 0,
+          reportId: group.reportId,
+        });
+        reportsByGroup.set(group.key, new Set<string>());
       }
-      const row = map.get(key)!;
+      const row = map.get(group.key)!;
       row.lines += 1;
       row.quantity += tx.quantity ?? 0;
       row.gross += tx.gross_revenue ?? 0;
       row.net += tx.net_revenue ?? 0;
-      reportsByGroup.get(key)!.add(tx.report_id);
+      reportsByGroup.get(group.key)!.add(tx.report_id);
     }
 
     return Array.from(map.values())
       .map((row) => ({ ...row, distinctReports: reportsByGroup.get(row.key)?.size ?? 0 }))
-      .sort((a, b) => b.net - a.net)
-      .slice(0, 200);
+      .sort((a, b) => b.net - a.net);
   }, [filteredTransactions, groupMode, reportById]);
 
   const appliedFilters = useMemo(() => {
@@ -241,20 +388,17 @@ export default function Transactions() {
     if (hasTrackDeepLink) {
       filters.push(`Track scope: ${deepLinkTrackTitle || deepLinkIsrc || deepLinkTrackKey}`);
     }
-    if (selectedCmo !== "all") filters.push(`CMO: ${selectedCmo}`);
+    if (selectedCmo !== "all") filters.push(`Source: ${selectedCmo}`);
     if (selectedReportId !== "all") {
-      filters.push(`Document: ${reportById.get(selectedReportId)?.file_name ?? selectedReportId}`);
+      filters.push(`Statement: ${reportById.get(selectedReportId)?.file_name ?? selectedReportId}`);
     }
     if (selectedTerritory !== "all") filters.push(`Territory: ${selectedTerritory}`);
     if (selectedPlatform !== "all") filters.push(`Platform: ${selectedPlatform}`);
-    if (groupMode !== "line") filters.push(`Group: ${groupMode}`);
-    if (tableDensity !== "comfortable") filters.push(`Density: ${tableDensity}`);
     return filters;
   }, [
     deepLinkIsrc,
     deepLinkTrackKey,
     deepLinkTrackTitle,
-    groupMode,
     hasTrackDeepLink,
     reportById,
     search,
@@ -262,11 +406,49 @@ export default function Transactions() {
     selectedPlatform,
     selectedReportId,
     selectedTerritory,
-    tableDensity,
   ]);
 
   const selectedReport = selected ? reportById.get(selected.report_id) : null;
-  const denseRowClass = tableDensity === "compact" ? "[&>td]:py-2.5" : "[&>td]:py-3.5";
+  const totalRows = groupMode === "line" ? filteredTransactions.length : grouped?.length ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalRows / ROWS_PER_PAGE));
+  const pageStart = (page - 1) * ROWS_PER_PAGE;
+  const visibleTransactions = filteredTransactions.slice(pageStart, pageStart + ROWS_PER_PAGE);
+  const visibleGrouped = grouped?.slice(pageStart, pageStart + ROWS_PER_PAGE) ?? [];
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const drillIntoGroup = (row: GroupedRow) => {
+    setSelected(null);
+    switch (groupMode) {
+      case "artist":
+        setSearch(row.label === "Unknown Artist" ? "" : row.label);
+        break;
+      case "report":
+        setSelectedReportId(row.reportId ?? "all");
+        setShowMoreFilters(true);
+        break;
+      case "cmo":
+        setSelectedCmo(row.label === "Unknown Source" ? "all" : row.label);
+        setShowMoreFilters(true);
+        break;
+      case "platform":
+        setSelectedPlatform(row.label === "Unknown Platform" ? "all" : row.label);
+        setShowMoreFilters(true);
+        break;
+      case "territory":
+        setSelectedTerritory(row.label === "Unknown Territory" ? "all" : row.label);
+        setShowMoreFilters(true);
+        break;
+      case "track":
+        setSearch(row.label === "Unknown Track" ? "" : row.label);
+        break;
+      default:
+        break;
+    }
+    setGroupMode("line");
+  };
 
   const clearFilters = () => {
     setSearch("");
@@ -274,8 +456,8 @@ export default function Transactions() {
     setSelectedReportId("all");
     setSelectedTerritory("all");
     setSelectedPlatform("all");
-    setGroupMode("line");
-    setTableDensity("comfortable");
+    setGroupMode("artist");
+    setShowMoreFilters(false);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("q");
     nextParams.delete("track_key");
@@ -288,7 +470,7 @@ export default function Transactions() {
 
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
-      <PageHeader title="Transactions" subtitle="One workspace for normalized transaction history." />
+      <PageHeader title="Transactions" />
 
       <KpiStrip
         items={[
@@ -300,159 +482,167 @@ export default function Transactions() {
         columnsClassName="xl:grid-cols-4"
       />
 
-      <FilterToolbar
-        title="Transaction View"
-        description="Refine scope using CMO, statement, territory, platform, and grouping controls."
-      >
-        <div className="grid gap-3 md:grid-cols-7">
-          <div className="relative md:col-span-2">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              placeholder="Search artist, track, ISRC, CMO, file..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      <FilterToolbar variant="muted" className="p-3 md:p-4">
+        <div className="space-y-3">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_220px_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search artist, track, ISRC, statement, platform..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <Select value={groupMode} onValueChange={(value) => setGroupMode(value as GroupMode)}>
+              <SelectTrigger>
+                <SelectValue placeholder="View" />
+              </SelectTrigger>
+              <SelectContent>
+                {groupModeOrder.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {groupModeLabels[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant={showMoreFilters ? "secondary" : "quiet"}
+              className="h-10 w-full px-4 lg:w-auto"
+              onClick={() => setShowMoreFilters((current) => !current)}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {showMoreFilters ? "Hide filters" : "More filters"}
+            </Button>
           </div>
-          <Select value={selectedCmo} onValueChange={setSelectedCmo}>
-            <SelectTrigger>
-              <SelectValue placeholder="CMO" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All CMOs</SelectItem>
-              {cmoOptions.map((cmo) => (
-                <SelectItem key={cmo} value={cmo}>
-                  {cmo}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedReportId} onValueChange={setSelectedReportId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Document" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Documents</SelectItem>
-              {reportOptions.map((report) => (
-                <SelectItem key={report.id} value={report.id}>
-                  {report.file_name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
-            <SelectTrigger>
-              <SelectValue placeholder="Territory" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Territories</SelectItem>
-              {territoryOptions.map((territory) => (
-                <SelectItem key={territory} value={territory}>
-                  {territory}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
-            <SelectTrigger>
-              <SelectValue placeholder="Platform" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Platforms</SelectItem>
-              {platformOptions.map((platform) => (
-                <SelectItem key={platform} value={platform}>
-                  {platform}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={groupMode} onValueChange={(v) => setGroupMode(v as GroupMode)}>
-            <SelectTrigger className="md:col-span-2">
-              <SelectValue placeholder="Group By" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="line">Line Items</SelectItem>
-              <SelectItem value="report">Document</SelectItem>
-              <SelectItem value="cmo">CMO</SelectItem>
-              <SelectItem value="platform">Platform</SelectItem>
-              <SelectItem value="territory">Territory</SelectItem>
-              <SelectItem value="track">Track</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={tableDensity} onValueChange={(value) => setTableDensity(value as TableDensity)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Table Density" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="comfortable">Comfortable</SelectItem>
-              <SelectItem value="compact">Compact</SelectItem>
-            </SelectContent>
-          </Select>
+
+          {showMoreFilters ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <Select value={selectedCmo} onValueChange={setSelectedCmo}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  {cmoOptions.map((cmo) => (
+                    <SelectItem key={cmo} value={cmo}>
+                      {cmo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedReportId} onValueChange={setSelectedReportId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Statement" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Statements</SelectItem>
+                  {reportOptions.map((report) => (
+                    <SelectItem key={report.id} value={report.id}>
+                      {report.file_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedTerritory} onValueChange={setSelectedTerritory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Territory" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Territories</SelectItem>
+                  {territoryOptions.map((territory) => (
+                    <SelectItem key={territory} value={territory}>
+                      {territory}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedPlatform} onValueChange={setSelectedPlatform}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Platform" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Platforms</SelectItem>
+                  {platformOptions.map((platform) => (
+                    <SelectItem key={platform} value={platform}>
+                      {platform}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
+          <AppliedFiltersRow filters={appliedFilters} onClear={clearFilters} hideWhenEmpty className="pt-0" />
         </div>
-        <AppliedFiltersRow
-          filters={appliedFilters}
-          onClear={clearFilters}
-          updatedLabel={`Updated ${format(new Date(), "MMM d, yyyy HH:mm")}`}
-        />
       </FilterToolbar>
 
-      <Card>
-        <CardContent>
+      <Card surface="elevated">
+        <CardContent className="p-4 md:p-5">
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : groupMode === "line" ? (
             filteredTransactions.length > 0 ? (
-              <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-                <Table className="min-w-[1140px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>CMO</TableHead>
-                      <TableHead>Track</TableHead>
-                      <TableHead>Artist</TableHead>
-                      <TableHead>ISRC</TableHead>
-                      <TableHead>Territory</TableHead>
-                      <TableHead>Platform</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Gross</TableHead>
-                      <TableHead className="text-right">Net</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTransactions.map((tx) => (
-                      <TableRow
-                        key={tx.id}
-                        role="button"
-                        tabIndex={0}
-                        className={`cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${denseRowClass}`}
-                        onClick={(event) => {
-                          event.currentTarget.focus();
-                          setSelected(tx);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelected(tx);
-                          }
-                        }}
-                      >
-                        <TableCell>{reportById.get(tx.report_id)?.cmo_name ?? "-"}</TableCell>
-                        <TableCell className="max-w-[180px] truncate">{tx.track_title ?? "-"}</TableCell>
-                        <TableCell>{tx.artist_name ?? "-"}</TableCell>
-                        <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
-                        <TableCell>{tx.territory ?? "-"}</TableCell>
-                        <TableCell>{tx.platform ?? "-"}</TableCell>
-                        <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
-                        <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
-                        <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
-                        <TableCell>
-                          <StatusBadge status={tx.validation_status ?? "pending"} />
-                        </TableCell>
+              <>
+                <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                  <Table variant="evidence" density="compact" className="min-w-[1140px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Track</TableHead>
+                        <TableHead>Artist</TableHead>
+                        <TableHead>ISRC</TableHead>
+                        <TableHead>Territory</TableHead>
+                        <TableHead>Platform</TableHead>
+                        <TableHead className="text-right">Qty</TableHead>
+                        <TableHead className="text-right">Gross</TableHead>
+                        <TableHead className="text-right">Net</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleTransactions.map((tx) => (
+                        <TableRow
+                          key={tx.id}
+                          role="button"
+                          tabIndex={0}
+                          className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={(event) => {
+                            event.currentTarget.focus();
+                            setSelected(tx);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelected(tx);
+                            }
+                          }}
+                        >
+                          <TableCell>{reportById.get(tx.report_id)?.cmo_name ?? "-"}</TableCell>
+                          <TableCell className="max-w-[180px] truncate">{tx.track_title ?? "-"}</TableCell>
+                          <TableCell>{tx.artist_name ?? "-"}</TableCell>
+                          <TableCell className="font-mono text-xs">{tx.isrc ?? "-"}</TableCell>
+                          <TableCell>{tx.territory ?? "-"}</TableCell>
+                          <TableCell>{tx.platform ?? "-"}</TableCell>
+                          <TableCell className="text-right font-mono">{tx.quantity ?? "-"}</TableCell>
+                          <TableCell className="text-right font-mono">{toMoney(tx.gross_revenue)}</TableCell>
+                          <TableCell className="text-right font-mono">{toMoney(tx.net_revenue)}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={tx.validation_status ?? "pending"} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <TablePagination
+                  page={page}
+                  total={filteredTransactions.length}
+                  pageSize={ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                />
+              </>
             ) : (
               <EmptyStateBlock
                 icon={<ArrowRightLeft className="h-10 w-10" />}
@@ -467,32 +657,50 @@ export default function Transactions() {
               />
             )
           ) : grouped && grouped.length > 0 ? (
-            <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-              <Table className="min-w-[760px]">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{groupMode.toUpperCase()}</TableHead>
-                    <TableHead className="text-right">Docs</TableHead>
-                    <TableHead className="text-right">Lines</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Gross</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {grouped.map((row) => (
-                    <TableRow key={row.key} className={denseRowClass}>
-                      <TableCell className="font-medium">{row.key}</TableCell>
-                      <TableCell className="text-right font-mono">{row.distinctReports}</TableCell>
-                      <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{row.quantity.toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-mono">{toMoney(row.gross)}</TableCell>
-                      <TableCell className="text-right font-mono">{toMoney(row.net)}</TableCell>
+            <>
+              <div className="mb-3 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.55)] px-3 py-2 text-xs text-muted-foreground">
+                Select a row to open the matching line items.
+              </div>
+              <div className="min-w-0 overflow-x-auto overscroll-x-contain">
+                <Table variant="evidence" density="compact" className="min-w-[760px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{groupModeHeadings[groupMode]}</TableHead>
+                      <TableHead className="text-right">Docs</TableHead>
+                      <TableHead className="text-right">Lines</TableHead>
+                      <TableHead className="text-right">Quantity</TableHead>
+                      <TableHead className="text-right">Gross</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleGrouped.map((row) => (
+                      <TableRow
+                        key={row.key}
+                        role="button"
+                        tabIndex={0}
+                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => drillIntoGroup(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            drillIntoGroup(row);
+                          }
+                        }}
+                      >
+                        <TableCell className="font-medium">{row.label}</TableCell>
+                        <TableCell className="text-right font-mono">{row.distinctReports}</TableCell>
+                        <TableCell className="text-right font-mono">{row.lines.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{row.quantity.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">{toMoney(row.gross)}</TableCell>
+                        <TableCell className="text-right font-mono">{toMoney(row.net)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <TablePagination page={page} total={grouped.length} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />
+            </>
           ) : (
             <EmptyStateBlock
               icon={<ArrowRightLeft className="h-10 w-10" />}
@@ -508,79 +716,147 @@ export default function Transactions() {
       </Card>
 
       <Sheet open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <SheetContent className="w-[min(96vw,760px)] max-w-[min(96vw,760px)] p-0 sm:max-w-[min(90vw,760px)]">
+        <SheetContent className="w-[min(96vw,860px)] max-w-[min(96vw,860px)] p-0 [&>button]:hidden sm:max-w-[min(92vw,860px)]">
           {selected ? (
             <DetailDrawerFrame
-              title="Transaction Detail"
-              subtitle={selectedReport?.file_name ? `${selectedReport.file_name}` : "Statement context unavailable"}
-              rightSlot={<StatusBadge status={selected.validation_status ?? "pending"} />}
+              eyebrow="Line Item"
+              title={selected.track_title ?? "Untitled Line Item"}
+              subtitle={`${selected.artist_name ?? "Unknown Artist"} • ${selectedReport?.cmo_name ?? "Unknown Source"}`}
+              rightSlot={
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={selected.validation_status ?? "pending"} />
+                  <SheetClose asChild>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon"
+                      className="h-8 w-8 rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.9)] text-foreground/72 shadow-none hover:border-[hsl(var(--brand-accent)/0.18)] hover:bg-[hsl(var(--brand-accent-ghost)/0.52)] hover:text-foreground"
+                      aria-label="Close transaction detail"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </SheetClose>
+                </div>
+              }
+              variant="intelligence"
             >
-              <section className="grid gap-3 rounded-sm border border-border/45 bg-background/60 p-3 sm:grid-cols-2">
-                <div className="space-y-1 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">CMO:</span>{" "}
-                    <span className="font-medium">{selectedReport?.cmo_name ?? "-"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">File:</span>{" "}
-                    <span className="font-medium">{selectedReport?.file_name ?? "-"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Period:</span>{" "}
-                    <span className="font-medium">{selectedReport?.report_period ?? "-"}</span>
-                  </p>
-                </div>
-                <div className="space-y-1 text-sm">
-                  <p>
-                    <span className="text-muted-foreground">Artist:</span>{" "}
-                    <span className="font-medium">{selected.artist_name ?? "-"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Track:</span>{" "}
-                    <span className="font-medium">{selected.track_title ?? "-"}</span>
-                  </p>
-                  <p>
-                    <span className="text-muted-foreground">Usage:</span>{" "}
-                    <span className="font-medium">{selected.usage_type ?? "-"}</span>
-                  </p>
-                </div>
-              </section>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ["Net Revenue", toMoney(selected.net_revenue), "surface-intelligence"],
+                  ["Gross Revenue", toMoney(selected.gross_revenue), "surface-elevated"],
+                  [
+                    "Quantity",
+                    selected.quantity != null
+                      ? `${selected.quantity.toLocaleString()}${selected.quantity_unit ? ` ${selected.quantity_unit}` : ""}`
+                      : "-",
+                    "surface-elevated",
+                  ],
+                ].map(([label, value, surface]) => (
+                  <div key={label} className={`${surface} forensic-frame rounded-[calc(var(--radius-sm))] p-4`}>
+                    <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">{value}</p>
+                  </div>
+                ))}
+              </div>
 
-              {[
-                ["ISRC", selected.isrc],
-                ["ISWC", selected.iswc],
-                ["Territory", selected.territory],
-                ["Platform", selected.platform],
-                ["Usage Type", selected.usage_type],
-                ["Quantity", selected.quantity?.toLocaleString()],
-                ["Gross Revenue", toMoney(selected.gross_revenue)],
-                ["Commission", toMoney(selected.commission)],
-                ["Net Revenue", toMoney(selected.net_revenue)],
-                ["Currency", selected.currency],
-                [
-                  "Period",
-                  selected.period_start && selected.period_end
-                    ? `${selected.period_start} -> ${selected.period_end}`
-                    : null,
-                ],
-              ].map(([label, value]) => (
-                <div key={label as string} className="flex justify-between border-b py-2">
-                  <span className="text-sm text-muted-foreground">{label}</span>
-                  <span className="text-sm font-medium font-mono">{value ?? "-"}</span>
-                </div>
-              ))}
+              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <section className="space-y-4">
+                  <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                    <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Statement Context</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {[
+                        ["Source", selectedReport?.cmo_name ?? "-"],
+                        ["Statement", selectedReport?.file_name ?? "-"],
+                        ["Report Period", selectedReport?.report_period ?? "-"],
+                        [
+                          "Line Period",
+                          selected.period_start && selected.period_end
+                            ? `${selected.period_start} -> ${selected.period_end}`
+                            : "-",
+                        ],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-foreground">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
-              <section className="rounded-sm border border-border/45 bg-background/60 p-3 text-sm font-mono">
-                <p>Source Page: {selected.source_page ?? "-"}</p>
-                <p>Source Row: {selected.source_row ?? "-"}</p>
-                <p>OCR Confidence: {selected.ocr_confidence ?? "-"}</p>
-                <p>
-                  Bounding Box:{" "}
-                  {selected.bbox_x != null
-                    ? `(${selected.bbox_x}, ${selected.bbox_y}) ${selected.bbox_width}x${selected.bbox_height}`
-                    : "-"}
-                </p>
-              </section>
+                  <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                    <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Commercial Context</p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {[
+                        ["Artist", selected.artist_name ?? "-"],
+                        ["Track", selected.track_title ?? "-"],
+                        ["Usage", selected.usage_type ?? "-"],
+                        ["Rights Type", selected.rights_type ?? "-"],
+                        ["Territory", selected.territory ?? selected.territory_raw ?? "-"],
+                        ["Platform", selected.platform ?? "-"],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                          <p className="mt-1 text-sm leading-relaxed text-foreground">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="space-y-4">
+                  <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                    <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Identifiers & Amounts</p>
+                    <div className="mt-4 grid gap-3">
+                      {[
+                        ["ISRC", selected.isrc ?? "-"],
+                        ["ISWC", selected.iswc ?? "-"],
+                        ["Currency", selected.currency ?? "-"],
+                        [
+                          "Original Amount",
+                          selected.amount_original != null
+                            ? `${toMoney(selected.amount_original)}${selected.currency_original ? ` ${selected.currency_original}` : ""}`
+                            : "-",
+                        ],
+                        [
+                          "Reporting Amount",
+                          selected.amount_reporting != null
+                            ? `${toMoney(selected.amount_reporting)}${selected.currency_reporting ? ` ${selected.currency_reporting}` : ""}`
+                            : "-",
+                        ],
+                        ["Exchange Rate", selected.exchange_rate != null ? String(selected.exchange_rate) : "-"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-start justify-between gap-4 border-b border-[hsl(var(--border)/0.08)] pb-3 last:border-b-0 last:pb-0">
+                          <span className="text-sm text-muted-foreground">{label}</span>
+                          <span className="text-right font-mono text-sm text-foreground">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                    <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Extraction Trace</p>
+                    <div className="mt-4 grid gap-3">
+                      {[
+                        ["Source Page", selected.source_page != null ? String(selected.source_page) : "-"],
+                        ["Source Row", selected.source_row != null ? String(selected.source_row) : "-"],
+                        ["OCR Confidence", formatPercent(selected.ocr_confidence)],
+                        ["Mapping Confidence", formatPercent(selected.mapping_confidence)],
+                        [
+                          "Bounding Box",
+                          selected.bbox_x != null
+                            ? `(${selected.bbox_x}, ${selected.bbox_y}) ${selected.bbox_width}x${selected.bbox_height}`
+                            : "-",
+                        ],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex items-start justify-between gap-4 border-b border-[hsl(var(--border)/0.08)] pb-3 last:border-b-0 last:pb-0">
+                          <span className="text-sm text-muted-foreground">{label}</span>
+                          <span className="text-right font-mono text-sm text-foreground">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              </div>
             </DetailDrawerFrame>
           ) : null}
         </SheetContent>

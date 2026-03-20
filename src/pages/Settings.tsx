@@ -1,8 +1,8 @@
-﻿import { useEffect, useMemo, useState } from "react";
-import { KeyRound, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Building2, KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,11 @@ type SettingsProps = {
   onboardingState: OnboardingState;
   onProfileUpdated: () => Promise<void> | void;
 };
+
+function titleCaseRole(role: string | null | undefined) {
+  if (!role) return "Member";
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
 
 export default function Settings({ userId, userEmail, onboardingState, onProfileUpdated }: SettingsProps) {
   const { toast } = useToast();
@@ -45,11 +50,15 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
 
   const passwordResetRedirectTo = useMemo(() => `${window.location.origin}/settings?password_reset=1`, []);
   const planBadgeLabel = useMemo(() => {
-    if (subscriptionLoading) return "Plan: ...";
+    if (subscriptionLoading) return "Plan loading";
     const planName = subscriptionState.planName ?? "Inactive";
     const status = subscriptionState.effectiveSubscriptionStatus.replaceAll("_", " ");
-    return `Plan: ${planName} (${status})`;
+    return `${planName} • ${status}`;
   }, [subscriptionLoading, subscriptionState.effectiveSubscriptionStatus, subscriptionState.planName]);
+  const workspaceRoleLabel = useMemo(
+    () => (onboardingState.isPlatformAdmin ? "Platform Admin" : titleCaseRole(onboardingState.activeMembershipRole)),
+    [onboardingState.activeMembershipRole, onboardingState.isPlatformAdmin],
+  );
 
   useEffect(() => {
     setFirstName(onboardingState.firstName);
@@ -217,39 +226,48 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
   };
 
   return (
-    <div className="space-y-5">
-      <Card surface="hero" className="overflow-hidden">
-        <CardContent className="grid gap-3 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost)/0.80),transparent_65%)] p-6 md:grid-cols-[1.3fr_1fr]">
-          <div className="space-y-2">
-            <p className="editorial-kicker">Account</p>
-            <h1 className="type-display-hero text-[clamp(2.1rem,2vw+1.2rem,3rem)] text-foreground">User Settings</h1>
-            <p className="text-sm text-muted-foreground">
-              Manage your profile information and authentication settings.
-            </p>
-          </div>
-          <div className="flex items-start justify-start gap-2 md:justify-end">
-            <Badge variant="outline">{onboardingState.companyName ?? "No workspace"}</Badge>
-            <Badge variant="outline">{planBadgeLabel}</Badge>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="rhythm-page">
+      <PageHeader
+        eyebrow="Account"
+        title="Settings"
+        subtitle={
+          isRecoveryFlow
+            ? "Recovery mode is active. Reset credentials and restore account access."
+            : "Profile, workspace access, and sign-in security."
+        }
+        meta={
+          <>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {onboardingState.companyName ?? "No workspace"}
+            </span>
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+              {workspaceRoleLabel}
+            </span>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {planBadgeLabel}
+            </span>
+          </>
+        }
+      />
 
-      <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-        <Card surface="evidence">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.18fr)_minmax(320px,0.82fr)]">
+        <Card surface="evidence" className="overflow-hidden">
           <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
             <div className="flex items-center gap-2">
-              <UserRound className="h-4 w-4 text-muted-foreground" />
+              <UserRound className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
               <CardTitle>Profile</CardTitle>
             </div>
-            <CardDescription>Your identity and contact metadata for the workspace.</CardDescription>
+            <CardDescription>Identity and contact details used across the workspace.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSaveProfile}>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" value={userEmail} disabled />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+          <CardContent className="space-y-5">
+            <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Account email</p>
+              <p className="mt-2 text-sm font-medium text-foreground">{userEmail}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Managed from authentication and used for sign-in.</p>
+            </div>
+
+            <form className="space-y-5" onSubmit={handleSaveProfile}>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First name</Label>
                   <Input id="firstName" value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
@@ -259,7 +277,8 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
                   <Input id="lastName" value={lastName} onChange={(event) => setLastName(event.target.value)} required />
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="jobTitle">Job title</Label>
                   <Input id="jobTitle" value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} required />
@@ -269,83 +288,130 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
                   <Input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+1..." />
                 </div>
               </div>
-              <Button type="submit" disabled={savingProfile}>
-                {savingProfile ? "Saving..." : "Save Profile"}
-              </Button>
+
+              <div className="flex justify-end">
+                <Button type="submit" disabled={savingProfile}>
+                  {savingProfile ? "Saving..." : "Save Profile"}
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
 
-        <Card surface="evidence">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
-            <div className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4 text-muted-foreground" />
-              <CardTitle>Security</CardTitle>
-            </div>
-            <CardDescription>
-              {isRecoveryFlow
-                ? "Recovery mode active. Set a new password to restore account access."
-                : "Confirm your current password, then set a new password."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleChangePassword}>
-              {!isRecoveryFlow && (
+        <div className="grid gap-5">
+          <Card surface="hero" className="overflow-hidden">
+            <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
+                <CardTitle>Workspace Seat</CardTitle>
+              </div>
+              <CardDescription>Current workspace context for this account.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
+                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">
+                  {onboardingState.companyName ?? "No workspace"}
+                </p>
+              </div>
+              <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Role</p>
+                <p className="mt-2 text-lg font-semibold tracking-tight text-foreground">{workspaceRoleLabel}</p>
+              </div>
+              <div className="surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Plan</p>
+                <p className="mt-2 text-sm leading-6 text-foreground">{planBadgeLabel}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card surface={isRecoveryFlow ? "intelligence" : "evidence"} className="overflow-hidden">
+            <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
+                <CardTitle>Security</CardTitle>
+              </div>
+              <CardDescription>
+                {isRecoveryFlow
+                  ? "Set a new password to restore account access."
+                  : "Confirm your current password, then rotate credentials."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {isRecoveryFlow ? (
+                <div className="surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                  <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">
+                    Recovery mode
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-foreground/82">
+                    This session was opened from a password recovery link. Set a new password below.
+                  </p>
+                </div>
+              ) : null}
+
+              <form className="space-y-4" onSubmit={handleChangePassword}>
+                {!isRecoveryFlow && (
+                  <div className="space-y-2">
+                    <Label htmlFor="currentPassword">Current password</Label>
+                    <Input
+                      id="currentPassword"
+                      type="password"
+                      value={currentPassword}
+                      onChange={(event) => setCurrentPassword(event.target.value)}
+                      required
+                    />
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <Label htmlFor="currentPassword">Current password</Label>
+                  <Label htmlFor="newPassword">New password</Label>
                   <Input
-                    id="currentPassword"
+                    id="newPassword"
                     type="password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    minLength={8}
                     required
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm new password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    minLength={8}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={savingPassword}>
+                    <KeyRound className="h-4 w-4" />
+                    {savingPassword ? "Updating..." : "Update Password"}
+                  </Button>
+                </div>
+              </form>
+
+              {!isRecoveryFlow && (
+                <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    Don&apos;t remember your current password or never set one from invite onboarding?
+                  </p>
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="sm"
+                    className="mt-3"
+                    onClick={handleSendResetLink}
+                    disabled={sendingResetLink}
+                  >
+                    {sendingResetLink ? "Sending reset link..." : "Send Password Reset Link"}
+                  </Button>
+                </div>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="newPassword">New password</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  value={newPassword}
-                  onChange={(event) => setNewPassword(event.target.value)}
-                  minLength={8}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirm new password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  minLength={8}
-                  required
-                />
-              </div>
-              <Button type="submit" disabled={savingPassword}>
-                {savingPassword ? "Updating..." : "Update Password"}
-              </Button>
-            </form>
-            {!isRecoveryFlow && (
-              <div className="mt-4 border-t border-border/50 pt-4">
-                <p className="text-xs text-muted-foreground">
-                  Don&apos;t remember your current password or never set one from invite onboarding?
-                </p>
-                <Button
-                  type="button"
-                  variant="link"
-                  className="h-auto px-0 py-1 text-xs"
-                  onClick={handleSendResetLink}
-                  disabled={sendingResetLink}
-                >
-                  {sendingResetLink ? "Sending reset link..." : "Send Password Reset Link"}
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

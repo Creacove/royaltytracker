@@ -210,7 +210,7 @@ function SignalCard({ signal }: { signal: SnapshotSignal }) {
       <div className="flex items-start gap-3">
         <span className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", dotClass)} />
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold tracking-tight text-foreground">{signal.title}</h3>
+          <h3 className="text-sm font-medium tracking-tight text-foreground/82">{signal.title}</h3>
           <p className="text-sm leading-6 text-muted-foreground">{signal.body}</p>
         </div>
       </div>
@@ -900,18 +900,25 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
               </>
             }
             actions={
-              <div data-export-ignore="true" className="flex shrink-0 items-center gap-2">
-                <Button variant="outline" size="sm" onClick={backToAi}>
+              <div data-export-ignore="true" className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+                <Button variant="outline" size="sm" onClick={backToAi} className="w-full sm:w-auto">
                   <ArrowLeft className="h-4 w-4" />
-                  Back to AI Insights
+                  <span>Back to AI Insights</span>
                 </Button>
-                <Button variant="outline" size="sm" onClick={openTransactions}>
+                <Button variant="outline" size="sm" onClick={openTransactions} className="min-w-0 flex-1 sm:flex-none">
                   <ArrowUpRight className="h-4 w-4" />
-                  Transactions
+                  <span>Transactions</span>
                 </Button>
-                <Button variant="default" size="sm" onClick={handleExportPdf} disabled={isExportingPdf}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf}
+                  className="min-w-0 flex-1 sm:flex-none"
+                >
                   <Download className="h-4 w-4" />
-                  {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
+                  <span className="sm:hidden">{isExportingPdf ? "Exporting..." : "Export"}</span>
+                  <span className="hidden sm:inline">{isExportingPdf ? "Exporting PDF..." : "Export PDF"}</span>
                 </Button>
               </div>
             }
@@ -932,7 +939,6 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   { label: "Net revenue", value: toMoney(trackDetail.summary.net_revenue) },
                   { label: "Gross revenue", value: toMoney(trackDetail.summary.gross_revenue) },
                   { label: "Units", value: Math.round(trackDetail.summary.quantity).toLocaleString() },
-                  { label: "Net per unit", value: toMoney(trackDetail.summary.net_per_unit) },
                   { label: "3M trend", value: safePercent(scopedTrackRow?.trend_3m_pct ?? 0), tone: (scopedTrackRow?.trend_3m_pct ?? 0) >= 0 ? "accent" : "warning" },
                   { label: "Opportunity score", value: scopedTrackRow?.opportunity_score?.toFixed(1) ?? "-", hint: scopedTrackRow?.quality_flag ? `${scopedTrackRow.quality_flag} confidence risk` : undefined },
                 ]}
@@ -1074,7 +1080,6 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   { label: "Tracks", value: artistDetail.summary.track_count.toLocaleString() },
                   { label: "Units", value: Math.round(artistDetail.summary.quantity).toLocaleString() },
                   { label: "Avg track revenue", value: toMoney(artistDetail.summary.avg_track_revenue) },
-                  { label: "Top territory", value: artistDetail.summary.top_territory ?? "-" },
                   { label: "Top platform", value: artistDetail.summary.top_platform ?? "-" },
                 ]}
               />

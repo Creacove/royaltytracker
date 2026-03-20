@@ -7,13 +7,14 @@ import { cn } from "@/lib/utils";
 const Tabs = TabsPrimitive.Root;
 
 const tabsListVariants = cva(
-  "inline-flex min-h-11 w-full flex-wrap items-center gap-2 rounded-[calc(var(--radius-sm))] border p-1",
+  "inline-flex min-h-11 flex-wrap items-center gap-1.5 rounded-[calc(var(--radius-sm)+6px)] border p-1.5",
   {
     variants: {
       variant: {
         default:
-          "border-[hsl(var(--border)/0.1)] bg-[linear-gradient(180deg,hsl(var(--surface-muted))_0%,hsl(var(--surface-panel))_100%)] shadow-[inset_0_1px_0_hsl(0_0%_100%/0.62)]",
-        quiet: "border-transparent bg-transparent p-0 shadow-none",
+          "w-full border-[hsl(var(--border)/0.1)] bg-[linear-gradient(180deg,hsl(var(--surface-muted)/0.96)_0%,hsl(var(--surface-panel)/0.98)_100%)] shadow-[inset_0_1px_0_hsl(0_0%_100%/0.68),0_18px_34px_-30px_hsl(var(--surface-shadow)/0.2)]",
+        quiet:
+          "w-auto border-[hsl(var(--border)/0.1)] bg-[linear-gradient(180deg,hsl(var(--surface-panel)/0.94)_0%,hsl(var(--surface-muted)/0.88)_100%)] shadow-[inset_0_1px_0_hsl(0_0%_100%/0.66),0_16px_30px_-26px_hsl(var(--surface-shadow)/0.18)]",
       },
     },
     defaultVariants: {
@@ -23,14 +24,14 @@ const tabsListVariants = cva(
 );
 
 const tabsTriggerVariants = cva(
-  "type-nav inline-flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-[calc(var(--radius-sm)-2px)] border border-transparent px-3 py-2 text-[11px] text-center ring-offset-background motion-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "type-nav relative inline-flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-[calc(var(--radius-sm)+2px)] border px-3.5 py-2 text-[11px] text-center ring-offset-background motion-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default:
-          "flex-1 text-foreground/58 data-[state=active]:border-[hsl(var(--border)/0.12)] data-[state=active]:bg-[linear-gradient(180deg,hsl(var(--surface-elevated))_0%,hsl(var(--surface-panel))_100%)] data-[state=active]:text-foreground data-[state=active]:shadow-[0_12px_26px_-22px_hsl(var(--surface-shadow)/0.42)] hover:text-foreground",
+          "flex-1 border-transparent text-foreground/58 hover:border-[hsl(var(--border)/0.1)] hover:bg-[hsl(var(--surface-elevated)/0.88)] hover:text-foreground data-[state=active]:border-[hsl(var(--brand-accent)/0.18)] data-[state=active]:bg-[linear-gradient(180deg,hsl(var(--brand-accent-ghost)/0.82)_0%,hsl(var(--surface-elevated))_100%)] data-[state=active]:text-foreground data-[state=active]:shadow-[0_16px_30px_-24px_hsl(var(--brand-accent)/0.28)] data-[state=active]:before:absolute data-[state=active]:before:inset-x-3 data-[state=active]:before:top-1 data-[state=active]:before:h-px data-[state=active]:before:rounded-full data-[state=active]:before:bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.68),transparent)]",
         quiet:
-          "rounded-none border-b-2 border-transparent px-0 py-1 text-foreground/58 data-[state=active]:border-[hsl(var(--brand-accent))] data-[state=active]:bg-transparent data-[state=active]:text-foreground hover:text-foreground",
+          "flex-none border-transparent bg-transparent text-foreground/58 hover:border-[hsl(var(--border)/0.1)] hover:bg-[hsl(var(--surface-elevated)/0.88)] hover:text-foreground data-[state=active]:border-[hsl(var(--brand-accent)/0.18)] data-[state=active]:bg-[linear-gradient(180deg,hsl(var(--brand-accent-ghost)/0.94)_0%,hsl(var(--surface-elevated))_100%)] data-[state=active]:text-foreground data-[state=active]:shadow-[0_14px_28px_-24px_hsl(var(--brand-accent)/0.3)] data-[state=active]:before:absolute data-[state=active]:before:inset-x-3 data-[state=active]:before:top-1 data-[state=active]:before:h-px data-[state=active]:before:rounded-full data-[state=active]:before:bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.7),transparent)]",
       },
     },
     defaultVariants: {
