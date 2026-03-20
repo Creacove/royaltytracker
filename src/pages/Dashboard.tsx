@@ -626,7 +626,7 @@ export default function Dashboard() {
               <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.processingRate)}</p>
               <Progress
                 value={Math.max(0, Math.min(100, metrics.processingRate))}
-                className="mt-4 h-2 bg-[hsl(var(--surface-muted))] [&>div]:bg-[hsl(var(--brand-accent))]"
+                className="mt-4 h-3"
               />
             </div>
             <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
@@ -634,7 +634,7 @@ export default function Dashboard() {
               <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.avgAccuracy)}</p>
               <Progress
                 value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
-                className="mt-4 h-2 bg-[hsl(var(--surface-muted))] [&>div]:bg-[hsl(var(--brand-accent))]"
+                className="mt-4 h-3"
               />
             </div>
           </CardContent>

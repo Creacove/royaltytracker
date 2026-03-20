@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Trash2, Search, Layers3, Building2 } from "lucide-react";
+import { Upload, FileText, Trash2, Search, Layers3, Building2, X } from "lucide-react";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toMoney } from "@/lib/royalty";
 import {
@@ -676,12 +676,27 @@ export default function Reports() {
       </Card>
 
       <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-        <SheetContent className="w-[min(98vw,1200px)] max-w-[min(98vw,1200px)] overflow-hidden p-0 sm:max-w-[min(95vw,1200px)] lg:w-[calc(100vw-19rem)] lg:max-w-[calc(100vw-19rem)]">
+        <SheetContent className="w-[min(98vw,1200px)] max-w-[min(98vw,1200px)] overflow-hidden p-0 [&>button]:hidden sm:max-w-[min(95vw,1200px)] lg:w-[calc(100vw-19rem)] lg:max-w-[calc(100vw-19rem)]">
           {selectedReport ? (
             <DetailDrawerFrame
               title={`${selectedReport.cmo_name} | ${selectedReport.file_name}`}
               subtitle={`Uploaded ${format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")}`}
-              rightSlot={<StatusBadge status={selectedReport.status} />}
+              rightSlot={
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={selectedReport.status} />
+                  <SheetClose asChild>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      size="icon"
+                      className="h-8 w-8 rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.9)] text-foreground/72 shadow-none hover:border-[hsl(var(--brand-accent)/0.18)] hover:bg-[hsl(var(--brand-accent-ghost)/0.52)] hover:text-foreground"
+                      aria-label="Close statement details"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </SheetClose>
+                </div>
+              }
               variant="intelligence"
             >
               <div className="grid gap-3 sm:grid-cols-3">

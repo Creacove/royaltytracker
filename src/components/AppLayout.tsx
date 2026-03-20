@@ -77,18 +77,18 @@ function AppLayoutContent({
   return (
     <>
       <Sidebar
-        className="border-r-0 bg-transparent p-2.5 [&_[data-sidebar=sidebar]]:border-0 [&_[data-sidebar=sidebar]]:bg-transparent [&_[data-sidebar=sidebar]]:shadow-none"
+        className="border-r-0 bg-transparent p-2.5 [&_[data-sidebar=sidebar]]:gap-2.5 [&_[data-sidebar=sidebar]]:border-0 [&_[data-sidebar=sidebar]]:bg-transparent [&_[data-sidebar=sidebar]]:shadow-none"
         collapsible="offcanvas"
-        variant="floating"
+        variant="sidebar"
       >
-        <SidebarHeader className="shell-rail gap-3 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-3.5 py-3.5 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.24)]">
-          <Link to={hasAnyUploads ? "/" : "/reports"} className="group flex flex-col items-center gap-2 rounded-[calc(var(--radius-sm))] px-1 py-0.5 text-center">
+        <SidebarHeader className="shell-rail gap-2.5 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-3.5 py-3 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.24)]">
+          <Link to={hasAnyUploads ? "/" : "/reports"} className="group flex flex-col items-start gap-2 rounded-[calc(var(--radius-sm))] px-0.5 py-0.5 text-left">
             <img
               src="/ordersounds-logo.png"
               alt="OrderSounds"
               className="h-9 w-auto object-contain drop-shadow-[0_10px_14px_hsl(var(--surface-shadow)/0.1)] motion-standard group-hover:-translate-y-0.5"
             />
-            <p className="editorial-caption text-center text-[10px] tracking-[0.05em] text-muted-foreground">
+            <p className="editorial-caption text-left text-[10px] tracking-[0.05em] text-muted-foreground">
               Forensic royalty workspace
             </p>
           </Link>
@@ -118,7 +118,7 @@ function AppLayoutContent({
           </Link>
         </SidebarHeader>
 
-        <SidebarContent className="shell-rail mt-2.5 overflow-hidden rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 py-3 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
+        <SidebarContent className="shell-rail overflow-hidden rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 py-3 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
           <div className="mb-2.5 flex items-center gap-3 px-1">
             <span className="editorial-kicker">Navigation</span>
             <div className="h-px flex-1 bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.45),transparent)]" />
@@ -162,7 +162,7 @@ function AppLayoutContent({
           </SidebarMenu>
         </SidebarContent>
 
-        <SidebarFooter className="shell-rail mt-2.5 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 pb-3 pt-2.5 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
+        <SidebarFooter className="shell-rail rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 pb-3 pt-2.5 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
           <SidebarSeparator className="mb-1.5" />
           <Button
             asChild
