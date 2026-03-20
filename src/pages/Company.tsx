@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Copy, CreditCard, MailPlus, Shield, Users2 } from "lucide-react";
 import { FunctionsFetchError, FunctionsHttpError, FunctionsRelayError } from "@supabase/supabase-js";
@@ -714,7 +714,7 @@ export default function Company({ onboardingState, schemaReady, onCompanyUpdated
   return (
     <div className="space-y-6">
       <Card className="soft-elevation overflow-hidden border-border/60">
-        <CardContent className="relative grid gap-6 overflow-hidden bg-[linear-gradient(120deg,hsl(var(--brand-accent-ghost))/95,transparent_72%)] p-6 lg:grid-cols-[1.2fr_1fr]">
+        <CardContent className="relative grid gap-6 overflow-hidden bg-[linear-gradient(120deg,hsl(var(--brand-accent-ghost)/0.95),transparent_72%)] p-6 lg:grid-cols-[1.2fr_1fr]">
           <div className="space-y-4">
             <p className="font-display text-xs uppercase tracking-[0.1em] text-muted-foreground">Workspace Console</p>
             <h1 className="font-display text-3xl tracking-[0.03em]">

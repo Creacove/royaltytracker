@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { KeyRound, UserRound } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -218,11 +218,11 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="grid gap-3 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost))/80,transparent_65%)] p-6 md:grid-cols-[1.3fr_1fr]">
+      <Card surface="hero" className="overflow-hidden">
+        <CardContent className="grid gap-3 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost)/0.80),transparent_65%)] p-6 md:grid-cols-[1.3fr_1fr]">
           <div className="space-y-2">
-            <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Account</p>
-            <h1 className="font-display text-3xl tracking-[0.04em]">User Settings</h1>
+            <p className="editorial-kicker">Account</p>
+            <h1 className="type-display-hero text-[clamp(2.1rem,2vw+1.2rem,3rem)] text-foreground">User Settings</h1>
             <p className="text-sm text-muted-foreground">
               Manage your profile information and authentication settings.
             </p>
@@ -235,8 +235,8 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-        <Card className="border-border/60">
-          <CardHeader>
+        <Card surface="evidence">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
             <div className="flex items-center gap-2">
               <UserRound className="h-4 w-4 text-muted-foreground" />
               <CardTitle>Profile</CardTitle>
@@ -276,8 +276,8 @@ export default function Settings({ userId, userEmail, onboardingState, onProfile
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
-          <CardHeader>
+        <Card surface="evidence">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
             <div className="flex items-center gap-2">
               <KeyRound className="h-4 w-4 text-muted-foreground" />
               <CardTitle>Security</CardTitle>

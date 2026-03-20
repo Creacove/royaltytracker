@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CheckCircle2, Lock, Rocket } from "lucide-react";
 
@@ -205,7 +205,7 @@ export default function ActivateWorkspace({
   return (
     <div className="space-y-5">
       <Card className="overflow-hidden border-border/60">
-        <CardContent className="grid gap-4 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost))/80,transparent_65%)] p-6 md:grid-cols-[1.35fr_1fr]">
+        <CardContent className="grid gap-4 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost)/0.80),transparent_65%)] p-6 md:grid-cols-[1.35fr_1fr]">
           <div className="space-y-2">
             <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Activation</p>
             <h1 className="font-display text-3xl tracking-[0.04em]">Activate your workspace</h1>

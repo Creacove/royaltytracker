@@ -1,20 +1,27 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-sm border border-transparent text-xs font-display uppercase tracking-[0.08em] ring-offset-background transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[calc(var(--radius-sm))] border text-[11px] font-ui font-semibold uppercase tracking-[0.12em] ring-offset-background motion-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-foreground/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border-border bg-background text-foreground hover:bg-muted",
-        secondary: "border-border bg-secondary text-secondary-foreground hover:bg-muted",
-        ghost: "bg-transparent text-foreground hover:border-border hover:bg-muted hover:text-[hsl(var(--brand-accent))]",
-        link: "text-[hsl(var(--brand-accent))] underline-offset-4 hover:underline",
+        default:
+          "border-foreground bg-foreground text-primary-foreground shadow-[0_16px_28px_-18px_hsl(var(--foreground)/0.8)] hover:-translate-y-px hover:border-[hsl(var(--brand-accent))] hover:bg-[hsl(var(--brand-accent))]",
+        destructive:
+          "border-[hsl(var(--tone-critical))] bg-[hsl(var(--tone-critical))] text-destructive-foreground shadow-[0_16px_28px_-18px_hsl(var(--tone-critical)/0.55)] hover:-translate-y-px hover:bg-[hsl(var(--tone-critical)/0.92)]",
+        outline:
+          "border-[hsl(var(--border)/0.14)] bg-[linear-gradient(180deg,hsl(var(--surface-elevated))_0%,hsl(var(--surface-panel))_100%)] text-foreground shadow-[inset_0_1px_0_hsl(0_0%_100%/0.62)] hover:-translate-y-px hover:border-[hsl(var(--brand-accent)/0.25)] hover:bg-[hsl(var(--brand-accent-ghost)/0.4)]",
+        secondary:
+          "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-muted))] text-foreground shadow-[inset_0_1px_0_hsl(0_0%_100%/0.58)] hover:-translate-y-px hover:bg-[hsl(var(--surface-elevated))]",
+        ghost:
+          "border-transparent bg-transparent text-foreground/68 shadow-none hover:border-[hsl(var(--border)/0.12)] hover:bg-[hsl(var(--surface-elevated)/0.92)] hover:text-foreground",
+        quiet:
+          "border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.55)] text-foreground/78 shadow-none hover:border-[hsl(var(--brand-accent)/0.18)] hover:bg-[hsl(var(--surface-elevated)/0.96)] hover:text-foreground",
+        link: "h-auto border-transparent px-0 py-0 text-[hsl(var(--brand-accent))] shadow-none hover:text-[hsl(var(--foreground))] hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2",

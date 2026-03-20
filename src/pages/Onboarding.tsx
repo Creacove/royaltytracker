@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Building2, CheckCircle2, ShieldCheck, UserRound } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -134,7 +134,7 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-[1200px] overflow-hidden rounded-md border border-border/50 md:grid-cols-[1.05fr_1fr]">
-        <section className="relative hidden border-r border-border/50 bg-[linear-gradient(145deg,hsl(var(--brand-accent-ghost))/80,transparent_72%)] p-8 md:flex md:flex-col md:justify-between">
+        <section className="relative hidden border-r border-border/50 bg-[linear-gradient(145deg,hsl(var(--brand-accent-ghost)/0.80),transparent_72%)] p-8 md:flex md:flex-col md:justify-between">
           <div className="space-y-6">
             <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />
             <div className="space-y-2">

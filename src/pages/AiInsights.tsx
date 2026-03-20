@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -48,7 +48,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +66,7 @@ type ConversationTurn = {
   id: string;
   role: "user" | "assistant";
   text: string;
+  createdAt: string;
   payload?: AiInsightsTurnResponse;
 };
 
@@ -156,9 +157,10 @@ function normalizeArtistKey(artistName: string): string {
 }
 
 function getContextLabel(entityContext: AiInsightsEntityContext): string {
-  if (entityContext.track_key) return `CONTEXT: ${entityContext.track_key}`;
+  if (entityContext.track_title) return `Scope: ${entityContext.track_title}`;
+  if (entityContext.track_key) return `Scope: ${entityContext.track_key}`;
   if (entityContext.artist_name) return `CONTEXT: ${entityContext.artist_name}`;
-  return "CONTEXT: WORKSPACE";
+  return "Scope: Workspace";
 }
 
 function formatDateWindow(fromDate: string, toDate: string): string {
@@ -170,6 +172,170 @@ function formatDateWindow(fromDate: string, toDate: string): string {
   }
 
   return `${format(from, "MMM d, yyyy")} - ${format(to, "MMM d, yyyy")}`;
+}
+
+function formatTurnTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  return format(date, "HH:mm");
+}
+
+function activeScopeTitle(entityContext: AiInsightsEntityContext): string {
+  if (entityContext.track_title) return entityContext.track_title;
+  if (entityContext.track_key) return entityContext.track_key;
+  if (entityContext.artist_name) return entityContext.artist_name;
+  return "Workspace";
+}
+
+function activeScopeDescriptor(entityContext: AiInsightsEntityContext): string {
+  if (entityContext.track_key) return "Track scope";
+  if (entityContext.artist_name) return "Artist scope";
+  return "Workspace scope";
+}
+
+function formatCompactMetric(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return Math.round(value).toLocaleString();
+}
+
+function formatCompactCurrency(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "$0";
+  const abs = Math.abs(value);
+  const prefix = value < 0 ? "-$" : "$";
+  if (abs >= 1_000_000) return `${prefix}${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${prefix}${(abs / 1_000).toFixed(1)}K`;
+  return toMoney(value);
+}
+
+function formatTrendDelta(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Flat";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(1)}%`;
+}
+
+function trendToneClass(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] text-muted-foreground";
+  }
+  if (value > 0) {
+    return "border-[hsl(var(--tone-success)/0.18)] bg-[hsl(var(--tone-success)/0.12)] text-[hsl(var(--tone-success))]";
+  }
+  if (value < 0) {
+    return "border-[hsl(var(--tone-critical)/0.18)] bg-[hsl(var(--tone-critical)/0.12)] text-[hsl(var(--tone-critical))]";
+  }
+  return "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] text-muted-foreground";
+}
+
+function confidenceToneClass(confidence: string | undefined): string {
+  if (confidence === "high") {
+    return "border-[hsl(var(--tone-success)/0.2)] bg-[hsl(var(--tone-success)/0.12)] text-[hsl(var(--tone-success))]";
+  }
+  if (confidence === "medium") {
+    return "border-[hsl(var(--tone-warning)/0.2)] bg-[hsl(var(--tone-warning)/0.12)] text-[hsl(var(--tone-warning))]";
+  }
+  return "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.75)] text-muted-foreground";
+}
+
+function qualityOutcomeLabel(value: AiInsightsTurnResponse["quality_outcome"]): string | null {
+  if (value === "clarify") return "Clarification";
+  if (value === "constrained") return "Constrained";
+  if (value === "pass") return "Verified";
+  return null;
+}
+
+function axisLabel(value: string | number): string {
+  const text = String(value ?? "");
+  return text.length > 12 ? `${text.slice(0, 12)}…` : text;
+}
+
+function createTurn(
+  role: ConversationTurn["role"],
+  text: string,
+  payload?: AiInsightsTurnResponse,
+): ConversationTurn {
+  return {
+    id: crypto.randomUUID(),
+    role,
+    text,
+    createdAt: new Date().toISOString(),
+    payload,
+  };
+}
+
+function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBlock[] {
+  const blocks: AiInsightsAnswerBlock[] = [];
+
+  if (
+    payload.visual?.type === "table" &&
+    Array.isArray(payload.visual.columns) &&
+    Array.isArray(payload.visual.rows) &&
+    payload.visual.columns.length > 0 &&
+    payload.visual.rows.length > 0
+  ) {
+    blocks.push({
+      id: "fallback-table",
+      type: "table",
+      priority: 30,
+      source: "workspace_data",
+      title: payload.visual.title ?? "Table",
+      payload: {
+        columns: payload.visual.columns,
+        rows: payload.visual.rows,
+      },
+    });
+  }
+
+  if (
+    (payload.visual?.type === "bar" || payload.visual?.type === "line") &&
+    typeof payload.visual.x === "string" &&
+    Array.isArray(payload.visual.y) &&
+    Array.isArray(payload.visual.rows) &&
+    payload.visual.y.length > 0 &&
+    payload.visual.rows.length > 0
+  ) {
+    blocks.push({
+      id: "fallback-visual",
+      type: payload.visual.type === "bar" ? "bar_chart" : "line_chart",
+      priority: 32,
+      source: "workspace_data",
+      title: payload.visual.title ?? "Chart",
+      payload: {
+        x: payload.visual.x,
+        y: payload.visual.y,
+        rows: payload.visual.rows,
+      },
+    });
+  }
+
+  if (Array.isArray(payload.recommendations) && payload.recommendations.length > 0) {
+    blocks.push({
+      id: "fallback-recommendations",
+      type: "recommendations",
+      priority: 40,
+      source: "workspace_data",
+      title: "Recommendations",
+      payload: {
+        items: payload.recommendations,
+      },
+    });
+  }
+
+  if (Array.isArray(payload.citations) && payload.citations.length > 0) {
+    blocks.push({
+      id: "fallback-citations",
+      type: "citations",
+      priority: 70,
+      source: "workspace_data",
+      title: "Sources",
+      payload: {
+        items: payload.citations,
+      },
+    });
+  }
+
+  return blocks;
 }
 
 function blockItems(block: AiInsightsAnswerBlock): Record<string, unknown>[] {
@@ -278,61 +444,150 @@ function normalizeRecommendationItem(item: Record<string, unknown>, idx: number)
   };
 }
 
-function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
-  const blocks = Array.isArray(payload.answer_blocks) ? [...payload.answer_blocks].sort((a, b) => a.priority - b.priority) : [];
+function AdaptiveAnswerStack({
+  payload,
+  onUseQuestion,
+}: {
+  payload: AiInsightsTurnResponse;
+  onUseQuestion: (question: string) => void;
+}) {
+  const responseBlocks = Array.isArray(payload.answer_blocks) ? [...payload.answer_blocks] : [];
+  const fallbackBlocks = responseBlocks.length === 0 ? toFallbackBlocks(payload) : [];
+  const blocks = [...responseBlocks, ...fallbackBlocks].sort((a, b) => a.priority - b.priority);
   if (blocks.length === 0) return <LegacyAnswerView payload={payload} />;
 
+  const leadBlock = blocks.find((block) => block.type === "direct_answer");
+  const summaryBlock = blocks.find((block) => block.type === "deep_summary");
+  const kpiBlock = blocks.find((block) => block.type === "kpi_strip");
+  const leadTitle =
+    (leadBlock && typeof leadBlock.payload.title === "string" && leadBlock.payload.title) ||
+    payload.answer_title ||
+    "AI Brief";
+  const leadText = (leadBlock && blockText(leadBlock)) || payload.executive_answer;
+  const summaryText = (summaryBlock && blockText(summaryBlock)) || payload.why_this_matters;
+  const kpiItems =
+    kpiBlock && blockItems(kpiBlock).length > 0
+      ? blockItems(kpiBlock).slice(0, 6).map((item, idx) => ({
+          label: typeof item.label === "string" ? item.label : `Metric ${idx + 1}`,
+          value:
+            typeof item.value === "string" || typeof item.value === "number"
+              ? String(item.value)
+              : "-",
+        }))
+      : payload.kpis.slice(0, 6).map((kpi) => ({ label: kpi.label, value: kpi.value }));
+  const qualityLabel = qualityOutcomeLabel(payload.quality_outcome);
+
   return (
-    <div className="min-w-0 flex-1 space-y-5 overflow-hidden">
+    <div className="w-full min-w-0 flex-1 space-y-5">
+      <section className="surface-hero forensic-frame spotlight-border relative min-w-0 overflow-hidden rounded-[calc(var(--radius)-2px)] p-5 md:p-6">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,hsl(var(--brand-accent)/0.22),transparent_62%)]" />
+        <div className="pointer-events-none absolute bottom-0 right-0 h-28 w-28 translate-x-8 translate-y-8 rounded-full bg-[hsl(var(--brand-accent-ghost)/0.8)] blur-3xl" />
+        <div className="relative min-w-0 space-y-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.84)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
+              {modeLabel(payload.resolved_mode)} scope
+            </span>
+            <span className={cn("rounded-full border px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em]", confidenceToneClass(payload.evidence.system_confidence))}>
+              {formatEvidenceConfidence(payload.evidence.system_confidence)}
+            </span>
+            <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.82)] px-3 py-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+              {payload.evidence.row_count.toLocaleString()} rows
+            </span>
+            {qualityLabel ? (
+              <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.82)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">
+                {qualityLabel}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="grid min-w-0 gap-4">
+            <div className="min-w-0 space-y-5">
+              <div className="min-w-0 space-y-3">
+                <div className="flex items-center gap-2 text-[10px] font-ui uppercase tracking-[0.2em] text-[hsl(var(--brand-accent))]">
+                  <Bot className="h-3.5 w-3.5" />
+                  <span>AI Briefing</span>
+                </div>
+                <h3 className="type-display-section w-full break-words text-[clamp(2rem,2.3vw+1.1rem,3.2rem)] leading-[0.98] tracking-tight text-foreground [overflow-wrap:anywhere]">
+                  {leadTitle}
+                </h3>
+                <p className="w-full break-words text-[15px] leading-7 text-foreground/82 [overflow-wrap:anywhere]">
+                  {leadText}
+                </p>
+              </div>
+
+              {kpiItems.length > 0 ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {kpiItems.map((item) => (
+                    <div key={item.label} className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                      <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">
+                        {item.label}
+                      </p>
+                      <p className="mt-2 font-mono text-[1.05rem] font-semibold tracking-tight text-foreground">
+                        {item.value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="min-w-0 space-y-3">
+              <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">
+                  Current scope
+                </p>
+                <p className="mt-2 break-words text-lg font-semibold tracking-tight text-foreground">
+                  {activeScopeTitle(payload.resolved_entities)}
+                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">
+                  {modeLabel(payload.resolved_mode)} scope • {formatDateWindow(payload.evidence.from_date, payload.evidence.to_date)}
+                </p>
+              </div>
+
+              <div className="surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                <div className="flex items-center gap-2 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  <span>What matters</span>
+                </div>
+                <p className="mt-3 break-words text-sm leading-6 text-foreground/80 [overflow-wrap:anywhere]">
+                  {summaryText}
+                </p>
+              </div>
+
+            </div>
+          </div>
+
+          {payload.clarification ? (
+            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] border-[hsl(var(--tone-warning)/0.18)] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--tone-warning))]">
+                Clarification needed
+              </p>
+              <p className="mt-2 text-sm leading-6 text-foreground">{payload.clarification.question}</p>
+              {payload.clarification.options?.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {payload.clarification.options.map((option) => (
+                    <Button key={option} size="sm" variant="outline" onClick={() => onUseQuestion(option)}>
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       {blocks.map((block) => {
         if (block.type === "direct_answer") {
-          const title = typeof block.payload.title === "string" ? block.payload.title : payload.answer_title;
-          const text = blockText(block) ?? payload.executive_answer;
-          return (
-            <div key={block.id} className="w-full max-w-full md:max-w-[92%]">
-              <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
-                {title}
-              </h3>
-              <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
-                {text}
-              </p>
-            </div>
-          );
+          return null;
         }
 
         if (block.type === "deep_summary") {
-          return (
-            <div key={block.id} className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl md:p-6">
-              <div className="flex items-center gap-3 text-white/40">
-                <TrendingUp className="h-4 w-4" />
-                <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">STRATEGIC TAKE</p>
-              </div>
-              <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">
-                {blockText(block) ?? payload.why_this_matters}
-              </p>
-            </div>
-          );
+          return null;
         }
 
         if (block.type === "kpi_strip") {
-          const items = blockItems(block).slice(0, 6);
-          if (items.length === 0) return null;
-          return (
-            <div key={block.id} className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
-              {items.map((item, idx) => {
-                const label = typeof item.label === "string" ? item.label : `Metric ${idx + 1}`;
-                const value = typeof item.value === "string" ? item.value : "-";
-                return (
-                  <div key={`${block.id}-${idx}`} className="min-w-0 overflow-hidden">
-                    <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{label}</p>
-                    <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={value}>
-                      {value}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          );
+          return null;
         }
 
         if (block.type === "table") {
@@ -340,51 +595,49 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
           const rows = ((block.payload as { rows?: unknown }).rows ?? []) as Array<Record<string, string | number | null>>;
           if (!Array.isArray(columns) || !Array.isArray(rows) || columns.length === 0 || rows.length === 0) return null;
           return (
-            <div key={block.id} className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
-                <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
-                  {block.title ?? "Evidence Table"}
-                </p>
-                <Badge variant="outline" className="border-black/20 font-mono text-[9px] uppercase tracking-widest">
-                  table
+            <Card key={block.id} surface="evidence">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <CardTitle className="text-[1rem]">{block.title ?? "Evidence Table"}</CardTitle>
+                <Badge variant="outline" className="border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] font-mono text-[9px] uppercase tracking-[0.16em]">
+                  {rows.length} rows
                 </Badge>
-              </div>
-              <div className="min-w-0 p-3 md:p-6">
-                <div className="relative w-full min-w-0 max-w-[calc(100vw-5.25rem)] overflow-hidden md:max-w-full">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-b-2 border-black bg-transparent hover:bg-transparent">
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Table
+                  variant="evidence"
+                  density="compact"
+                  style={{ minWidth: `${Math.max(720, columns.length * 138)}px` }}
+                >
+                  <TableHeader>
+                    <TableRow>
+                      {columns.map((column) => (
+                        <TableHead key={column}>{toAssistantLabel(column)}</TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.slice(0, 12).map((row, rIdx) => (
+                      <TableRow key={`${block.id}-${rIdx}`}>
                         {columns.map((column) => (
-                          <TableHead key={column} className="type-table-head h-12 whitespace-nowrap text-[10px] font-bold text-black border-none">
-                            {toAssistantLabel(column)}
-                          </TableHead>
+                          <TableCell
+                            key={`${block.id}-${rIdx}-${column}`}
+                            className="whitespace-nowrap font-mono text-[11px]"
+                          >
+                            {formatAssistantValue(column, row[column])}
+                          </TableCell>
                         ))}
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.slice(0, 12).map((row, rIdx) => (
-                        <TableRow key={`${block.id}-${rIdx}`} className="border-b border-black/5 hover:bg-black/[0.02] transition-colors">
-                          {columns.map((column) => (
-                            <TableCell key={`${block.id}-${rIdx}-${column}`} className="py-3 whitespace-nowrap font-mono text-[10px] font-bold text-black/90">
-                              {formatAssistantValue(column, row[column])}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {columns.length > 3 && (
-                    <>
-                      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white via-white/90 to-transparent md:hidden" />
-                      <div className="mt-2 flex items-center justify-end gap-1 text-[10px] font-mono uppercase tracking-wider text-black/55 md:hidden">
-                        <MoveHorizontal className="h-3 w-3" />
-                        <span>Swipe table</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+                    ))}
+                  </TableBody>
+                </Table>
+                {columns.length > 4 ? (
+                  <div className="flex items-center justify-end gap-1 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground md:hidden">
+                    <MoveHorizontal className="h-3 w-3" />
+                    <span>Swipe</span>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
           );
         }
 
@@ -394,41 +647,139 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
           const rows = ((block.payload as { rows?: unknown }).rows ?? []) as Array<Record<string, string | number | null>>;
           if (!x || !Array.isArray(y) || y.length === 0 || !Array.isArray(rows) || rows.length === 0) return null;
           return (
-            <div key={block.id} className="w-full max-w-full overflow-hidden rounded-sm border border-black/10 bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-black/5 bg-black/[0.02] px-4 py-2.5 md:px-6">
-                <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-black/60">
-                  {block.title ?? "Evidence Chart"}
-                </p>
-                <Badge variant="outline" className="border-black/20 font-mono text-[9px] uppercase tracking-widest">
-                  {block.type === "bar_chart" ? "bar" : "line"}
-                </Badge>
-              </div>
-              <div className="h-[280px] min-w-0 w-full overflow-hidden p-3 pt-6 md:h-[360px] md:p-6">
-                <ResponsiveContainer width="100%" height="100%">
-                  {block.type === "bar_chart" ? (
-                    <BarChart data={rows}>
-                      <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
-                      <XAxis dataKey={x} hide />
-                      <YAxis tick={{ fontSize: 10, fontFamily: "monospace", fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
-                      <Tooltip contentStyle={{ backgroundColor: "black", border: "none", borderRadius: "2px", fontSize: "11px", padding: "12px" }} itemStyle={{ color: "white", fontWeight: 700 }} />
-                      {y.map((col, cIdx) => (
-                        <Bar key={`${block.id}-${col}`} dataKey={col} fill={CHART_COLORS[cIdx % CHART_COLORS.length]} radius={[1, 1, 0, 0]} barSize={32} />
-                      ))}
-                    </BarChart>
-                  ) : (
-                    <LineChart data={rows}>
-                      <CartesianGrid stroke="#000" strokeDasharray="1 4" vertical={false} opacity={0.1} />
-                      <XAxis dataKey={x} hide />
-                      <YAxis tick={{ fontSize: 10, fontFamily: "monospace", fontWeight: 600 }} axisLine={false} tickLine={false} width={60} />
-                      <Tooltip contentStyle={{ backgroundColor: "black", border: "none", borderRadius: "2px", fontSize: "11px", padding: "12px" }} itemStyle={{ color: "white", fontWeight: 700 }} />
-                      {y.map((col, cIdx) => (
-                        <Line key={`${block.id}-${col}`} type="monotone" dataKey={col} stroke={CHART_COLORS[cIdx % CHART_COLORS.length]} strokeWidth={3} dot={{ r: 3, strokeWidth: 2, fill: "white" }} activeDot={{ r: 5 }} />
-                      ))}
-                    </LineChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
-            </div>
+            <Card key={block.id} surface="evidence">
+              <CardHeader className="gap-3 border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-[1rem]">{block.title ?? "Evidence Chart"}</CardTitle>
+                  <div className="flex flex-wrap gap-2">
+                    {y.map((column, idx) => (
+                      <span
+                        key={`${block.id}-${column}`}
+                        className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground"
+                      >
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }}
+                        />
+                        {toAssistantLabel(column)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-5">
+                <div className="h-[280px] w-full md:h-[340px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    {block.type === "bar_chart" ? (
+                      <BarChart data={rows} margin={{ top: 12, right: 12, left: -10, bottom: 4 }}>
+                        <CartesianGrid
+                          stroke="hsl(var(--border))"
+                          strokeDasharray="3 5"
+                          vertical={false}
+                          opacity={0.28}
+                        />
+                        <XAxis
+                          dataKey={x}
+                          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono)" }}
+                          tickLine={false}
+                          axisLine={false}
+                          minTickGap={18}
+                          tickFormatter={axisLabel}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono)" }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={60}
+                          tickFormatter={(value: number) => formatCompactMetric(Number(value))}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "18px",
+                            border: "1px solid hsl(var(--border))",
+                            backgroundColor: "hsl(var(--surface-elevated))",
+                            boxShadow: "0 24px 60px -40px rgba(0,0,0,0.28)",
+                          }}
+                          labelStyle={{
+                            color: "hsl(var(--foreground))",
+                            fontFamily: "var(--font-display)",
+                            fontSize: "11px",
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                          itemStyle={{ color: "hsl(var(--foreground))", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                        />
+                        {y.map((column, idx) => (
+                          <Bar
+                            key={`${block.id}-${column}`}
+                            dataKey={column}
+                            fill={CHART_COLORS[idx % CHART_COLORS.length]}
+                            radius={[8, 8, 2, 2]}
+                            maxBarSize={34}
+                          />
+                        ))}
+                      </BarChart>
+                    ) : (
+                      <LineChart data={rows} margin={{ top: 12, right: 12, left: -10, bottom: 4 }}>
+                        <CartesianGrid
+                          stroke="hsl(var(--border))"
+                          strokeDasharray="3 5"
+                          vertical={false}
+                          opacity={0.28}
+                        />
+                        <XAxis
+                          dataKey={x}
+                          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono)" }}
+                          tickLine={false}
+                          axisLine={false}
+                          minTickGap={18}
+                          tickFormatter={axisLabel}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))", fontFamily: "var(--font-mono)" }}
+                          tickLine={false}
+                          axisLine={false}
+                          width={60}
+                          tickFormatter={(value: number) => formatCompactMetric(Number(value))}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            borderRadius: "18px",
+                            border: "1px solid hsl(var(--border))",
+                            backgroundColor: "hsl(var(--surface-elevated))",
+                            boxShadow: "0 24px 60px -40px rgba(0,0,0,0.28)",
+                          }}
+                          labelStyle={{
+                            color: "hsl(var(--foreground))",
+                            fontFamily: "var(--font-display)",
+                            fontSize: "11px",
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                          itemStyle={{ color: "hsl(var(--foreground))", fontFamily: "var(--font-mono)", fontSize: "11px" }}
+                        />
+                        {y.map((column, idx) => (
+                          <Line
+                            key={`${block.id}-${column}`}
+                            type="monotone"
+                            dataKey={column}
+                            stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                            strokeWidth={3}
+                            dot={false}
+                            activeDot={{
+                              r: 5,
+                              fill: CHART_COLORS[idx % CHART_COLORS.length],
+                              stroke: "hsl(var(--background))",
+                              strokeWidth: 2,
+                            }}
+                          />
+                        ))}
+                      </LineChart>
+                    )}
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
           );
         }
 
@@ -442,64 +793,51 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
           const Icon = block.type === "recommendations" ? Lightbulb : ListChecks;
           const cards = items.map((item, idx) => normalizeRecommendationItem(item, idx));
           return (
-            <Card key={block.id} className="rounded-sm border-black/15">
-              <CardHeader className="pb-1">
-                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest">
-                  <Icon className="h-4 w-4" />
+            <Card key={block.id} surface="muted">
+              <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <CardTitle className="flex items-center gap-2 text-[1rem]">
+                  <Icon className="h-4 w-4 text-[hsl(var(--brand-accent))]" />
                   {heading}
                 </CardTitle>
+                {questionPrompt ? (
+                  <p className="text-sm leading-6 text-muted-foreground">{questionPrompt}</p>
+                ) : null}
               </CardHeader>
-              <CardContent className="space-y-4">
-                {questionPrompt && (
-                  <p className="text-sm font-medium leading-relaxed text-black/75">{questionPrompt}</p>
-                )}
+              <CardContent className={cn("gap-3", cards.length > 1 ? "grid md:grid-cols-2" : "space-y-3")}>
                 {cards.map((card, idx) => (
-                  <div key={`${block.id}-${idx}`} className="rounded-sm border border-black/10 bg-white p-4 shadow-sm">
+                  <div
+                    key={`${block.id}-${idx}`}
+                    className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4"
+                  >
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-black text-[10px] font-bold text-white">
+                      <div className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.9)] text-[10px] font-mono font-semibold text-[hsl(var(--brand-accent))]">
                         {idx + 1}
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">
-                        <p className="break-words text-[13px] font-bold leading-5 text-black">{card.title}</p>
+                        <p className="break-words text-sm font-semibold leading-6 text-foreground">{card.title}</p>
                         {card.body && (
-                          <p className="break-words text-xs leading-relaxed text-black/72">{card.body}</p>
+                          <p className="text-sm leading-6 text-muted-foreground">{card.body}</p>
                         )}
                         {card.meta.length > 0 && (
                           <div className="flex flex-wrap gap-2">
-                            {card.meta.map((m, mIdx) => {
-                              const toneClass = m.tone === "good"
-                                ? "border-emerald-700/20 bg-emerald-50 text-emerald-900"
-                                : m.tone === "caution"
-                                  ? "border-amber-700/20 bg-amber-50 text-amber-900"
-                                  : "border-black/15 bg-black/[0.03] text-black/80";
-                              return (
-                                <span key={`${block.id}-${idx}-meta-${mIdx}`} className={cn("inline-flex items-center gap-1 rounded-sm border px-2 py-1 text-[10px] font-mono", toneClass)}>
-                                  <span className="uppercase tracking-wide opacity-70">{m.label}</span>
-                                  <span className="font-semibold">{m.value}</span>
-                                </span>
-                              );
-                            })}
+                            {card.meta.map((m, mIdx) => (
+                              <span
+                                key={`${block.id}-${idx}-meta-${mIdx}`}
+                                className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground"
+                              >
+                                {m.label}: {m.value}
+                              </span>
+                            ))}
                           </div>
                         )}
                         {card.bullets.length > 0 && (
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {card.bullets.map((bullet, bIdx) => (
-                              <p key={`${block.id}-${idx}-bullet-${bIdx}`} className="break-words text-[11px] leading-relaxed text-black/72">
+                              <p key={`${block.id}-${idx}-bullet-${bIdx}`} className="text-sm leading-6 text-foreground/78">
                                 {bullet}
                               </p>
                             ))}
                           </div>
-                        )}
-                        {card.cta && (
-                          <a
-                            href={card.cta.href}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 rounded-sm border border-black/20 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-black hover:bg-black hover:text-white"
-                          >
-                            {card.cta.label}
-                            <ArrowUpRight className="h-3 w-3" />
-                          </a>
                         )}
                       </div>
                     </div>
@@ -511,39 +849,69 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
         }
 
         if (block.type === "risk_flags") {
-          const items = blockItems(block);
-          const normalized = items.length > 0 ? items.map((item) => String(item.text ?? item.label ?? JSON.stringify(item))) : [];
-          const fallback = ((block.payload as { items?: unknown }).items ?? []) as unknown[];
-          const risks = normalized.length > 0 ? normalized : fallback.filter((item): item is string => typeof item === "string");
-          if (risks.length === 0) return null;
+          return null;
+        }
+
+        if (block.type === "past_pattern_inference") {
           return (
-            <Card key={block.id} className="rounded-sm border-amber-300/80 bg-amber-50/60">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-widest text-amber-900">
-                  <ShieldAlert className="h-4 w-4" />
-                  Risk Flags
-                </CardTitle>
+            <Card key={block.id} surface="elevated">
+              <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <CardTitle className="text-[1rem]">Pattern inference</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {risks.map((risk, idx) => (
-                  <div key={`${block.id}-${idx}`} className="flex items-start gap-2 text-sm text-amber-900">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <p>{risk}</p>
-                  </div>
-                ))}
+              <CardContent>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {blockText(block) ?? "Pattern inference available from historical data."}
+                </p>
               </CardContent>
             </Card>
           );
         }
 
-        if (block.type === "past_pattern_inference") {
+        if (block.type === "citations") {
+          const items = ((block.payload as { items?: unknown }).items ?? []) as Array<Record<string, unknown>>;
+          if (!Array.isArray(items) || items.length === 0) return null;
           return (
-            <Card key={block.id} className="rounded-sm border-black/15">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm uppercase tracking-widest">Past Pattern Inference</CardTitle>
+            <Card key={block.id} surface="muted">
+              <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+                <CardTitle className="text-[1rem]">Sources</CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-black/75">{blockText(block) ?? "Pattern inference available from historical data."}</p>
+              <CardContent className="space-y-3">
+                {items.map((item, idx) => {
+                  const title =
+                    (typeof item.title === "string" && item.title) ||
+                    (typeof item.publisher === "string" && item.publisher) ||
+                    `Source ${idx + 1}`;
+                  const publisher = typeof item.publisher === "string" ? item.publisher : null;
+                  const url = typeof item.url === "string" ? item.url : null;
+                  const sourceType = typeof item.source_type === "string" ? item.source_type : null;
+                  return (
+                    <div
+                      key={`${block.id}-${idx}`}
+                      className="surface-elevated forensic-frame flex flex-col gap-2 rounded-[calc(var(--radius-sm))] p-4"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-foreground">{title}</p>
+                        {sourceType ? (
+                          <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                            {sourceType === "workspace_data" ? "Workspace" : "External"}
+                          </span>
+                        ) : null}
+                      </div>
+                      {publisher ? <p className="text-sm text-muted-foreground">{publisher}</p> : null}
+                      {url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-mono uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))] hover:underline"
+                        >
+                          Open source
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </a>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           );
@@ -551,41 +919,55 @@ function AdaptiveAnswerStack({ payload }: { payload: AiInsightsTurnResponse }) {
 
         return null;
       })}
+
     </div>
   );
 }
 
-function LegacyAnswerView({ payload }: { payload: AiInsightsTurnResponse }) {
+function LegacyAnswerView({
+  payload,
+}: {
+  payload: AiInsightsTurnResponse;
+}) {
   return (
-    <div className="min-w-0 flex-1 space-y-8 overflow-hidden">
-      <div className="w-full max-w-full md:max-w-[90%]">
-        <h3 className="type-display-section break-words text-2xl leading-[1.1] tracking-tight [overflow-wrap:anywhere] md:text-3xl">
+    <div className="w-full min-w-0 flex-1 space-y-5">
+      <section className="surface-hero forensic-frame spotlight-border min-w-0 rounded-[calc(var(--radius)-2px)] p-5 md:p-6">
+        <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.84)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
+              {modeLabel(payload.resolved_mode)} scope
+            </span>
+            <span className={cn("rounded-full border px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em]", confidenceToneClass(payload.evidence.system_confidence))}>
+              {formatEvidenceConfidence(payload.evidence.system_confidence)}
+            </span>
+          </div>
+          <h3 className="type-display-section break-words text-[clamp(2rem,2.3vw+1.1rem,3.2rem)] leading-[0.98] tracking-tight [overflow-wrap:anywhere]">
           {payload.answer_title}
         </h3>
-        <p className="mt-4 break-words text-base font-medium leading-relaxed text-foreground/[0.85] [overflow-wrap:anywhere]">
-          {payload.executive_answer}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-y-3 gap-x-4 border-l-2 border-[hsl(var(--brand-accent))]/20 py-0.5 pl-6 sm:grid-cols-2 md:grid-cols-4 md:gap-x-6">
-        {payload.kpis.map((kpi) => (
-          <div key={kpi.label} className="min-w-0 overflow-hidden">
-            <p className="type-micro text-[8px] font-normal tracking-[0.15em] text-black/40 uppercase">{kpi.label}</p>
-            <p className="mt-0.5 truncate font-mono text-base font-bold tracking-tight text-black" title={kpi.value}>
-              {kpi.value}
-            </p>
+          <p className="break-words text-[15px] leading-7 text-foreground/82 [overflow-wrap:anywhere]">
+            {payload.executive_answer}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {payload.kpis.map((kpi) => (
+              <div key={kpi.label} className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">{kpi.label}</p>
+                <p className="mt-2 font-mono text-[1.05rem] font-semibold tracking-tight text-foreground" title={kpi.value}>
+                  {kpi.value}
+                </p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      <div className="group relative w-full max-w-full overflow-hidden rounded-sm bg-black p-4 text-white shadow-2xl transition-all hover:shadow-black/20 md:p-6">
-        <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 translate-y-[-16px] rounded-full bg-white/5 blur-3xl group-hover:bg-white/10 transition-all"></div>
-        <div className="flex items-center gap-3 text-white/40">
-          <TrendingUp className="h-4 w-4" />
-          <p className="type-micro text-[10px] font-bold tracking-[0.3em] text-white/50">BUSINESS STRATEGY</p>
         </div>
-        <p className="mt-3 break-words text-[13px] font-medium leading-[1.6] text-white/90 [overflow-wrap:anywhere]">{payload.why_this_matters}</p>
-      </div>
+      </section>
+
+      <Card surface="elevated">
+        <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+          <CardTitle className="text-[1rem]">What matters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm leading-6 text-muted-foreground">{payload.why_this_matters}</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -610,8 +992,13 @@ export default function AiInsights() {
   const [activeRailTab, setActiveRailTab] = useState<"tracks" | "artists">("tracks");
   const [isRailOpen, setIsRailOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  const { data: trackRows = [] } = useQuery({
+  const {
+    data: trackRows = [],
+    isLoading: trackRowsLoading,
+    error: trackRowsError,
+  } = useQuery({
     queryKey: ["ai-insights-track-rows", fromDate, toDate],
     queryFn: async (): Promise<TrackInsightListRow[]> => {
       const { data, error } = await supabase.rpc("get_track_insights_list_v1", {
@@ -637,15 +1024,7 @@ export default function AiInsights() {
     },
     onSuccess: (response) => {
       setConversationId(response.conversation_id);
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          text: response.executive_answer,
-          payload: response,
-        },
-      ]);
+      setTurns((prev) => [...prev, createTurn("assistant", response.executive_answer, response)]);
     },
     onError: (error: Error) => {
       toast({ title: "AI request failed", description: error.message, variant: "destructive" });
@@ -667,10 +1046,10 @@ export default function AiInsights() {
     }, { replace: true });
   }, [entityContext.artist_key, entityContext.artist_name, entityContext.track_key, fromDate, setSearchParams, toDate]);
 
-  const submitQuestion = () => {
-    const trimmed = question.trim();
-    if (!trimmed) return;
-    setTurns((prev) => [...prev, { id: crypto.randomUUID(), role: "user", text: trimmed }]);
+  const submitQuestionText = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || sendMutation.isPending) return;
+    setTurns((prev) => [...prev, createTurn("user", trimmed)]);
     setQuestion("");
     sendMutation.mutate({
       question: trimmed,
@@ -680,6 +1059,21 @@ export default function AiInsights() {
       entity_context: entityContext,
     });
   };
+
+  const submitQuestion = () => {
+    submitQuestionText(question);
+  };
+
+  useEffect(() => {
+    const element = composerRef.current;
+    if (!element) return;
+    if (question.trim().length === 0) {
+      element.style.height = "24px";
+      return;
+    }
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+  }, [question]);
 
   useEffect(() => {
     if (chatEndRef.current) {
@@ -705,31 +1099,34 @@ export default function AiInsights() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background font-ui">
-      {/* Main: Chat Channel */}
-      <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        {/* Chat Header */}
-        <header className="flex h-14 md:h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6 shadow-sm z-10">
-          <div className="flex items-center gap-3 md:gap-6">
+    <div className="flex h-full w-full overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)] font-ui">
+      <main className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="relative z-10 border-b border-[hsl(var(--border)/0.12)] bg-[linear-gradient(180deg,hsl(var(--surface-panel)/0.96),hsl(var(--surface-elevated)/0.94))] px-4 py-4 shadow-[0_16px_40px_-34px_hsl(var(--surface-shadow)/0.28)] md:px-6">
+          <div className="flex items-center gap-2 md:gap-4 xl:justify-between">
+            <div className="order-2 flex min-w-0 flex-1 items-center justify-end gap-2 md:order-1 md:flex-none md:gap-3">
             <Sheet open={isRailOpen} onOpenChange={setIsRailOpen}>
-              <SheetContent side="right" className="w-[300px] p-0 border-l-0">
+              <SheetContent side="right" className="w-[min(340px,calc(100vw-1rem))] border-l-0 bg-[hsl(var(--surface-panel))] p-0">
                 <ContextRail
                   trackRows={trackRows}
+                  isLoading={trackRowsLoading}
+                  error={trackRowsError as Error | null}
                   onOpenTrackSnapshot={openTrackSnapshot}
                   onOpenArtistSnapshot={openArtistSnapshot}
                   onArtistSelect={(artistName, artistKey) => {
                     setEntityContext({ artist_name: artistName, artist_key: artistKey });
+                    setIsRailOpen(false);
                   }}
                   onTrackSelect={(track) => {
                     setEntityContext({
                       track_key: track.track_key,
                       track_title: track.track_title,
                       artist_name: track.artist_name,
-                      artist_key: normalizeArtistKey(track.artist_name || "Unknown Artist"),
                     });
+                    setIsRailOpen(false);
                   }}
                   onClearScope={() => {
                     setEntityContext({});
+                    setIsRailOpen(false);
                   }}
                   trackSearch={trackSearch}
                   setTrackSearch={setTrackSearch}
@@ -741,35 +1138,35 @@ export default function AiInsights() {
                 />
               </SheetContent>
               <SheetTrigger asChild>
-                <button className="flex max-w-[220px] items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-widest text-[hsl(var(--brand-accent))] transition-all active:scale-95 md:hidden">
+                <button className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.68)] px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))] transition-all active:scale-95 md:max-w-[220px] md:flex-none xl:hidden">
                   <Target className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{getContextLabel(entityContext)}</span>
+                  <span className="truncate">{activeScopeTitle(entityContext)}</span>
                 </button>
               </SheetTrigger>
             </Sheet>
-            <h1 className="hidden lg:block type-display-section text-sm font-normal tracking-[0.2em] text-foreground">
-              AI INSIGHTS
-            </h1>
+            <div className="hidden min-w-0 md:block">
+              <span className="editorial-kicker">AI Insights</span>
+            </div>
           </div>
-          <div className="flex min-w-0 items-center gap-2 md:gap-3">
+          <div className="order-1 flex min-w-0 flex-1 items-center gap-2 md:order-2 md:flex-initial md:flex-wrap md:gap-3">
             <Popover>
               <PopoverTrigger asChild>
-                <button className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-2 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/45 md:h-8 md:flex-none md:px-3">
-                  <CalendarRange className="h-3 w-3 shrink-0 text-[hsl(var(--brand-accent))] opacity-60 md:h-3.5 md:w-3.5" />
-                  <span className="truncate font-mono text-[9px] md:text-[10px] uppercase text-[hsl(var(--brand-accent))]">
+                <button className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.74)] px-4 py-2.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/86 sm:flex-none">
+                  <CalendarRange className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--brand-accent))]" />
+                  <span className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">
                     {formatDateWindow(fromDate, toDate)}
                   </span>
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-sm border-2 border-black p-6 shadow-2xl" align="end">
+              <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-[calc(var(--radius)-2px)] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated))] p-6 shadow-[0_28px_80px_-42px_hsl(var(--surface-shadow)/0.38)]" align="end">
                 <div className="grid gap-6">
                   <div className="space-y-2">
-                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: FROM</p>
-                    <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 rounded-sm border-black font-mono md:text-xs" />
+                    <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">From</p>
+                    <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="h-10 font-mono md:text-xs" />
                   </div>
                   <div className="space-y-2">
-                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: TO</p>
-                    <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 rounded-sm border-black font-mono md:text-xs" />
+                    <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">To</p>
+                    <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="h-10 font-mono md:text-xs" />
                   </div>
                 </div>
               </PopoverContent>
@@ -780,58 +1177,81 @@ export default function AiInsights() {
                 {fromDate.split('-').reverse().slice(0, 2).join('.')} — {toDate.split('-').reverse().slice(0, 2).join('.')}
               </span>
             </div>
-            <Button variant="outline" size="sm" onClick={copyShareLink} className="hidden h-7 border-[hsl(var(--brand-accent))]/20 bg-background px-2 text-[hsl(var(--brand-accent))] transition-all hover:bg-[hsl(var(--brand-accent))] hover:text-white md:inline-flex md:h-8 md:px-3">
+            <Button variant="outline" size="sm" onClick={copyShareLink} className="hidden h-9 border-[hsl(var(--brand-accent))/0.18] bg-[hsl(var(--surface-panel)/0.72)] px-3 text-[hsl(var(--brand-accent))] hover:bg-[hsl(var(--brand-accent))] hover:text-white md:inline-flex">
               <Copy className="h-3 w-3" />
-              <span className="ml-1.5 md:ml-2 text-[8px] md:text-[9px] font-bold uppercase tracking-widest">Share</span>
+              <span className="ml-2 text-[9px] font-bold uppercase tracking-[0.16em]">Share</span>
             </Button>
+          </div>
           </div>
         </header>
 
-        {/* Chat Content */}
-        <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-background">
-          <ScrollArea className="flex-1 px-3 md:px-6">
-            <div className="mx-auto w-full min-w-0 max-w-4xl py-4 md:py-12">
-              {turns.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-center">
-                  <div className="mb-8 flex h-14 w-14 items-center justify-center rounded-sm bg-[hsl(var(--brand-accent))] shadow-lg">
-                    <Sparkles className="h-6 w-6 text-white" />
-                  </div>
-                  <h2 className="type-display-section text-4xl tracking-tight text-black">
-                    ROYALTY INTELLIGENCE
-                  </h2>
-                  <p className="mt-4 max-w-md text-sm leading-relaxed text-muted-foreground">
-                    Ask about tracks, artists, and royalty performance to get a clear answer backed by your workspace data.
-                  </p>
-                  <div className="mt-10 flex flex-wrap justify-center gap-2">
-                    {[
-                      "Where is revenue leaking the most?",
-                      "Which artists should we prioritize?",
-                      "Show tracks with highest opportunity.",
-                    ].map((starter) => (
-                      <button
-                        key={starter}
-                        onClick={() => setQuestion(starter)}
-                        className="rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-background px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider shadow-sm transition-all hover:border-[hsl(var(--brand-accent))] hover:bg-[hsl(var(--brand-accent-ghost))]/30"
-                      >
-                        {starter}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6 md:space-y-10">
+        <div className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.34)_100%)]">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-[radial-gradient(circle_at_top,hsl(var(--brand-accent)/0.14),transparent_58%)]" />
+          {turns.length === 0 ? (
+            <div className="relative z-[1] flex flex-1 items-center overflow-hidden px-4 md:px-6">
+              <div className="mx-auto w-full max-w-3xl py-6 md:py-8">
+                {trackRowsError ? (
+                  <Card surface="critical">
+                    <CardContent className="flex items-center gap-3 px-5 py-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <p className="text-sm">Failed to load context: {(trackRowsError as Error).message}</p>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                <Card surface="hero">
+                  <CardContent className="p-6 text-center md:p-8">
+                    <div className="space-y-6">
+                      <div className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.82)] text-[hsl(var(--brand-accent))] shadow-[0_18px_36px_-28px_hsl(var(--brand-accent)/0.42)]">
+                        <Sparkles className="h-5 w-5" />
+                      </div>
+                      <div className="space-y-3">
+                        <p className="editorial-kicker">AI Insights</p>
+                        <h1 className="type-display-section text-[clamp(2.2rem,2.2vw+1.4rem,3.6rem)] leading-[0.96] tracking-tight text-foreground">
+                          Ask the portfolio
+                        </h1>
+                        <p className="mx-auto max-w-2xl text-sm leading-7 text-muted-foreground">
+                          Start with one question about movement, anomalies, or what needs action next.
+                        </p>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                          "Where is revenue leaking the most right now?",
+                          "Which artists deserve immediate attention?",
+                          "What needs action first?",
+                        ].map((starter) => (
+                          <button
+                            key={starter}
+                            onClick={() => submitQuestionText(starter)}
+                            className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] px-4 py-4 text-left text-sm leading-6 text-foreground transition-all hover:border-[hsl(var(--brand-accent))/0.24] hover:bg-[hsl(var(--brand-accent-ghost)/0.42)]"
+                          >
+                            {starter}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <ScrollArea className="relative z-[1] flex-1 px-3 md:px-4 xl:px-5">
+              <div className="mx-auto w-full min-w-0 max-w-5xl py-4 md:py-10 xl:max-w-none">
+                <div className="space-y-6 md:space-y-8">
                   {turns.map((turn, idx) => (
                     <div
                       key={turn.id}
                       className={cn(
                         "flex w-full min-w-0 flex-col gap-3 md:gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500",
-                        idx > 0 && "border-t border-black/5 pt-6 md:pt-10"
+                        idx > 0 && "border-t border-[hsl(var(--border)/0.08)] pt-6 md:pt-8"
                       )}
                     >
                       <div className="flex w-full min-w-0 items-start gap-3 md:gap-4">
                         <div className={cn(
-                          "relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm border-2 border-black shadow-lg md:h-9 md:w-9",
-                          turn.role === "assistant" ? "bg-black text-white" : "bg-card text-black"
+                          "relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border shadow-[0_16px_32px_-24px_hsl(var(--surface-shadow)/0.38)] md:h-10 md:w-10",
+                          turn.role === "assistant"
+                            ? "border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.92)] text-[hsl(var(--brand-accent))]"
+                            : "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.92)] text-foreground"
                         )}>
                           {turn.role === "assistant" && (
                             <>
@@ -839,28 +1259,30 @@ export default function AiInsights() {
                                 className="absolute inset-0 bg-center bg-cover opacity-85"
                                 style={{ backgroundImage: "url('/logo-icon.png')" }}
                               />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-white/10" />
+                              <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,hsl(var(--brand-accent)/0.12))]" />
                             </>
                           )}
                           {turn.role === "assistant" ? null : <User className="h-4 w-4" />}
                         </div>
-                        <div className="w-full min-w-0 flex-1 space-y-4 overflow-x-hidden">
+                        <div className="w-full min-w-0 flex-1 space-y-4">
                           <div className="flex min-w-0 items-center justify-between gap-3">
-                              <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))]">
-                                {turn.role === "assistant" ? "AI ANSWER" : "YOUR QUESTION"}
-                              </p>
+                            <p className="type-micro text-[10px] font-bold tracking-[0.2em] text-[hsl(var(--brand-accent))]">
+                              {turn.role === "assistant" ? "AI BRIEF" : "YOU ASKED"}
+                            </p>
                             <p className="shrink-0 font-mono text-[9px] text-muted-foreground opacity-40 uppercase">
-                              {format(new Date(), "HH:mm:ss")}
+                              {formatTurnTime(turn.createdAt)}
                             </p>
                           </div>
 
                           {turn.payload ? (
-                            <div className="w-full max-w-[calc(100vw-4.75rem)] overflow-x-hidden md:max-w-full">
-                              <AdaptiveAnswerStack payload={turn.payload} />
+                            <div className="w-full min-w-0">
+                              <AdaptiveAnswerStack payload={turn.payload} onUseQuestion={submitQuestionText} />
                             </div>
                           ) : (
-                            <div className="w-full max-w-full rounded-sm border border-black/10 bg-black/[0.02] px-4 py-3 md:max-w-[90%]">
-                              <p className="break-words text-lg font-bold leading-relaxed tracking-tight text-black [overflow-wrap:anywhere]">{turn.text}</p>
+                            <div className="surface-elevated forensic-frame w-full max-w-full rounded-[calc(var(--radius-sm))] px-4 py-4 md:max-w-[90%] xl:max-w-full">
+                              <p className="break-words text-lg leading-relaxed tracking-tight text-foreground [overflow-wrap:anywhere]">
+                                {turn.text}
+                              </p>
                             </div>
                           )}
                         </div>
@@ -868,20 +1290,20 @@ export default function AiInsights() {
                     </div>
                   ))}
                   {sendMutation.isPending && turns[turns.length - 1]?.role === "user" && (
-                    <div className="flex items-start gap-6 opacity-60">
-                      <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-sm border border-black bg-black text-white shadow-lg">
+                    <div className="flex items-start gap-4 opacity-80">
+                      <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.92)] text-[hsl(var(--brand-accent))] shadow-[0_16px_32px_-24px_hsl(var(--brand-accent)/0.42)]">
                         <div
                           className="absolute inset-0 bg-center bg-cover opacity-85"
                           style={{ backgroundImage: "url('/logo-icon.png')" }}
                         />
-                        <div className="absolute inset-0 bg-black/20" />
+                        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent,hsl(var(--brand-accent)/0.12))]" />
                         <div className="absolute inset-x-0 top-[-120%] h-[220%] bg-gradient-to-b from-transparent via-white/35 to-transparent animate-[shimmer_1.8s_infinite]" />
                       </div>
-                      <div className="flex-1 space-y-4 pt-1">
+                      <div className="surface-elevated forensic-frame flex-1 space-y-4 rounded-[calc(var(--radius-sm))] p-4">
                         <div className="flex items-center gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--brand-accent))] animate-pulse"></span>
                           <p className="type-micro text-[9px] font-bold tracking-[0.3em] text-[hsl(var(--brand-accent))] animate-pulse">
-                            AI IS REVIEWING YOUR DATA
+                            AI IS READING THE WORKSPACE
                           </p>
                         </div>
                         <div className="space-y-2">
@@ -897,36 +1319,39 @@ export default function AiInsights() {
                   )}
                   <div ref={chatEndRef} />
                 </div>
-              )}
-            </div>
-          </ScrollArea>
+              </div>
+            </ScrollArea>
+          )}
         </div>
 
-        {/* Chat Input */}
-        <footer className="border-t border-black/10 bg-background p-4 md:p-8 z-10 transition-all focus-within:border-black">
-          <div className="mx-auto max-w-4xl">
-            <div className="relative group">
-              <Textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Ask anything..."
-                className="min-h-[80px] md:min-h-[120px] w-full resize-none rounded-sm border border-black bg-background p-3 md:p-5 pr-16 md:pr-24 text-base md:text-lg font-bold placeholder:opacity-20 focus-visible:ring-0 focus-visible:border-black transition-all"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    submitQuestion();
-                  }
-                }}
-              />
-              <div className="absolute bottom-3 right-3 md:bottom-5 md:right-5 flex items-center gap-3">
-                <p className="font-mono text-[10px] font-bold opacity-30 uppercase hidden md:block tracking-widest">SEND: ENTER</p>
+        <footer className="border-t border-[hsl(var(--border)/0.12)] bg-[linear-gradient(180deg,hsl(var(--surface-panel)/0.92),hsl(var(--surface-elevated)/0.98))] p-3 md:p-4">
+          <div className="mx-auto w-full max-w-5xl xl:max-w-none">
+            <div className="surface-hero forensic-frame spotlight-border relative overflow-hidden rounded-[calc(var(--radius)-2px)] px-3 py-3 md:px-4 md:py-3.5">
+              <div className="pointer-events-none absolute right-0 top-0 h-20 w-20 translate-x-5 -translate-y-5 rounded-full bg-[hsl(var(--brand-accent-ghost)/0.78)] blur-3xl" />
+              <div className="relative flex items-end gap-3">
+                <div className="min-w-0 flex-1 rounded-[calc(var(--radius-sm)+4px)] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.88)] px-4 py-3 shadow-[inset_0_1px_0_hsl(var(--background)/0.55)]">
+                  <Textarea
+                    ref={composerRef}
+                    rows={1}
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder="Ask about leakage, growth, anomalies, top performers, or what needs action next."
+                    className="min-h-[24px] max-h-[200px] w-full resize-none border-0 bg-transparent p-0 text-[0.98rem] leading-6 text-foreground placeholder:text-muted-foreground/55 focus-visible:ring-0 md:text-[1.02rem]"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submitQuestion();
+                      }
+                    }}
+                  />
+                </div>
                 <Button
                   onClick={submitQuestion}
                   disabled={sendMutation.isPending || !question.trim()}
-                  size="icon"
-                  className="bg-black hover:bg-zinc-800 h-10 w-10 md:h-12 md:w-12 rounded-sm shadow-xl transition-all hover:scale-105 active:scale-95"
+                  className="h-11 shrink-0 rounded-full px-5 shadow-[0_18px_40px_-28px_hsl(var(--brand-accent)/0.52)]"
                 >
-                  <Send className="h-4 w-4 md:h-5 md:w-5" />
+                  <Send className="mr-2 h-4 w-4" />
+                  Ask AI
                 </Button>
               </div>
             </div>
@@ -935,9 +1360,11 @@ export default function AiInsights() {
       </main>
 
       {/* Sidebar: Context Rail */}
-      <aside className="hidden w-[320px] flex-shrink-0 lg:block">
+      <aside className="hidden w-[320px] flex-shrink-0 xl:block">
         <ContextRail
           trackRows={trackRows}
+          isLoading={trackRowsLoading}
+          error={trackRowsError as Error | null}
           onOpenTrackSnapshot={openTrackSnapshot}
           onOpenArtistSnapshot={openArtistSnapshot}
           onTrackSelect={(track) =>
@@ -945,7 +1372,6 @@ export default function AiInsights() {
               track_key: track.track_key,
               track_title: track.track_title,
               artist_name: track.artist_name,
-              artist_key: normalizeArtistKey(track.artist_name || "Unknown Artist"),
             })
           }
           onArtistSelect={(artistName, artistKey) =>
@@ -967,6 +1393,8 @@ export default function AiInsights() {
 
 function ContextRail({
   trackRows,
+  isLoading,
+  error,
   onOpenTrackSnapshot,
   onOpenArtistSnapshot,
   onTrackSelect,
@@ -981,6 +1409,8 @@ function ContextRail({
   selectedContext,
 }: {
   trackRows: TrackInsightListRow[];
+  isLoading: boolean;
+  error: Error | null;
   onOpenTrackSnapshot: (track: TrackInsightListRow) => void;
   onOpenArtistSnapshot: (artistName: string, artistKey: string) => void;
   onTrackSelect: (track: TrackInsightListRow) => void;
@@ -994,108 +1424,78 @@ function ContextRail({
   setActiveTab: (v: "tracks" | "artists") => void;
   selectedContext: {
     track_key?: string;
+    track_title?: string;
     artist_key?: string;
     artist_name?: string;
   };
 }) {
+  const deferredTrackSearch = useDeferredValue(trackSearch);
+  const deferredArtistSearch = useDeferredValue(artistSearch);
+
   const filteredTracks = useMemo(() => {
     const sorted = [...trackRows].sort((a, b) => (b.net_revenue ?? 0) - (a.net_revenue ?? 0));
-    if (!trackSearch.trim()) return sorted;
-    const term = trackSearch.toLowerCase();
+    if (!deferredTrackSearch.trim()) return sorted;
+    const term = deferredTrackSearch.toLowerCase();
     return sorted.filter((t) =>
       t.track_title?.toLowerCase().includes(term) ||
       t.artist_name?.toLowerCase().includes(term)
     );
-  }, [trackRows, trackSearch]);
+  }, [deferredTrackSearch, trackRows]);
 
   const allArtists = useMemo(() => {
-    const map = new Map<string, { artist: string; artist_key: string; net: number }>();
+    const map = new Map<string, { artist: string; artist_key: string; net: number; tracks: number; critical: number }>();
     for (const row of trackRows) {
       const key = row.artist_name || "Unknown Artist";
-      if (!map.has(key)) map.set(key, { artist: key, artist_key: normalizeArtistKey(key), net: 0 });
+      if (!map.has(key)) {
+        map.set(key, { artist: key, artist_key: normalizeArtistKey(key), net: 0, tracks: 0, critical: 0 });
+      }
       map.get(key)!.net += row.net_revenue ?? 0;
+      map.get(key)!.tracks += 1;
+      map.get(key)!.critical += row.open_critical_task_count ?? 0;
     }
     return Array.from(map.values()).sort((a, b) => b.net - a.net);
   }, [trackRows]);
 
   const filteredArtists = useMemo(() => {
-    if (!artistSearch.trim()) return allArtists;
-    const term = artistSearch.toLowerCase();
+    if (!deferredArtistSearch.trim()) return allArtists;
+    const term = deferredArtistSearch.toLowerCase();
     return allArtists.filter((a) => a.artist.toLowerCase().includes(term));
-  }, [allArtists, artistSearch]);
+  }, [allArtists, deferredArtistSearch]);
 
-  const activeScopeLabel = selectedContext.track_key
-    ? selectedContext.track_key
-    : selectedContext.artist_name
-      ? selectedContext.artist_name
-      : "Workspace-wide";
-
-  const activeScopeType = selectedContext.track_key
-    ? "Track scope"
-    : selectedContext.artist_name
-      ? "Artist scope"
-      : "Default scope";
+  const activeScopeLabel = activeScopeTitle(selectedContext);
+  const activeScopeType = activeScopeDescriptor(selectedContext);
+  const hasSelectedScope = Boolean(selectedContext.track_key || selectedContext.artist_key);
 
   return (
-    <div className="flex h-full flex-col border-l border-black/10 bg-[linear-gradient(180deg,rgba(236,232,242,0.95)_0%,rgba(244,240,232,0.92)_100%)] backdrop-blur-md">
-      <div className="border-b border-black/10 p-5">
-        <div className="rounded-sm border border-black/10 bg-white/75 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+    <div className="flex h-full flex-col border-l border-[hsl(var(--border)/0.12)] bg-[linear-gradient(180deg,hsl(var(--surface-panel)/0.98)_0%,hsl(var(--surface-muted)/0.9)_100%)] backdrop-blur-md">
+      <div className="border-b border-[hsl(var(--border)/0.1)] p-4">
+        <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="type-display-section text-[10px] font-normal tracking-[0.25em] text-[hsl(var(--brand-accent))]">
-                DATA CONTEXT
-              </h2>
-              <p className="mt-2 text-[12px] leading-[1.45] text-black/65">
-                Pick the track or artist you want the AI to analyze. Leave it on workspace to ask broader portfolio questions.
+              <p className="editorial-kicker">Data context</p>
+              <p className="mt-2 truncate text-sm font-semibold tracking-tight text-foreground md:text-[0.95rem]">
+                {activeScopeLabel}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {hasSelectedScope ? `${activeScopeType} selected` : "Choose a track or artist to narrow the answer."}
               </p>
             </div>
-            <div className="shrink-0 rounded-sm border border-[hsl(var(--brand-accent))]/20 bg-[hsl(var(--brand-accent-ghost))]/70 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.18em] text-[hsl(var(--brand-accent))]">
-              Scope
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-sm border border-black/10 bg-black/[0.02] p-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="type-micro text-[9px] text-black/45">Current selection</p>
-                <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-black/35">
-                  This controls the AI answer scope.
-                </p>
-              </div>
-              {(selectedContext.track_key || selectedContext.artist_key) && (
-                <button
-                  type="button"
-                  onClick={onClearScope}
-                  className="w-full rounded-sm border border-black/10 bg-white px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-black/65 transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:text-[hsl(var(--brand-accent))] sm:w-auto sm:shrink-0"
-                >
-                  Clear scope
-                </button>
-              )}
-            </div>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-              <div className="min-w-0">
-                <p className="break-words text-sm font-bold tracking-tight text-black sm:truncate">{activeScopeLabel}</p>
-                <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]/80">
-                  {activeScopeType}
-                </p>
-              </div>
-              {(selectedContext.track_key || selectedContext.artist_key) && (
-                <div className="inline-flex w-fit rounded-sm bg-[hsl(var(--brand-accent))] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
-                  Active
-                </div>
-              )}
-            </div>
+            {hasSelectedScope && (
+              <Button type="button" size="sm" variant="quiet" className="h-8 px-3" onClick={onClearScope}>
+                Clear
+              </Button>
+            )}
           </div>
         </div>
 
-        <div className="mt-5 flex rounded-sm border border-black/10 bg-white/70 p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+        <div className="mt-3 flex rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] p-1">
           <button
             onClick={() => setActiveTab("tracks")}
             className={cn(
-              "flex-1 rounded-sm px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
+              "flex-1 rounded-full px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
               activeTab === "tracks"
-                ? "bg-black text-white shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
-                : "text-black/45 hover:bg-black/[0.04] hover:text-black"
+                ? "bg-[hsl(var(--brand-accent))] text-white shadow-[0_12px_24px_-18px_hsl(var(--brand-accent)/0.45)]"
+                : "text-muted-foreground hover:bg-[hsl(var(--surface-elevated)/0.92)] hover:text-foreground"
             )}
           >
             Tracks
@@ -1103,10 +1503,10 @@ function ContextRail({
           <button
             onClick={() => setActiveTab("artists")}
             className={cn(
-              "flex-1 rounded-sm px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
+              "flex-1 rounded-full px-3 py-2 text-[9px] font-bold uppercase tracking-[0.18em] transition-all",
               activeTab === "artists"
-                ? "bg-black text-white shadow-[0_8px_20px_rgba(0,0,0,0.12)]"
-                : "text-black/45 hover:bg-black/[0.04] hover:text-black"
+                ? "bg-[hsl(var(--brand-accent))] text-white shadow-[0_12px_24px_-18px_hsl(var(--brand-accent)/0.45)]"
+                : "text-muted-foreground hover:bg-[hsl(var(--surface-elevated)/0.92)] hover:text-foreground"
             )}
           >
             Artists
@@ -1114,149 +1514,183 @@ function ContextRail({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden flex flex-col">
-        <div className="px-5 py-3">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="px-4 py-3">
           <div className="relative group">
-            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--brand-accent))]/30 transition-colors group-focus-within:text-[hsl(var(--brand-accent))]" />
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--brand-accent))]/40 transition-colors group-focus-within:text-[hsl(var(--brand-accent))]" />
             <Input
               value={activeTab === "tracks" ? trackSearch : artistSearch}
               onChange={(e) => activeTab === "tracks" ? setTrackSearch(e.target.value) : setArtistSearch(e.target.value)}
               placeholder={`Search ${activeTab}...`}
-              className="h-10 border border-black/10 bg-white/80 pl-9 text-[11px] font-medium tracking-tight shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] transition-all focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-[hsl(var(--brand-accent))]/30"
+              className="h-10 border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.88)] pl-9 text-[11px] font-medium tracking-tight shadow-none transition-all focus-visible:ring-1 focus-visible:ring-[hsl(var(--brand-accent))]/28"
             />
           </div>
         </div>
 
         <ScrollArea className="flex-1 px-4 pb-4">
-          <div className="space-y-1.5">
-            {activeTab === "tracks" ? (
-              filteredTracks.length > 0 ? (
-                filteredTracks.map((track) => {
-                  const isActive = selectedContext.track_key === track.track_key;
-                  return (
-                    <div
-                      key={track.track_key}
-                      className={cn(
-                        "group rounded-sm border p-3 transition-all",
-                        isActive 
-                          ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
-                          : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
-                      )}
-                    >
-                      <button
+          {error ? (
+            <div className="surface-critical forensic-frame rounded-[calc(var(--radius-sm))] p-4 text-sm text-foreground">
+              Failed to load context: {error.message}
+            </div>
+          ) : isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <div key={idx} className="surface-elevated forensic-frame h-24 animate-pulse rounded-[calc(var(--radius-sm))] bg-[hsl(var(--surface-panel)/0.82)]" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {activeTab === "tracks" ? (
+                filteredTracks.length > 0 ? (
+                  filteredTracks.map((track) => {
+                    const isActive = Boolean(selectedContext.track_key) && selectedContext.track_key === track.track_key;
+                    return (
+                      <div
+                        key={track.track_key}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isActive}
                         onClick={() => onTrackSelect(track)}
-                        className="w-full text-left"
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onTrackSelect(track);
+                          }
+                        }}
+                        className={cn(
+                          "group relative cursor-pointer overflow-hidden rounded-[calc(var(--radius-sm))] border p-3.5 outline-none transition-all focus-visible:ring-2 focus-visible:ring-[hsl(var(--brand-accent))/0.3]",
+                          isActive
+                            ? "border-[hsl(var(--brand-accent))/0.34] bg-[linear-gradient(180deg,hsl(var(--brand-accent-ghost)/0.98),hsl(var(--surface-elevated)))] shadow-[0_22px_40px_-30px_hsl(var(--brand-accent)/0.42)]"
+                            : "bg-[hsl(var(--surface-elevated)/0.82)] hover:border-[hsl(var(--brand-accent))/0.22] hover:bg-[hsl(var(--surface-elevated))]"
+                        )}
                       >
-                        <div className="flex items-start justify-between gap-3">
+                        {isActive ? (
+                          <div className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-[hsl(var(--brand-accent))]" />
+                        ) : null}
+                        <div className="flex items-start gap-3">
                           <div className="min-w-0 flex-1">
-                            <p className={cn(
-                              "truncate text-xs font-bold tracking-tight",
-                              isActive ? "text-white" : "text-black"
-                            )}>
-                              {track.track_title}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isActive ? (
+                                <span className="rounded-full border border-[hsl(var(--brand-accent))/0.18] bg-[hsl(var(--brand-accent))] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
+                                  In scope
+                                </span>
+                              ) : null}
+                              {track.open_critical_task_count > 0 ? (
+                                <span className="rounded-full border border-[hsl(var(--tone-critical)/0.18)] bg-[hsl(var(--tone-critical)/0.12)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--tone-critical))]">
+                                  {track.open_critical_task_count} critical
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-2 truncate text-sm font-semibold tracking-tight text-foreground">{track.track_title}</p>
+                            <p className="mt-1 truncate text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                              {track.artist_name || "Unknown artist"}
                             </p>
-                            <p className={cn(
-                              "mt-1 truncate text-[10px] font-medium uppercase tracking-widest",
-                              isActive ? "text-white/65" : "text-black/40"
-                            )}>
-                              {track.artist_name}
-                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-foreground">
+                                {formatCompactCurrency(track.net_revenue ?? 0)}
+                              </span>
+                              <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em]", trendToneClass(track.trend_3m_pct))}>
+                                {formatTrendDelta(track.trend_3m_pct)}
+                              </span>
+                              {track.top_territory ? (
+                                <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                                  {track.top_territory}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                          <p className={cn(
-                            "shrink-0 pl-2 text-right font-mono text-[10px] font-bold",
-                            isActive ? "text-white" : "text-black/60 group-hover:text-black"
-                          )}>
-                            {toMoney(track.net_revenue)}
-                          </p>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpenTrackSnapshot(track);
+                            }}
+                            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.8)] px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground transition-all hover:border-[hsl(var(--brand-accent))/0.24] hover:text-[hsl(var(--brand-accent))]"
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                            <span>Snapshot</span>
+                          </button>
                         </div>
-                      </button>
-                      <div className="mt-3 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => onOpenTrackSnapshot(track)}
-                          className={cn(
-                            "flex h-8 items-center gap-1 rounded-sm border px-2.5 text-[9px] font-bold uppercase tracking-[0.14em] transition-all",
-                            isActive
-                              ? "border-white/15 bg-white/10 text-white hover:bg-white/15"
-                              : "border-black/10 bg-white/85 text-black/60 hover:border-black/20 hover:text-black"
-                          )}
-                        >
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                          <span>Snapshot</span>
-                        </button>
                       </div>
-                      {isActive && (
-                        <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
-                          AI will answer in this track context
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                    );
+                  })
+                ) : (
+                  <p className="py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">No tracks matched</p>
+                )
               ) : (
-                <p className="py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">No tracks matched</p>
-              )
-            ) : (
-              filteredArtists.length > 0 ? (
-                filteredArtists.map((artist) => {
-                  const isActive = selectedContext.artist_key === artist.artist_key;
-                  return (
-                    <div
-                      key={artist.artist_key}
-                      className={cn(
-                        "group rounded-sm border p-3 transition-all",
-                        isActive 
-                          ? "border-black bg-black text-white shadow-[0_14px_28px_rgba(0,0,0,0.12)]"
-                          : "border-black/8 bg-white/65 hover:border-[hsl(var(--brand-accent))]/30 hover:bg-white"
-                      )}
-                    >
-                      <button
+                filteredArtists.length > 0 ? (
+                  filteredArtists.map((artist) => {
+                    const isActive = !selectedContext.track_key && selectedContext.artist_key === artist.artist_key;
+                    return (
+                      <div
+                        key={artist.artist_key}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isActive}
                         onClick={() => onArtistSelect(artist.artist, artist.artist_key)}
-                        className="w-full text-left"
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onArtistSelect(artist.artist, artist.artist_key);
+                          }
+                        }}
+                        className={cn(
+                          "group relative cursor-pointer overflow-hidden rounded-[calc(var(--radius-sm))] border p-3.5 outline-none transition-all focus-visible:ring-2 focus-visible:ring-[hsl(var(--brand-accent))/0.3]",
+                          isActive
+                            ? "border-[hsl(var(--brand-accent))/0.34] bg-[linear-gradient(180deg,hsl(var(--brand-accent-ghost)/0.98),hsl(var(--surface-elevated)))] shadow-[0_22px_40px_-30px_hsl(var(--brand-accent)/0.42)]"
+                            : "bg-[hsl(var(--surface-elevated)/0.82)] hover:border-[hsl(var(--brand-accent))/0.22] hover:bg-[hsl(var(--surface-elevated))]"
+                        )}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <p className={cn(
-                            "min-w-0 flex-1 truncate text-xs font-bold tracking-tight",
-                            isActive ? "text-white" : "text-black"
-                          )}>
-                            {artist.artist}
-                          </p>
-                          <p className={cn(
-                            "shrink-0 pl-2 text-right font-mono text-[10px] font-bold",
-                            isActive ? "text-white" : "text-black/60 group-hover:text-black"
-                          )}>
-                            {toMoney(artist.net)}
-                          </p>
+                        {isActive ? (
+                          <div className="absolute inset-y-3 left-0 w-1 rounded-r-full bg-[hsl(var(--brand-accent))]" />
+                        ) : null}
+                        <div className="flex items-start gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isActive ? (
+                                <span className="rounded-full border border-[hsl(var(--brand-accent))/0.18] bg-[hsl(var(--brand-accent))] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white">
+                                  In scope
+                                </span>
+                              ) : null}
+                              {artist.critical > 0 ? (
+                                <span className="rounded-full border border-[hsl(var(--tone-critical)/0.18)] bg-[hsl(var(--tone-critical)/0.12)] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-[hsl(var(--tone-critical))]">
+                                  {artist.critical} critical
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-2 truncate text-sm font-semibold tracking-tight text-foreground">
+                              {artist.artist}
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-foreground">
+                                {formatCompactCurrency(artist.net)}
+                              </span>
+                              <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                                {artist.tracks} tracks
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onOpenArtistSnapshot(artist.artist, artist.artist_key);
+                            }}
+                            className="inline-flex h-8 shrink-0 items-center gap-1 rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.8)] px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground transition-all hover:border-[hsl(var(--brand-accent))/0.24] hover:text-[hsl(var(--brand-accent))]"
+                          >
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                            <span>Snapshot</span>
+                          </button>
                         </div>
-                      </button>
-                      <div className="mt-3 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => onOpenArtistSnapshot(artist.artist, artist.artist_key)}
-                          className={cn(
-                            "flex h-8 items-center gap-1 rounded-sm border px-2.5 text-[9px] font-bold uppercase tracking-[0.14em] transition-all",
-                            isActive
-                              ? "border-white/15 bg-white/10 text-white hover:bg-white/15"
-                              : "border-black/10 bg-white/85 text-black/60 hover:border-black/20 hover:text-black"
-                          )}
-                        >
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                          <span>Snapshot</span>
-                        </button>
                       </div>
-                      {isActive && (
-                        <div className="mt-3 inline-flex rounded-sm border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.16em] text-white/90">
-                          AI will answer in this artist context
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">No artists matched</p>
-              )
-            )}
-          </div>
+                    );
+                  })
+                ) : (
+                  <p className="py-8 text-center text-[10px] text-muted-foreground uppercase tracking-widest">No artists matched</p>
+                )
+              )}
+            </div>
+          )}
         </ScrollArea>
       </div>
 

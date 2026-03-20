@@ -1,11 +1,10 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { Tables } from "@/integrations/supabase/types";
-import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +27,6 @@ import {
   AppliedFiltersRow,
   DetailDrawerFrame,
   EmptyStateBlock,
-  FilterToolbar,
-  KpiStrip,
   PageHeader,
 } from "@/components/layout";
 
@@ -64,6 +61,13 @@ const formatCustomValue = (value: unknown): string => {
   return String(value);
 };
 
+const deriveStatementName = (fileName: string) =>
+  fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const EXTRACTED_COLUMNS: Array<{ key: keyof ExtractedRow; label: string }> = [
   { key: "report_item", label: "report_item" },
   { key: "amount_in_original_currency", label: "amount_in_original_currency" },
@@ -94,11 +98,9 @@ export default function Reports() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [cmoName, setCmoName] = useState("");
+  const [statementName, setStatementName] = useState("");
   const [reportPeriod, setReportPeriod] = useState("");
-  const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -221,16 +223,16 @@ export default function Reports() {
     return { completed, processing, lines, revenue };
   }, [filteredReports]);
 
-  const uploadStep = !file ? 1 : cmoName.trim() || reportPeriod.trim() || notes.trim() ? 3 : 2;
   const hasAnyReports = reports.length > 0;
   const emptyReportDescription = hasAnyReports
-    ? "No statements match your current filters."
-    : "Upload your first statement to get started with royalty analysis.";
+    ? "No matching statements."
+    : "No statements yet.";
 
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
       if (!file || !user) throw new Error("Missing file or user");
+      if (!statementName.trim()) throw new Error("Add a statement name before uploading.");
       const filePath = `${user.id}/${Date.now()}_${file.name}`;
       const { error: uploadError } = await supabase.storage.from("cmo-reports").upload(filePath, file);
       if (uploadError) throw uploadError;
@@ -239,12 +241,12 @@ export default function Reports() {
         .from("cmo_reports")
         .insert({
           user_id: user.id,
-          cmo_name: cmoName || "Unknown CMO",
-          report_period: reportPeriod || null,
+          cmo_name: statementName.trim(),
+          report_period: reportPeriod.trim() || null,
           file_name: file.name,
           file_path: filePath,
           file_size: file.size,
-          notes: notes || null,
+          notes: null,
           status: "pending",
         })
         .select("id")
@@ -289,9 +291,8 @@ export default function Reports() {
     onSuccess: () => {
       toast({ title: "Report processed", description: "Pipeline v2 completed with quality gate applied." });
       setFile(null);
-      setCmoName("");
+      setStatementName("");
       setReportPeriod("");
-      setNotes("");
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-reports"] });
     },
@@ -313,6 +314,12 @@ export default function Reports() {
     },
   });
 
+  const handleFileSelected = useCallback((selected: File | null | undefined) => {
+    if (!selected) return;
+    setFile(selected);
+    setStatementName((current) => current.trim() || deriveStatementName(selected.name));
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
@@ -320,9 +327,9 @@ export default function Reports() {
     const allowedExtensions = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".jpg", ".jpeg", ".png", ".csv"];
     // Always check by extension first - MIME type can be unreliable especially for dragged files
     if (f && allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext))) {
-      setFile(f);
+      handleFileSelected(f);
     }
-  }, []);
+  }, [handleFileSelected]);
 
   const renderReportRows = (rows: Report[]) =>
     rows.map((r) => (
@@ -370,207 +377,200 @@ export default function Reports() {
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
       <PageHeader
-        title="Reports & Statements"
-        subtitle="Upload CMO statements, monitor processing, and inspect normalized payloads."
+        variant="compact"
+        title="Statements"
+        meta={
+          <>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {filteredReports.length.toLocaleString()} visible
+            </span>
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+              {stats.processing} processing
+            </span>
+          </>
+        }
         actions={
-          <Button asChild size="sm" variant="outline">
+          <Button asChild size="sm" variant="quiet">
             <Link to="/ai-insights">Open AI Insights</Link>
           </Button>
         }
       />
 
-      <KpiStrip
-        items={[
-          { label: "Visible Reports", value: filteredReports.length.toLocaleString() },
-          { label: "Completed", value: stats.completed.toLocaleString(), tone: "success" },
-          {
-            label: "In Processing",
-            value: stats.processing.toLocaleString(),
-            tone: stats.processing > 0 ? "accent" : "default",
-          },
-          { label: "Total Line Items", value: stats.lines.toLocaleString() },
-          { label: "Total Revenue", value: toMoney(stats.revenue) },
-        ]}
-      />
+      <Card surface="hero">
+        <CardContent className="space-y-4 p-4 md:p-5">
+          <CardTitle className="text-[1.05rem]">Upload statement</CardTitle>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Upload New Statement</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-2 border-b border-border/40 pb-4 md:grid-cols-3">
-            {[
-              { id: 1, label: "Select file" },
-              { id: 2, label: "Add metadata" },
-              { id: 3, label: "Confirm upload" },
-            ].map((step) => (
-              <div
-                key={step.id}
-                className={`rounded-sm border px-3 py-2 text-xs uppercase tracking-[0.08em] ${
-                  uploadStep === step.id
-                    ? "border-[hsl(var(--brand-accent))]/45 bg-[hsl(var(--brand-accent-ghost))]/40 text-foreground"
-                    : uploadStep > step.id
-                      ? "border-[hsl(var(--tone-success))]/35 bg-[hsl(var(--tone-success))]/8 text-foreground"
-                      : "border-border/45 text-muted-foreground"
-                }`}
-              >
-                {step.id}. {step.label}
-              </div>
-            ))}
-          </div>
-
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={handleDrop}
-            className={`cursor-pointer rounded-sm border-2 border-dashed p-8 text-center transition-colors ${
-              dragActive ? "border-primary bg-accent/30" : "border-border hover:border-primary/40"
-            }`}
-            onClick={() => document.getElementById("pdf-upload")?.click()}
-          >
-            <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-            {file ? (
-              <p className="text-sm font-medium">
-                {file.name}{" "}
-                <span className="text-muted-foreground">
-                  ({(file.size / 1024 / 1024).toFixed(1)} MB)
-                </span>
-              </p>
-            ) : (
-              <>
-                <p className="text-sm font-medium">Drop file here or click to browse</p>
-                <p className="mt-1 text-xs text-muted-foreground">Supports PDF, Word, Excel, TXT, and images</p>
-              </>
-            )}
-            <input
-              id="pdf-upload"
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.csv"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.[0]) setFile(e.target.files[0]);
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_minmax(160px,0.55fr)_auto] xl:items-end">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
               }}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cmo">CMO Name</Label>
-              <Input
-                id="cmo"
-                value={cmoName}
-                onChange={(e) => setCmoName(e.target.value)}
-                placeholder="e.g. SAMRO, CAPASSO"
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+              className={`forensic-frame relative cursor-pointer overflow-hidden rounded-[calc(var(--radius)-2px)] border-2 border-dashed px-5 py-5 motion-standard ${
+                dragActive
+                  ? "border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent-ghost)/0.72)]"
+                  : "surface-elevated border-[hsl(var(--border)/0.12)] hover:border-[hsl(var(--brand-accent)/0.26)] hover:bg-[hsl(var(--surface-elevated)/0.98)]"
+              }`}
+              onClick={() => document.getElementById("pdf-upload")?.click()}
+            >
+              <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.75),transparent)]" />
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.82)] text-[hsl(var(--brand-accent))]">
+                  <Upload className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="type-display-section truncate text-[1.1rem] text-foreground">
+                    {file ? file.name : "Choose a file"}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {file
+                      ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+                      : "PDF, Word, Excel, CSV, or image"}
+                  </p>
+                </div>
+              </div>
+              <input
+                id="pdf-upload"
+                type="file"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.csv"
+                className="hidden"
+                onChange={(e) => handleFileSelected(e.target.files?.[0])}
               />
             </div>
+
             <div className="space-y-1.5">
-              <Label htmlFor="period">Report Period</Label>
+              <Label htmlFor="statement-name">Statement name</Label>
               <Input
-                id="period"
+                id="statement-name"
+                value={statementName}
+                onChange={(e) => setStatementName(e.target.value)}
+                placeholder="e.g. BMI Q1 2026"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="report-period">Period</Label>
+              <Input
+                id="report-period"
                 value={reportPeriod}
                 onChange={(e) => setReportPeriod(e.target.value)}
-                placeholder="e.g. Q3 2025"
+                placeholder="e.g. Q1 2026"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="notes">Notes</Label>
-              <Input
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional"
-              />
+
+            <div className="flex flex-col gap-2 xl:items-end">
+              <Button
+                className="w-full xl:w-auto"
+                onClick={() => uploadMutation.mutate()}
+                disabled={!file || !statementName.trim() || uploadMutation.isPending}
+              >
+                {uploadMutation.isPending ? "Uploading..." : "Upload"}
+              </Button>
+              {file ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full xl:w-auto"
+                  onClick={() => setFile(null)}
+                >
+                  Clear
+                </Button>
+              ) : null}
             </div>
           </div>
-
-          <p className="text-xs text-muted-foreground">
-            Quarterly workflow supported: upload multiple reports for the same CMO (for example Q1, Q2, Q3, Q4).
-          </p>
-
-          <Button onClick={() => uploadMutation.mutate()} disabled={!file || uploadMutation.isPending}>
-            {uploadMutation.isPending ? "Uploading..." : "Upload Statement"}
-          </Button>
         </CardContent>
       </Card>
 
-      <FilterToolbar
-        title="Portfolio Documents"
-        description="Search and filter statements, then inspect extraction and normalized transaction output."
-      >
-        <div className="grid gap-3 md:grid-cols-4">
-            <div className="relative md:col-span-2">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search CMO, file, period, notes..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <Select value={selectedCmo} onValueChange={setSelectedCmo}>
-              <SelectTrigger>
-                <SelectValue placeholder="All CMOs" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All CMOs</SelectItem>
-                {cmoOptions.map((cmo) => (
-                  <SelectItem key={cmo} value={cmo}>
-                    {cmo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger>
-                <SelectValue placeholder="All Statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {statusOptions.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <AppliedFiltersRow
-            filters={appliedFilters}
-            onClear={clearFilters}
-            updatedLabel={`Updated ${format(new Date(), "MMM d, yyyy HH:mm")}`}
-          />
-      </FilterToolbar>
-      <Card>
-        <CardContent>
+      <Card surface="evidence">
+        <CardContent className="p-4 md:p-5">
           <Tabs value={layout} onValueChange={(v) => setLayout(v as "grouped" | "flat")} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="flat">
-                <Layers3 className="mr-1.5 h-4 w-4" />
-                All Statements
-              </TabsTrigger>
-              <TabsTrigger value="grouped">
-                <Building2 className="mr-1.5 h-4 w-4" />
-                By CMO
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.7)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                  {stats.completed.toLocaleString()} ready
+                </span>
+                {stats.processing > 0 ? (
+                  <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+                    {stats.processing} in queue
+                  </span>
+                ) : null}
+              </div>
+              <TabsList variant="quiet" className="h-auto w-auto gap-5 self-start">
+                <TabsTrigger value="flat" variant="quiet" className="flex-none">
+                  <Layers3 className="mr-1.5 h-4 w-4" />
+                  All Statements
+                </TabsTrigger>
+                <TabsTrigger value="grouped" variant="quiet" className="flex-none">
+                  <Building2 className="mr-1.5 h-4 w-4" />
+                  By Source
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  variant="quiet"
+                  className="pl-9"
+                  placeholder="Search statement, file, or source..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={selectedCmo} onValueChange={setSelectedCmo}>
+                <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
+                  <SelectValue placeholder="All sources" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  {cmoOptions.map((cmo) => (
+                    <SelectItem key={cmo} value={cmo}>
+                      {cmo}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger className="border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.55)] shadow-none">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {statusOptions.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <AppliedFiltersRow
+              filters={appliedFilters}
+              onClear={clearFilters}
+              emptyLabel={
+                hasAnyReports ? `${reports.length.toLocaleString()} statements` : "No statements yet."
+              }
+              className="pt-0"
+            />
 
             <TabsContent value="grouped" className="space-y-5">
               {isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : groupedReports.length > 0 ? (
                 groupedReports.map(([cmo, rows]) => (
-                  <section key={cmo} className="border-t border-black/20 pt-3">
+                  <section key={cmo} className="surface-muted forensic-frame rounded-[calc(var(--radius-md)-2px)] p-4">
                     <div className="mb-3 flex items-center justify-between">
-                      <p className="font-display text-sm">{cmo}</p>
-                      <span className="font-mono text-xs text-muted-foreground">
+                      <p className="type-display-section text-[1.05rem] text-foreground">{cmo}</p>
+                      <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.75)] px-2.5 py-1 font-mono text-xs text-muted-foreground">
                         {rows.length} docs | {rows.reduce((sum, r) => sum + (r.transaction_count ?? 0), 0)} lines
                       </span>
                     </div>
-                    <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-                      <Table className="min-w-[860px]">
+                    <Table className="min-w-[860px]" variant="evidence" density="compact">
                         <TableHeader>
                           <TableRow>
                             <TableHead>File</TableHead>
@@ -584,7 +584,6 @@ export default function Reports() {
                         </TableHeader>
                         <TableBody>{renderReportRows(rows)}</TableBody>
                       </Table>
-                    </div>
                   </section>
                 ))
               ) : (
@@ -592,6 +591,7 @@ export default function Reports() {
                   icon={<FileText className="h-10 w-10" />}
                   title="No documents found"
                   description={emptyReportDescription}
+                  variant="intelligence"
                 />
               )}
             </TabsContent>
@@ -600,11 +600,10 @@ export default function Reports() {
               {isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading...</p>
               ) : filteredReports.length > 0 ? (
-                <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-                  <Table className="min-w-[980px]">
+                  <Table className="min-w-[980px]" variant="evidence">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>CMO</TableHead>
+                        <TableHead>Source</TableHead>
                         <TableHead>File</TableHead>
                         <TableHead>Period</TableHead>
                         <TableHead>Status</TableHead>
@@ -645,10 +644,10 @@ export default function Reports() {
                           <TableCell className="text-muted-foreground">
                             {format(new Date(r.created_at), "MMM d, yyyy")}
                           </TableCell>
-                          <TableCell className="text-right">
+                        <TableCell className="text-right">
                              <Button
                                type="button"
-                               variant="ghost"
+                               variant="quiet"
                                size="icon"
                                aria-label={`Delete report ${r.file_name}`}
                                onClick={(e) => {
@@ -663,12 +662,12 @@ export default function Reports() {
                       ))}
                     </TableBody>
                   </Table>
-                </div>
               ) : (
                 <EmptyStateBlock
                   icon={<FileText className="h-10 w-10" />}
                   title="No documents found"
                   description={emptyReportDescription}
+                  variant="intelligence"
                 />
               )}
             </TabsContent>
@@ -677,25 +676,26 @@ export default function Reports() {
       </Card>
 
       <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
-        <SheetContent className="w-[min(96vw,1100px)] max-w-[min(96vw,1100px)] p-0 sm:max-w-[min(92vw,1100px)] lg:w-[calc(100vw-16rem)] lg:max-w-[calc(100vw-16rem)]">
+        <SheetContent className="w-[min(98vw,1200px)] max-w-[min(98vw,1200px)] overflow-hidden p-0 sm:max-w-[min(95vw,1200px)] lg:w-[calc(100vw-19rem)] lg:max-w-[calc(100vw-19rem)]">
           {selectedReport ? (
             <DetailDrawerFrame
               title={`${selectedReport.cmo_name} | ${selectedReport.file_name}`}
               subtitle={`Uploaded ${format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")}`}
               rightSlot={<StatusBadge status={selectedReport.status} />}
+              variant="intelligence"
             >
-              <div className="grid gap-3 rounded-sm border border-border/45 bg-background/60 p-3 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs text-muted-foreground">Normalized Lines</p>
-                  <p className="text-xl font-bold">{reportTransactions.length.toLocaleString()}</p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Normalized lines</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{reportTransactions.length.toLocaleString()}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Extractor Rows</p>
-                  <p className="text-xl font-bold">{extractedRows.length.toLocaleString()}</p>
+                <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Extractor rows</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{extractedRows.length.toLocaleString()}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Revenue</p>
-                  <p className="text-xl font-bold">{toMoney(selectedReport.total_revenue ?? 0)}</p>
+                <div className="surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Revenue</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{toMoney(selectedReport.total_revenue ?? 0)}</p>
                 </div>
               </div>
 
@@ -706,39 +706,40 @@ export default function Reports() {
                 </TabsList>
 
                 <TabsContent value="summary" className="mt-4">
-                  {[
-                    ["CMO", selectedReport.cmo_name],
-                    ["File", selectedReport.file_name],
-                    ["Report Period", selectedReport.report_period],
-                    ["Uploaded", format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")],
-                    [
-                      "Processed",
-                      selectedReport.processed_at
-                        ? format(new Date(selectedReport.processed_at), "MMM d, yyyy HH:mm")
-                        : null,
-                    ],
-                    ["Status", selectedReport.status],
-                    [
-                      "System Confidence Score",
-                      selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null,
-                    ],
-                    ["Error Count", selectedReport.error_count?.toLocaleString()],
-                    ["Notes", selectedReport.notes],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between border-b border-black/20 py-2 text-sm">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="font-medium">{value ?? "-"}</span>
-                    </div>
-                  ))}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {[
+                      ["CMO", selectedReport.cmo_name],
+                      ["File", selectedReport.file_name],
+                      ["Report Period", selectedReport.report_period],
+                      ["Uploaded", format(new Date(selectedReport.created_at), "MMM d, yyyy HH:mm")],
+                      [
+                        "Processed",
+                        selectedReport.processed_at
+                          ? format(new Date(selectedReport.processed_at), "MMM d, yyyy HH:mm")
+                          : null,
+                      ],
+                      ["Status", selectedReport.status],
+                      [
+                        "System Confidence Score",
+                        selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null,
+                      ],
+                      ["Error Count", selectedReport.error_count?.toLocaleString()],
+                      ["Notes", selectedReport.notes],
+                    ].map(([label, value]) => (
+                      <div key={label} className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                        <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                        <p className="mt-2 text-sm leading-relaxed text-foreground">{value ?? "-"}</p>
+                      </div>
+                    ))}
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="transactions" className="mt-4">
                   {reportTransactions.length > 0 ? (
-                    <div className="min-w-0 overflow-x-auto rounded-sm border border-border/45 overscroll-x-contain">
-                      <Table className="min-w-[1480px]">
+                      <Table className="min-w-[1480px]" variant="evidence" density="compact">
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="sticky left-0 z-30 w-[180px] min-w-[180px] max-w-[180px] bg-background pr-4">
+                            <TableHead className="sticky left-0 z-30 w-[180px] min-w-[180px] max-w-[180px] bg-[hsl(var(--surface-elevated)/0.98)] pr-4">
                               <span className="relative block after:pointer-events-none after:absolute after:-right-5 after:top-0 after:h-full after:w-5 after:bg-gradient-to-r after:from-background after:via-background/90 after:to-transparent">
                                 Track
                               </span>
@@ -765,7 +766,7 @@ export default function Reports() {
                             const customProperties = readCustomProperties(tx);
                             return (
                               <TableRow key={tx.id}>
-                                <TableCell className="sticky left-0 z-20 w-[180px] min-w-[180px] max-w-[180px] bg-background pr-4">
+                                <TableCell className="sticky left-0 z-20 w-[180px] min-w-[180px] max-w-[180px] bg-[hsl(var(--surface-elevated)/0.96)] pr-4">
                                   <span className="relative block truncate after:pointer-events-none after:absolute after:-right-5 after:top-0 after:h-full after:w-5 after:bg-gradient-to-r after:from-background after:via-background/90 after:to-transparent">
                                     {tx.track_title ?? "-"}
                                   </span>
@@ -797,7 +798,6 @@ export default function Reports() {
                           })}
                         </TableBody>
                       </Table>
-                    </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">No normalized transactions available.</p>
                   )}

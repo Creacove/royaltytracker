@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from "react";
+﻿import type { CSSProperties, ReactNode } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 
@@ -16,14 +17,28 @@ type KpiStripProps = {
   items: KpiItem[];
   columnsClassName?: string;
   className?: string;
-};
+  eyebrow?: ReactNode;
+} & VariantProps<typeof stripVariants>;
+
+const stripVariants = cva("relative overflow-hidden rounded-[calc(var(--radius)-2px)] p-4 md:p-5", {
+  variants: {
+    variant: {
+      default: "surface-panel forensic-frame",
+      hero: "surface-hero forensic-frame spotlight-border",
+      muted: "surface-muted forensic-frame",
+    },
+  },
+  defaultVariants: {
+    variant: "default",
+  },
+});
 
 const toneClassMap: Record<KpiTone, string> = {
-  default: "border-border/45",
-  accent: "border-[hsl(var(--brand-accent))]/40 bg-[hsl(var(--brand-accent-ghost))]/25",
-  success: "border-[hsl(var(--tone-success))]/35 bg-[hsl(var(--tone-success))]/6",
-  warning: "border-[hsl(var(--tone-warning))]/35 bg-[hsl(var(--tone-warning))]/8",
-  critical: "border-[hsl(var(--tone-critical))]/35 bg-[hsl(var(--tone-critical))]/8",
+  default: "surface-elevated border-[hsl(var(--border)/0.1)]",
+  accent: "surface-intelligence border-[hsl(var(--brand-accent)/0.18)]",
+  success: "border-[hsl(var(--tone-success)/0.14)] bg-[linear-gradient(180deg,hsl(var(--tone-success)/0.08),hsl(var(--surface-elevated)))]",
+  warning: "border-[hsl(var(--tone-warning)/0.16)] bg-[linear-gradient(180deg,hsl(var(--tone-warning)/0.1),hsl(var(--surface-elevated)))]",
+  critical: "border-[hsl(var(--tone-critical)/0.16)] bg-[linear-gradient(180deg,hsl(var(--tone-critical)/0.1),hsl(var(--surface-elevated)))]",
 };
 
 function asPlainText(value: ReactNode): string | null {
@@ -37,15 +52,21 @@ function isMostlyNumeric(text: string): boolean {
 
 function toNumericFontSize(text: string): CSSProperties["fontSize"] {
   const len = text.replace(/[^0-9A-Za-z]/g, "").length;
-  if (len >= 16) return "clamp(0.9rem, 0.85vw + 0.55rem, 1.25rem)";
-  if (len >= 14) return "clamp(1rem, 0.95vw + 0.6rem, 1.45rem)";
-  if (len >= 12) return "clamp(1.1rem, 1.15vw + 0.62rem, 1.7rem)";
-  return "clamp(1.22rem, 1.45vw + 0.65rem, 2rem)";
+  if (len >= 16) return "clamp(0.96rem, 0.8vw + 0.54rem, 1.22rem)";
+  if (len >= 14) return "clamp(1.08rem, 0.92vw + 0.6rem, 1.42rem)";
+  if (len >= 12) return "clamp(1.16rem, 1.1vw + 0.65rem, 1.72rem)";
+  return "clamp(1.4rem, 1.6vw + 0.7rem, 2.2rem)";
 }
 
-export function KpiStrip({ items, columnsClassName, className }: KpiStripProps) {
+export function KpiStrip({ items, columnsClassName, className, eyebrow, variant }: KpiStripProps) {
   return (
-    <section className={cn("border-y border-border py-4", className)}>
+    <section className={cn(stripVariants({ variant }), className)}>
+      {eyebrow ? (
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <span className="editorial-kicker">{eyebrow}</span>
+          <div className="h-px flex-1 bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.45),transparent)]" />
+        </div>
+      ) : null}
       <div
         className={cn(
           "grid gap-3 md:gap-4",
@@ -56,51 +77,49 @@ export function KpiStrip({ items, columnsClassName, className }: KpiStripProps) 
               : items.length === 3
                 ? "grid-cols-1 sm:grid-cols-3"
                 : "grid-cols-1 sm:grid-cols-2",
-          columnsClassName
+          columnsClassName,
         )}
       >
-        {items.map((item) => (
-          (() => {
-            const textValue = asPlainText(item.value);
-            const numericValue = textValue ? isMostlyNumeric(textValue) : false;
-            const valueStyle: CSSProperties | undefined =
-              numericValue && textValue ? { fontSize: toNumericFontSize(textValue) } : undefined;
+        {items.map((item) => {
+          const textValue = asPlainText(item.value);
+          const numericValue = textValue ? isMostlyNumeric(textValue) : false;
+          const valueStyle: CSSProperties | undefined =
+            numericValue && textValue ? { fontSize: toNumericFontSize(textValue) } : undefined;
 
-            return (
-              <article
-                key={item.label}
-                className={cn(
-                  "min-w-0 overflow-hidden rounded-sm border px-3 py-3 transition-colors md:px-4 md:py-4",
-                  toneClassMap[item.tone ?? "default"]
-                )}
-              >
-            <div className="type-micro mb-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
-              {item.icon}
-              <span className="truncate">{item.label}</span>
-            </div>
-            <div className="min-w-0">
-              <div
-                className={cn(
-                  "type-display-section min-w-0",
-                  numericValue
-                    ? "whitespace-nowrap"
-                    : "text-[clamp(1.15rem,1.6vw,1.95rem)] [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden break-words [overflow-wrap:anywhere]"
-                )}
-                style={valueStyle}
-                title={textValue ?? undefined}
-              >
-                {item.value}
+          return (
+            <article
+              key={item.label}
+              className={cn(
+                "forensic-frame min-w-0 overflow-hidden rounded-[calc(var(--radius-md)-2px)] border p-4 motion-standard",
+                toneClassMap[item.tone ?? "default"],
+              )}
+            >
+              <div className="type-micro mb-2 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                {item.icon}
+                <span className="truncate">{item.label}</span>
               </div>
-            </div>
-            {item.hint ? (
-              <p className="font-ui mt-1 min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                {item.hint}
-              </p>
-            ) : null}
-              </article>
-            );
-          })()
-        ))}
+              <div className="min-w-0">
+                <div
+                  className={cn(
+                    "type-display-section min-w-0 text-foreground",
+                    numericValue
+                      ? "whitespace-nowrap"
+                      : "text-[clamp(1.25rem,1.8vw,2.1rem)] [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden break-words [overflow-wrap:anywhere]",
+                  )}
+                  style={valueStyle}
+                  title={textValue ?? undefined}
+                >
+                  {item.value}
+                </div>
+              </div>
+              {item.hint ? (
+                <p className="mt-2 min-w-0 break-words text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+                  {item.hint}
+                </p>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
     </section>
   );

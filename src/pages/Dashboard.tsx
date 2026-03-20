@@ -1,4 +1,4 @@
-
+﻿
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -534,21 +534,27 @@ export default function Dashboard() {
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
       <PageHeader
-        title="Overview"
-        subtitle="Revenue pulse, report progress, and CMO performance at a glance."
+        title="Dashboard"
+        meta={
+          <>
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+              {metrics.activeCmos} sources
+            </span>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.84)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {metrics.extractedLines.toLocaleString()} lines
+            </span>
+          </>
+        }
         actions={
-          <Button
-            asChild
-            size="sm"
-            className="border border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent))] text-white hover:bg-[hsl(var(--brand-accent-soft))] hover:text-white"
-          >
-            <Link to="/ai-insights">View AI Insights</Link>
+          <Button asChild size="sm">
+            <Link to="/ai-insights">AI Insights</Link>
           </Button>
         }
       />
 
       {!extractorAvailable ? (
-        <div className="rounded-sm border border-border/45 bg-background/80 px-3 py-2 text-sm">
+        <Card surface="muted">
+          <CardContent className="px-4 py-4">
           <div className="flex items-start gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 text-foreground" />
             <p>
@@ -556,21 +562,25 @@ export default function Dashboard() {
               The dashboard is running from normalized transactions only.
             </p>
           </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {criticalError ? (
-        <div className="rounded-sm border border-[hsl(var(--tone-critical))]/35 bg-[hsl(var(--tone-critical))]/10 px-3 py-2 text-sm">
+        <Card surface="critical">
+          <CardContent className="px-4 py-4">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-4 w-4 text-foreground" />
             <p>
               Dashboard data failed to load: {String((criticalError as Error).message ?? criticalError)}
             </p>
           </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       <KpiStrip
+        variant="hero"
         items={[
           {
             label: "Net Revenue",
@@ -605,28 +615,53 @@ export default function Dashboard() {
         ]}
       />
 
-      <section className="grid gap-4 rounded-sm border border-border/45 bg-card px-4 py-4 md:grid-cols-2 md:px-5">
-        <div>
-          <p className="type-nav text-xs text-muted-foreground">Processing Success</p>
-          <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.processingRate)}</p>
-          <Progress
-            value={Math.max(0, Math.min(100, metrics.processingRate))}
-            className="mt-2 h-2 [&>div]:bg-[hsl(var(--brand-accent))]"
-          />
-        </div>
-        <div>
-          <p className="type-nav text-xs text-muted-foreground">Avg System Confidence Score</p>
-          <p className="mt-1 text-2xl font-semibold">{safePercent(metrics.avgAccuracy)}</p>
-          <Progress
-            value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
-            className="mt-2 h-2 [&>div]:bg-[hsl(var(--brand-accent))]"
-          />
-        </div>
-      </section>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.75fr)]">
+        <Card surface="hero">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+            <CardTitle className="text-[1.2rem]">Operational confidence</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Processing success</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.processingRate)}</p>
+              <Progress
+                value={Math.max(0, Math.min(100, metrics.processingRate))}
+                className="mt-4 h-2 bg-[hsl(var(--surface-muted))] [&>div]:bg-[hsl(var(--brand-accent))]"
+              />
+            </div>
+            <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">System confidence</p>
+              <p className="mt-2 text-3xl font-semibold text-foreground">{safePercent(metrics.avgAccuracy)}</p>
+              <Progress
+                value={Math.max(0, Math.min(100, metrics.avgAccuracy ?? 0))}
+                className="mt-4 h-2 bg-[hsl(var(--surface-muted))] [&>div]:bg-[hsl(var(--brand-accent))]"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card surface="evidence">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+            <CardTitle className="text-[1.2rem]">Backlog</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3">
+              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Needs attention</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{metrics.failedReports.toLocaleString()}</p>
+              </div>
+              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">In progress</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{metrics.processingReports.toLocaleString()}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-3">
-          <CardHeader className="pb-3 pt-4">
+        <Card surface="hero" className="xl:col-span-3">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
             <CardTitle className="text-base">Revenue Trend (12 Months)</CardTitle>
           </CardHeader>
           <CardContent>
@@ -683,8 +718,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-2">
-          <CardHeader className="pb-3 pt-4">
+        <Card surface="evidence" className="xl:col-span-2">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
             <CardTitle className="text-base">Platform Revenue Mix</CardTitle>
           </CardHeader>
           <CardContent>
@@ -736,8 +771,8 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-5">
-        <Card className="xl:col-span-2">
-          <CardHeader className="pb-3 pt-4">
+        <Card surface="evidence" className="xl:col-span-2">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
             <CardTitle className="flex items-center gap-2 text-base">
               <Globe2 className="h-4 w-4" />
               Top Territories
@@ -835,8 +870,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-3">
-          <CardHeader className="pb-3 pt-4">
+        <Card surface="evidence" className="xl:col-span-3">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4 pt-5">
             <CardTitle className="flex items-center gap-2 text-base">
               <RadioTower className="h-4 w-4" />
               CMO Performance Scorecard
@@ -844,8 +879,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             {cmoScorecard.length > 0 ? (
-              <div className="min-w-0 overflow-x-auto overscroll-x-contain">
-                <Table className="min-w-[860px]">
+                <Table className="min-w-[860px]" variant="evidence" density="compact">
                   <TableHeader>
                     <TableRow>
                       <TableHead>CMO</TableHead>
@@ -873,7 +907,6 @@ export default function Dashboard() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
             ) : (
               <div className="flex h-[320px] items-center justify-center text-sm text-muted-foreground">
                 No CMO performance data yet.
@@ -884,12 +917,14 @@ export default function Dashboard() {
       </div>
 
       {metrics.failedReports === 0 && metrics.processingReports === 0 && metrics.totalReports > 0 ? (
-        <div className="border-t border-black/20 pt-3">
+        <Card surface="muted">
+          <CardContent className="pt-5">
           <div className="flex items-center gap-2 text-sm">
             <CheckCircle2 className="h-4 w-4 text-foreground" />
             <span>All statements are completed with no current processing backlog.</span>
           </div>
-        </div>
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );

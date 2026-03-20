@@ -26,6 +26,19 @@ export default {
         ring: "hsl(var(--ring))",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
+        brand: {
+          accent: "hsl(var(--brand-accent))",
+          soft: "hsl(var(--brand-accent-soft))",
+          ghost: "hsl(var(--brand-accent-ghost))",
+        },
+        surface: {
+          canvas: "hsl(var(--surface-canvas))",
+          panel: "hsl(var(--surface-panel))",
+          elevated: "hsl(var(--surface-elevated))",
+          muted: "hsl(var(--surface-muted))",
+          intelligence: "hsl(var(--surface-intelligence))",
+          critical: "hsl(var(--surface-critical))",
+        },
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -175,14 +175,18 @@ function SnapshotSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-sm border border-black/10 bg-white/80 p-5 shadow-[0_18px_35px_rgba(0,0,0,0.05)]">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-black/8 pb-3">
-        <div className="min-w-0">
-          <h2 className="type-display-section text-lg text-black">{title}</h2>
-          {subtitle ? <p className="mt-1 text-sm text-black/55">{subtitle}</p> : null}
+    <section className="surface-elevated forensic-frame relative overflow-hidden rounded-[calc(var(--radius)-2px)] p-5 md:p-6">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.58),transparent)]" />
+      <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 translate-x-8 -translate-y-8 rounded-full bg-[hsl(var(--brand-accent-ghost)/0.72)] blur-3xl" />
+      <div className="relative">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-[hsl(var(--border)/0.1)] pb-4">
+          <div className="min-w-0">
+            <h2 className="type-display-section text-[1.1rem] tracking-tight text-foreground">{title}</h2>
+            {subtitle ? <p className="mt-1 text-sm leading-6 text-muted-foreground">{subtitle}</p> : null}
+          </div>
         </div>
+        {children}
       </div>
-      {children}
     </section>
   );
 }
@@ -190,16 +194,26 @@ function SnapshotSection({
 function SignalCard({ signal }: { signal: SnapshotSignal }) {
   const toneClass =
     signal.tone === "warning"
-      ? "border-[hsl(var(--tone-warning))]/30 bg-[hsl(var(--tone-warning))]/8"
+      ? "border-[hsl(var(--tone-warning)/0.2)] bg-[linear-gradient(180deg,hsl(var(--tone-warning)/0.12),hsl(var(--surface-elevated)))]"
       : signal.tone === "opportunity"
-        ? "border-[hsl(var(--brand-accent))]/25 bg-[hsl(var(--brand-accent-ghost))]/35"
-        : "border-black/10 bg-black/[0.02]";
+        ? "border-[hsl(var(--brand-accent)/0.18)] bg-[linear-gradient(180deg,hsl(var(--brand-accent-ghost)/0.92),hsl(var(--surface-elevated)))]"
+        : "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)]";
+  const dotClass =
+    signal.tone === "warning"
+      ? "bg-[hsl(var(--tone-warning))]"
+      : signal.tone === "opportunity"
+        ? "bg-[hsl(var(--brand-accent))]"
+        : "bg-[hsl(var(--muted-foreground))]";
 
   return (
-    <article className={cn("rounded-sm border p-4", toneClass)}>
-      <p className="type-micro text-[10px] text-black/45">Snapshot signal</p>
-      <h3 className="mt-2 text-sm font-medium tracking-tight text-black">{signal.title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-black/70">{signal.body}</p>
+    <article className={cn("forensic-frame rounded-[calc(var(--radius-sm))] border p-4", toneClass)}>
+      <div className="flex items-start gap-3">
+        <span className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", dotClass)} />
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold tracking-tight text-foreground">{signal.title}</h3>
+          <p className="text-sm leading-6 text-muted-foreground">{signal.body}</p>
+        </div>
+      </div>
     </article>
   );
 }
@@ -208,8 +222,8 @@ function SnapshotTooltip({ active, payload, label }: TooltipProps<number, string
   if (!active || !payload || payload.length === 0) return null;
 
   return (
-    <div className="rounded-sm border border-black/10 bg-white px-3 py-2 shadow-lg">
-      {label ? <p className="text-xs font-medium text-black">{label}</p> : null}
+    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated))] px-3 py-2.5 shadow-[0_24px_60px_-40px_hsl(var(--surface-shadow)/0.3)]">
+      {label ? <p className="text-xs font-semibold tracking-tight text-foreground">{label}</p> : null}
       <div className="mt-1 space-y-1">
         {payload.map((entry) => {
           const key = `${entry.name}-${entry.dataKey}`;
@@ -223,8 +237,8 @@ function SnapshotTooltip({ active, payload, label }: TooltipProps<number, string
 
           return (
             <div key={key} className="flex items-center justify-between gap-4 text-xs">
-              <span className="text-black/55">{entry.name}</span>
-              <span className="font-medium text-black">{formattedValue}</span>
+              <span className="text-muted-foreground">{entry.name}</span>
+              <span className="font-medium text-foreground">{formattedValue}</span>
             </div>
           );
         })}
@@ -245,20 +259,30 @@ function SnapshotSummaryCard({
   fallbackBadge?: string;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-sm bg-black p-6 text-white shadow-[0_24px_40px_rgba(0,0,0,0.12)]">
-      <div className="absolute right-0 top-0 h-32 w-32 translate-x-16 -translate-y-8 rounded-full bg-white/5 blur-3xl" />
-      <div className="relative">
+    <div className="surface-hero forensic-frame spotlight-border relative overflow-hidden rounded-[calc(var(--radius)-2px)] p-6 md:p-7">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_top_left,hsl(var(--brand-accent)/0.18),transparent_62%)]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-28 w-28 translate-x-8 translate-y-8 rounded-full bg-[hsl(var(--brand-accent-ghost)/0.8)] blur-3xl" />
+      <div className="relative space-y-5">
         <div className="flex flex-wrap items-center gap-2">
-          <Sparkles className="h-4 w-4 text-white/70" />
-          <p className="type-micro text-[10px] text-white/55">{title}</p>
+          <span className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.82)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
+            <Sparkles className="h-3.5 w-3.5" />
+            {title}
+          </span>
           {fallbackBadge ? (
-            <Badge variant="outline" className="border-white/20 text-[9px] uppercase tracking-[0.16em] text-white/80">
+            <Badge variant="outline" className="border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.78)] text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
               {fallbackBadge}
             </Badge>
           ) : null}
         </div>
-        <p className="mt-4 max-w-3xl text-base leading-relaxed text-white/92">{summary}</p>
-        {whyThisMatters ? <p className="mt-4 text-sm leading-relaxed text-white/65">{whyThisMatters}</p> : null}
+        <p className="w-full text-[1rem] leading-8 text-foreground/88 md:text-[1.04rem]">{summary}</p>
+        {whyThisMatters ? (
+          <div className="surface-intelligence forensic-frame w-full rounded-[calc(var(--radius-sm))] p-4">
+            <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
+              Why it matters
+            </p>
+            <p className="mt-2 text-sm leading-6 text-foreground/82">{whyThisMatters}</p>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -272,13 +296,13 @@ function EmptySnapshotState({
   body: string;
 }) {
   return (
-    <Card className="border-black/10 bg-white/80 shadow-[0_18px_35px_rgba(0,0,0,0.05)]">
+    <Card surface="hero" className="spotlight-border">
       <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-sm bg-[hsl(var(--brand-accent))] text-white">
+        <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.86)] text-[hsl(var(--brand-accent))]">
           <Target className="h-5 w-5" />
         </div>
-        <h2 className="type-display-section text-2xl text-black">{title}</h2>
-        <p className="mt-3 max-w-lg text-sm leading-relaxed text-black/60">{body}</p>
+        <h2 className="type-display-section text-2xl text-foreground">{title}</h2>
+        <p className="mt-3 max-w-lg text-sm leading-7 text-muted-foreground">{body}</p>
       </CardContent>
     </Card>
   );
@@ -379,9 +403,14 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
     seedArtistName;
 
   const snapshotSummaryQuery = useQuery({
-    queryKey: ["snapshot-ai-summary", scope, trackKey, artistKey, resolvedArtistName, fromDate, toDate],
-    enabled: scope === "track" ? Boolean(trackKey) : Boolean(artistKey || resolvedArtistName),
+    queryKey: ["snapshot-ai-summary", scope, scope === "track" ? trackKey : artistKey, fromDate, toDate],
+    enabled: scope === "track" ? Boolean(trackKey) : Boolean(artistKey),
     retry: false,
+    staleTime: Infinity,
+    gcTime: 1000 * 60 * 30,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
     queryFn: async (): Promise<AiInsightsTurnResponse | null> => {
       const entityContext: AiInsightsEntityContext =
         scope === "track"
@@ -657,7 +686,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
 
   if ((scope === "track" && !trackKey) || (scope === "artist" && !artistKey)) {
     return (
-      <div className="min-h-full overflow-y-auto bg-background">
+      <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
           <EmptySnapshotState
             title="Snapshot unavailable"
@@ -670,12 +699,22 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
 
   if (isLoading) {
     return (
-      <div className="min-h-full overflow-y-auto bg-background">
+      <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
         <div className="mx-auto flex w-full max-w-[1440px] items-center justify-center px-4 py-24 md:px-6">
-          <div className="flex flex-col items-center gap-3">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-            <p className="text-sm text-muted-foreground">Building your snapshot...</p>
-          </div>
+          <Card surface="hero" className="w-full max-w-xl">
+            <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--brand-accent-ghost)/0.86)] text-[hsl(var(--brand-accent))]">
+                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[hsl(var(--brand-accent))] animate-spin" />
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="type-display-section text-xl text-foreground">Building snapshot</h2>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Pulling performance, mix, and signal data for the selected window.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -683,7 +722,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
 
   if (detailError) {
     return (
-      <div className="min-h-full overflow-y-auto bg-background">
+      <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
           <EmptySnapshotState
             title="Snapshot unavailable"
@@ -696,7 +735,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
 
   if (scope === "track" && !trackDetail?.summary) {
     return (
-      <div className="min-h-full overflow-y-auto bg-background">
+      <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
           <EmptySnapshotState
             title="No track data in range"
@@ -709,7 +748,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
 
   if (scope === "artist" && !artistDetail?.summary) {
     return (
-      <div className="min-h-full overflow-y-auto bg-background">
+      <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
         <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
           <EmptySnapshotState
             title="No artist data in range"
@@ -727,12 +766,19 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
       : "Portfolio-level view of track performance, concentration, and next marketing decisions.";
 
   const summaryResponse = snapshotSummaryQuery.data;
-  const rawSummaryText =
-    summaryResponse?.executive_answer ??
-    (scope === "track" ? fallbackTrackSummary : fallbackArtistSummary);
-  const summaryText = sanitizeSnapshotSummary(rawSummaryText) || (scope === "track" ? fallbackTrackSummary : fallbackArtistSummary);
-  const summaryWhy = summaryResponse?.why_this_matters;
-  const fallbackBadge = snapshotSummaryQuery.isError ? "Deterministic view" : undefined;
+  const deterministicSummary = scope === "track" ? fallbackTrackSummary : fallbackArtistSummary;
+  const aiSummaryText = summaryResponse?.executive_answer?.trim() ?? "";
+  const hasReliableAiSummary =
+    aiSummaryText.length > 0 &&
+    summaryResponse?.quality_outcome !== "clarify" &&
+    summaryResponse?.quality_outcome !== "constrained" &&
+    !/can't answer this reliably yet|required evidence is missing/i.test(aiSummaryText);
+  const summaryText = sanitizeSnapshotSummary(hasReliableAiSummary ? aiSummaryText : deterministicSummary) || deterministicSummary;
+  const summaryWhy = hasReliableAiSummary ? summaryResponse?.why_this_matters : undefined;
+  const fallbackBadge =
+    snapshotSummaryQuery.isError || (summaryResponse != null && !hasReliableAiSummary)
+      ? "Deterministic view"
+      : undefined;
 
   const handleExportPdf = async () => {
     if (isExportingPdf) return;
@@ -769,27 +815,27 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
   };
 
   return (
-    <div className="min-h-full overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-[1440px] px-4 py-5 md:px-6 md:py-6">
+    <div className="min-h-full overflow-y-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--surface-muted)/0.42)_100%)]">
+      <div className="mx-auto w-full max-w-[1480px] px-4 py-5 md:px-6 md:py-6">
         <div ref={snapshotExportRef} className="space-y-6">
           <section
             data-export-only="true"
-            className="overflow-hidden rounded-sm border border-black/10 bg-[linear-gradient(135deg,hsl(var(--brand-accent-ghost))/92,white_62%)] shadow-[0_18px_35px_rgba(0,0,0,0.05)]"
+            className="surface-hero forensic-frame spotlight-border overflow-hidden rounded-[calc(var(--radius)-2px)]"
           >
             <div className="flex flex-col gap-4 px-4 py-4 sm:px-6 sm:py-5 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
               <div className="min-w-0 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm border border-black/10 bg-white/90 p-2 shadow-sm sm:h-14 sm:w-14">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.9)] p-2 shadow-[0_18px_36px_-28px_hsl(var(--surface-shadow)/0.32)] sm:h-14 sm:w-14">
                   <img src="/logo-icon.png" alt="OrderSounds" className="h-full w-full object-contain" />
                 </div>
                 <div className="min-w-0">
                   <p className="type-micro text-[10px] uppercase tracking-[0.18em] text-[hsl(var(--brand-accent))]">OrderSounds</p>
-                  <h2 className="type-display-section text-base text-black sm:text-lg">Publisher Snapshot Report</h2>
-                  <p className="text-sm leading-5 text-black/60">
+                  <h2 className="type-display-section text-base text-foreground sm:text-lg">Publisher Snapshot Report</h2>
+                  <p className="text-sm leading-5 text-muted-foreground">
                     {scope === "track" ? "Track performance snapshot" : "Artist performance snapshot"} for {formatDateWindow(fromDate, toDate)}
                   </p>
                 </div>
               </div>
-              <div className="w-full rounded-sm border border-black/10 bg-white/80 px-3 py-3 text-xs text-black/60 sm:px-4 lg:w-auto lg:shrink-0">
+              <div className="w-full rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.76)] px-3 py-3 text-xs text-muted-foreground sm:px-4 lg:w-auto lg:shrink-0">
                 <p className="font-mono uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">Prepared by OrderSounds</p>
                 <p className="mt-1">Exported {exportStamp}</p>
               </div>
@@ -797,8 +843,62 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
           </section>
 
           <PageHeader
+            eyebrow={scope === "track" ? "Track Snapshot" : "Artist Snapshot"}
             title={title}
             subtitle={subtitle}
+            meta={
+              <>
+                <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
+                  <PopoverTrigger asChild>
+                    <button className="inline-flex items-center gap-2 rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.74)] px-3 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))/0.35] hover:bg-[hsl(var(--brand-accent-ghost)/0.9)]">
+                      <CalendarRange className="h-3.5 w-3.5 text-[hsl(var(--brand-accent))]" />
+                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))]">
+                        {formatDateWindow(fromDate, toDate)}
+                      </span>
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-[calc(var(--radius)-2px)] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated))] p-6 shadow-[0_28px_80px_-42px_hsl(var(--surface-shadow)/0.38)]" align="start">
+                    <div className="grid gap-6">
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">From</p>
+                        <Input
+                          type="date"
+                          value={draftFromDate}
+                          onChange={(e) => setDraftFromDate(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") applyDateWindow();
+                          }}
+                          className="h-10 font-mono md:text-xs"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-ui uppercase tracking-[0.16em] text-muted-foreground">To</p>
+                        <Input
+                          type="date"
+                          value={draftToDate}
+                          onChange={(e) => setDraftToDate(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") applyDateWindow();
+                          }}
+                          className="h-10 font-mono md:text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={resetDraftDateWindow}>
+                          Cancel
+                        </Button>
+                        <Button size="sm" onClick={applyDateWindow}>
+                          Apply
+                        </Button>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Badge variant="outline" className="border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.76)] px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                  {scope === "track" ? "Track Snapshot" : "Artist Snapshot"}
+                </Badge>
+              </>
+            }
             actions={
               <div data-export-ignore="true" className="flex shrink-0 items-center gap-2">
                 <Button variant="outline" size="sm" onClick={backToAi}>
@@ -817,58 +917,6 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
             }
           />
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Popover open={isDatePopoverOpen} onOpenChange={setIsDatePopoverOpen}>
-              <PopoverTrigger asChild>
-                <button className="flex items-center gap-2 rounded-sm border border-[hsl(var(--brand-accent))]/15 bg-[hsl(var(--brand-accent-ghost))]/30 px-3 py-1.5 text-left transition-all hover:border-[hsl(var(--brand-accent))]/35 hover:bg-[hsl(var(--brand-accent-ghost))]/45">
-                  <CalendarRange className="h-3.5 w-3.5 text-[hsl(var(--brand-accent))] opacity-60" />
-                  <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
-                    {formatDateWindow(fromDate, toDate)}
-                  </span>
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[min(20rem,calc(100vw-2rem))] rounded-sm border-2 border-black p-6 shadow-2xl" align="start">
-                <div className="grid gap-6">
-                  <div className="space-y-2">
-                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: FROM</p>
-                    <Input
-                      type="date"
-                      value={draftFromDate}
-                      onChange={(e) => setDraftFromDate(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") applyDateWindow();
-                      }}
-                      className="h-10 rounded-sm border-black font-mono md:text-xs"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <p className="type-micro text-[11px] font-bold tracking-widest text-black">TIME HORIZON: TO</p>
-                    <Input
-                      type="date"
-                      value={draftToDate}
-                      onChange={(e) => setDraftToDate(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") applyDateWindow();
-                      }}
-                      className="h-10 rounded-sm border-black font-mono md:text-xs"
-                    />
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={resetDraftDateWindow}>
-                      Cancel
-                    </Button>
-                    <Button size="sm" onClick={applyDateWindow}>
-                      Apply
-                    </Button>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <Badge variant="outline" className="border-black/15 bg-white/70 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-black/60">
-              {scope === "track" ? "Track Snapshot" : "Artist Snapshot"}
-            </Badge>
-          </div>
-
           <SnapshotSummaryCard
             title="AI summary"
             summary={summaryText}
@@ -878,6 +926,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
           {scope === "track" && trackDetail?.summary ? (
             <>
               <KpiStrip
+                variant="hero"
                 className="border-t-0 pt-0"
                 items={[
                   { label: "Net revenue", value: toMoney(trackDetail.summary.net_revenue) },
@@ -894,7 +943,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={trackTrendData}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" vertical={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} opacity={0.24} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Month" position="insideBottom" offset={-4} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -933,7 +982,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[280px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={trackTerritoryMix.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 12, bottom: 28, left: 20 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" horizontal={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" horizontal={false} opacity={0.24} />
                         <XAxis type="number" tickFormatter={formatAxisMoney} tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Net Revenue" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -951,7 +1000,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[280px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={trackPlatformMix.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 12, bottom: 28, left: 20 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" horizontal={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" horizontal={false} opacity={0.24} />
                         <XAxis type="number" tickFormatter={formatAxisMoney} tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Net Revenue" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -971,7 +1020,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[260px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={trackUsageMix.slice(0, 8)} margin={{ top: 8, right: 12, bottom: 28, left: 12 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" vertical={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} opacity={0.24} />
                         <XAxis dataKey="usage_type_label" tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Usage Type" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -991,7 +1040,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   title="High plays, light payout"
                   subtitle="Territories where consumption is materially stronger than payout share."
                 >
-                  <Table>
+                  <Table variant="evidence" density="compact">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Territory</TableHead>
@@ -1018,6 +1067,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
           {scope === "artist" && artistDetail?.summary ? (
             <>
               <KpiStrip
+                variant="hero"
                 className="border-t-0 pt-0"
                 items={[
                   { label: "Net revenue", value: toMoney(artistDetail.summary.net_revenue) },
@@ -1034,7 +1084,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[320px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={artistTrendData}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" vertical={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} opacity={0.24} />
                         <XAxis dataKey="label" tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Month" position="insideBottom" offset={-4} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -1073,7 +1123,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[280px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={artistTerritoryMix.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 12, bottom: 28, left: 20 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" horizontal={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" horizontal={false} opacity={0.24} />
                         <XAxis type="number" tickFormatter={formatAxisMoney} tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Net Revenue" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -1091,7 +1141,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[280px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={artistPlatformMix.slice(0, 8)} layout="vertical" margin={{ top: 8, right: 12, bottom: 28, left: 20 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" horizontal={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" horizontal={false} opacity={0.24} />
                         <XAxis type="number" tickFormatter={formatAxisMoney} tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Net Revenue" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -1111,7 +1161,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                   <div className="h-[260px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={artistUsageMix.slice(0, 8)} margin={{ top: 8, right: 12, bottom: 28, left: 12 }}>
-                        <CartesianGrid stroke="#000" strokeDasharray="2 4" vertical={false} opacity={0.08} />
+                        <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} opacity={0.24} />
                         <XAxis dataKey="usage_type_label" tick={{ fontSize: 10, fontFamily: "monospace" }} axisLine={false} tickLine={false}>
                           <Label value="Usage Type" position="bottom" offset={10} style={{ fontSize: 10, fill: "rgba(0,0,0,0.5)", textTransform: "uppercase", letterSpacing: "0.12em" }} />
                         </XAxis>
@@ -1127,7 +1177,7 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
               ) : null}
 
               <SnapshotSection title="Tracks driving the artist" subtitle="Ranked track view for quick campaign and catalog decisions.">
-                <Table>
+                <Table variant="evidence" density="compact">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Track</TableHead>
@@ -1145,8 +1195,8 @@ export default function SnapshotPage({ scope }: SnapshotPageProps) {
                         <TableRow key={track.track_key}>
                           <TableCell>
                             <div>
-                              <p className="font-semibold text-black">{track.track_title}</p>
-                              {track.isrc ? <p className="text-xs text-black/45">{track.isrc}</p> : null}
+                              <p className="font-semibold text-foreground">{track.track_title}</p>
+                              {track.isrc ? <p className="text-xs text-muted-foreground">{track.isrc}</p> : null}
                             </div>
                           </TableCell>
                           <TableCell>{toMoney(track.net_revenue)}</TableCell>

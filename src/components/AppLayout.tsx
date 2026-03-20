@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+﻿import { Link, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { ArrowRightLeft, BarChart3, ChevronRight, LayoutDashboard, LogOut, Settings2, ShieldAlert, Upload } from "lucide-react";
 
@@ -20,7 +20,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview", requiresUploads: true },
   { to: "/reports", icon: Upload, label: "Statements", requiresUploads: false },
@@ -77,46 +76,54 @@ function AppLayoutContent({
 
   return (
     <>
-      <Sidebar className="border-r border-sidebar-border/60 bg-sidebar" collapsible="offcanvas">
-        <SidebarHeader className="gap-3 border-b border-sidebar-border/60 px-4 py-4">
-          <Link to={hasAnyUploads ? "/" : "/reports"} className="flex items-center">
+      <Sidebar
+        className="border-r-0 bg-transparent p-2.5 [&_[data-sidebar=sidebar]]:border-0 [&_[data-sidebar=sidebar]]:bg-transparent [&_[data-sidebar=sidebar]]:shadow-none"
+        collapsible="offcanvas"
+        variant="floating"
+      >
+        <SidebarHeader className="shell-rail gap-3 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-3.5 py-3.5 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.24)]">
+          <Link to={hasAnyUploads ? "/" : "/reports"} className="group flex flex-col items-center gap-2 rounded-[calc(var(--radius-sm))] px-1 py-0.5 text-center">
             <img
               src="/ordersounds-logo.png"
               alt="OrderSounds"
-              className="h-7 w-auto object-contain"
+              className="h-9 w-auto object-contain drop-shadow-[0_10px_14px_hsl(var(--surface-shadow)/0.1)] motion-standard group-hover:-translate-y-0.5"
             />
+            <p className="editorial-caption text-center text-[10px] tracking-[0.05em] text-muted-foreground">
+              Forensic royalty workspace
+            </p>
           </Link>
-          <p className="type-micro text-[10px] text-muted-foreground">
-            Forensic Royalty Workspace
-          </p>
           <Link
             to="/workspace"
             className={cn(
-              "group rounded-sm border border-l-2 border-l-[hsl(var(--brand-accent))]/55 bg-background/70 p-2 text-xs transition-colors",
+              "group surface-hero spotlight-border rounded-[calc(var(--radius-md)-2px)] p-2.5 text-xs motion-standard",
               workspaceActive
-                ? "border-[hsl(var(--brand-accent))]/40 bg-[hsl(var(--brand-accent-ghost))]/70"
-                : "border-border/50 hover:border-[hsl(var(--brand-accent))]/35 hover:bg-background",
+                ? "border-[hsl(var(--brand-accent)/0.22)] shadow-[0_18px_30px_-24px_hsl(var(--brand-accent)/0.34)]"
+                : "border-[hsl(var(--border)/0.14)] shadow-[0_14px_26px_-24px_hsl(var(--surface-shadow)/0.18)] hover:border-[hsl(var(--brand-accent)/0.18)] hover:-translate-y-px",
             )}
           >
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="type-micro truncate text-[10px] text-[hsl(var(--brand-accent))]">
+                <p className="editorial-kicker truncate">
                   Workspace
                 </p>
-                <p className={cn("truncate font-medium", workspaceActive && "text-[hsl(var(--brand-accent))]")}>
+                <p className={cn("mt-0.5 truncate text-sm font-semibold text-foreground", workspaceActive && "text-[hsl(var(--brand-accent))]")}>
                   {companyName ?? "Workspace pending"}
                 </p>
-                <p className="type-micro mt-0.5 text-[10px] text-[hsl(var(--brand-accent-soft))]">
+                <p className="mt-1.5 inline-flex rounded-full border border-[hsl(var(--brand-accent)/0.12)] bg-[hsl(var(--surface-elevated)/0.86)] px-2 py-1 text-[9px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent-soft))]">
                   {isPlatformAdmin ? "Platform Admin" : formatRole(companyRole)}
                 </p>
               </div>
-              <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[hsl(var(--brand-accent-soft))] transition-transform group-hover:translate-x-0.5 group-hover:text-[hsl(var(--brand-accent))]" />
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[hsl(var(--brand-accent-soft))] transition-transform group-hover:translate-x-0.5 group-hover:text-[hsl(var(--brand-accent))]" />
             </div>
           </Link>
         </SidebarHeader>
 
-        <SidebarContent className="px-2 py-3">
-          <SidebarMenu>
+        <SidebarContent className="shell-rail mt-2.5 overflow-hidden rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 py-3 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
+          <div className="mb-2.5 flex items-center gap-3 px-1">
+            <span className="editorial-kicker">Navigation</span>
+            <div className="h-px flex-1 bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.45),transparent)]" />
+          </div>
+          <SidebarMenu className="gap-2">
             {visibleNavItems.map(({ to, icon: Icon, label }) => {
               const active =
                 to === "/"
@@ -129,15 +136,24 @@ function AppLayoutContent({
                     isActive={active}
                     tooltip={label}
                     className={cn(
-                      "type-nav h-9 rounded-sm border border-transparent px-2.5 text-[11px]",
+                      "type-nav h-10 rounded-[calc(var(--radius-md)-2px)] border px-3 text-[10px] shadow-none",
                       active
-                        ? "border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground"
-                        : "text-sidebar-foreground hover:border-border/35 hover:bg-muted/40",
+                        ? "border-[hsl(var(--brand-accent)/0.2)] bg-[linear-gradient(135deg,hsl(var(--brand-accent-ghost)/0.78),hsl(var(--surface-elevated)))] text-foreground shadow-[0_18px_30px_-24px_hsl(var(--brand-accent)/0.28)]"
+                        : "border-transparent text-sidebar-foreground/78 hover:border-[hsl(var(--border)/0.12)] hover:bg-[hsl(var(--surface-elevated)/0.84)] hover:text-foreground",
                     )}
                   >
-                    <Link to={to}>
-                      <Icon className="h-4 w-4" />
-                      <span>{label}</span>
+                    <Link to={to} className="flex w-full items-center gap-3">
+                      <span
+                        className={cn(
+                          "flex h-6 w-6 shrink-0 items-center justify-center rounded-[calc(var(--radius-sm)-1px)] border motion-standard",
+                          active
+                            ? "border-[hsl(var(--brand-accent)/0.18)] bg-[hsl(var(--surface-elevated)/0.94)] text-[hsl(var(--brand-accent))]"
+                            : "border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.74)] text-sidebar-foreground/72",
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="truncate">{label}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -146,14 +162,14 @@ function AppLayoutContent({
           </SidebarMenu>
         </SidebarContent>
 
-        <SidebarFooter className="px-2 pb-3 pt-0">
-          <SidebarSeparator className="mb-2" />
+        <SidebarFooter className="shell-rail mt-2.5 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-2.5 pb-3 pt-2.5 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.22)]">
+          <SidebarSeparator className="mb-1.5" />
           <Button
             asChild
-            variant="ghost"
+            variant="quiet"
             className={cn(
-              "type-nav mb-1 h-9 w-full justify-start rounded-sm px-2.5 text-[11px] text-sidebar-foreground",
-              settingsActive && "border border-[hsl(var(--brand-accent))]/35 bg-[hsl(var(--brand-accent-ghost))]/65 text-foreground",
+              "type-nav mb-1 h-10 w-full justify-start rounded-[calc(var(--radius-md)-2px)] px-3 text-[10px]",
+              settingsActive && "border-[hsl(var(--brand-accent)/0.2)] bg-[hsl(var(--brand-accent-ghost)/0.6)] text-foreground shadow-[0_14px_24px_-22px_hsl(var(--brand-accent)/0.28)]",
             )}
           >
             <Link to="/settings">
@@ -162,8 +178,8 @@ function AppLayoutContent({
             </Link>
           </Button>
           <Button
-            variant="ghost"
-            className="type-nav h-9 w-full justify-start rounded-sm px-2.5 text-[11px] text-sidebar-foreground"
+            variant="quiet"
+            className="type-nav h-10 w-full justify-start rounded-[calc(var(--radius-md)-2px)] px-3 text-[10px] text-sidebar-foreground/76"
             onClick={signOut}
           >
             <LogOut className="h-4 w-4" />
@@ -172,34 +188,34 @@ function AppLayoutContent({
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className={cn("min-w-0", routeMeta.fullWidth ? "h-svh min-h-0 overflow-hidden" : "overflow-x-hidden")}>
+      <SidebarInset className={cn("app-shell-stage min-w-0", routeMeta.fullWidth ? "h-svh min-h-0 overflow-hidden" : "overflow-x-hidden")}>
         <a
           href="#main-content"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-background focus:px-3 focus:py-2 focus:text-xs"
         >
           Skip to content
         </a>
-        <header className="sticky top-0 z-20 border-b border-border/50 bg-background/95 backdrop-blur md:hidden">
-          <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-4">
-            <SidebarTrigger className="h-8 w-8" />
+        <header className="sticky top-0 z-20 border-b border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.92)] backdrop-blur md:hidden">
+          <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4">
+            <SidebarTrigger className="h-9 w-9 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.9)]" />
             <div className="min-w-0">
-              <p className="type-display-section truncate text-base leading-none text-[hsl(var(--brand-accent))]">{routeMeta.title}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{routeMeta.subtitle}</p>
+              <p className="editorial-kicker">{routeMeta.title}</p>
+              <p className="mt-1 truncate text-sm text-foreground">{routeMeta.subtitle}</p>
             </div>
           </div>
         </header>
-        <main 
-          id="main-content" 
-          tabIndex={-1} 
+        <main
+          id="main-content"
+          tabIndex={-1}
           className={cn(
-            "flex-1 focus:outline-none",
-            routeMeta.fullWidth ? "overflow-hidden flex flex-col" : "overflow-x-hidden overflow-y-auto"
+            "relative z-10 flex-1 focus:outline-none",
+            routeMeta.fullWidth ? "flex flex-col overflow-hidden" : "overflow-x-hidden overflow-y-auto",
           )}
         >
           {routeMeta.fullWidth ? (
             children
           ) : (
-            <div className="mx-auto w-full max-w-[1440px] min-w-0 px-4 py-4 md:px-5 md:py-5 lg:px-6 lg:py-6">
+            <div className="mx-auto w-full max-w-[1480px] min-w-0 px-4 py-5 md:px-6 md:py-6 lg:px-8 lg:py-8">
               {children}
             </div>
           )}

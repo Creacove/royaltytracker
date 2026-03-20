@@ -226,7 +226,7 @@ export default function Auth() {
 
 
         <section className="relative flex items-center justify-center p-4 md:p-8 z-20 col-start-1 row-start-1 lg:col-start-2 lg:row-start-1 bg-transparent">
-          <Card className="w-full max-w-md border border-border/40 lg:border-0 bg-background/85 lg:bg-transparent shadow-2xl lg:shadow-none backdrop-blur-xl lg:backdrop-blur-none transition-all duration-500">
+          <Card surface="hero" className="w-full max-w-md lg:border-0 lg:bg-transparent lg:shadow-none backdrop-blur-xl lg:backdrop-blur-none transition-all duration-500">
             <CardHeader className="text-center pt-8 lg:pt-6">
               <div className="mx-auto mb-5 flex items-center justify-center lg:hidden">
                 <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />

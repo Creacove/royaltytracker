@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { Tables } from "@/integrations/supabase/types";
@@ -555,11 +555,16 @@ export default function DataQualityQueue() {
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
       <PageHeader
-        title={selectedReportId ? "Reviewing Statement" : "Statement Reviews"}
-        subtitle={
-          selectedReportId
-            ? `Resolving issues for ${selectedReportName}`
-            : "Choose a statement and resolve flagged items."
+        title={selectedReportId ? selectedReportName : "Statement Reviews"}
+        meta={
+          <>
+            <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.7)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-[hsl(var(--brand-accent))]">
+              {metrics.open} open
+            </span>
+            <span className="rounded-full border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-elevated)/0.84)] px-2.5 py-1 text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+              {metrics.critical} critical
+            </span>
+          </>
         }
         actions={
           selectedReportId ? (
@@ -571,6 +576,7 @@ export default function DataQualityQueue() {
       />
 
       <KpiStrip
+        variant="hero"
         items={[
           {
             label: "Open Tasks",
@@ -594,23 +600,23 @@ export default function DataQualityQueue() {
       />
 
       {!selectedReportId ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Statements Requiring Review</CardTitle>
+        <Card surface="evidence">
+          <CardHeader className="border-b border-[hsl(var(--border)/0.1)] pb-4">
+            <CardTitle className="text-base">Review queue</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoadingReports ? (
               <p className="text-sm text-muted-foreground">Loading reports...</p>
             ) : reports.length > 0 ? (
-              <Table className="min-w-[760px]">
+              <Table className="w-full min-w-[760px]" variant="evidence" density="compact">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>CMO</TableHead>
-                    <TableHead>File Name</TableHead>
-                    <TableHead>Processed</TableHead>
-                    <TableHead>Open Issues</TableHead>
-                    <TableHead>Critical</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-[10rem]">CMO</TableHead>
+                    <TableHead className="min-w-[24rem]">File Name</TableHead>
+                    <TableHead className="w-[8.5rem] whitespace-nowrap">Processed</TableHead>
+                    <TableHead className="w-[8rem] whitespace-nowrap">Open Issues</TableHead>
+                    <TableHead className="w-[6rem] whitespace-nowrap">Critical</TableHead>
+                    <TableHead className="w-[13rem] text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -622,21 +628,21 @@ export default function DataQualityQueue() {
                       <TableCell className="font-medium">
                         {report.file_name}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                         {safeFormat(report.processed_at, "MMM d, yyyy")}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         <span className="font-bold">{report.metrics?.open ?? 0}</span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap">
                         {(report.metrics?.critical ?? 0) > 0 ? (
                           <span className="font-mono font-bold">{report.metrics?.critical}</span>
                         ) : (
                           <span className="font-mono text-muted-foreground">0</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Button size="sm" onClick={() => setSelectedReportId(report.id)}>
+                      <TableCell className="text-right">
+                        <Button size="sm" className="w-full sm:w-auto" onClick={() => setSelectedReportId(report.id)}>
                           Review Statement
                         </Button>
                       </TableCell>
@@ -645,27 +651,29 @@ export default function DataQualityQueue() {
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground">All reports are clean! No tasks found.</p>
+              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] px-4 py-10 text-center text-sm text-muted-foreground">
+                No statements in review.
+              </div>
             )}
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <CardTitle className="text-base">Issues in {selectedReportName}</CardTitle>
+        <Card surface="hero">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 border-b border-[hsl(var(--border)/0.1)] pb-4">
+            <CardTitle className="text-base">Issues</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoadingTasks ? (
               <p className="text-sm text-muted-foreground">Loading tasks...</p>
             ) : tasks.length > 0 ? (
-               <Table className="min-w-[940px]">
+               <Table className="w-full min-w-[940px]" variant="evidence" density="compact">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Severity</TableHead>
-                    <TableHead>Issue</TableHead>
-                    <TableHead>What Needs Review</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead className="w-[8.5rem]">Status</TableHead>
+                    <TableHead className="w-[8.5rem]">Severity</TableHead>
+                    <TableHead className="w-[13rem]">Issue</TableHead>
+                    <TableHead className="min-w-[24rem]">What Needs Review</TableHead>
+                    <TableHead className="w-[6rem] whitespace-nowrap">Date</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -688,7 +696,7 @@ export default function DataQualityQueue() {
                           key={task.id}
                           role="button"
                           tabIndex={0}
-                          className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={(event) => {
                             event.currentTarget.focus();
                             setSelectedTask(task);
@@ -707,8 +715,10 @@ export default function DataQualityQueue() {
                             <StatusBadge status={task.severity} />
                           </TableCell>
                           <TableCell className="text-xs">{toPublisherIssueLabel(String(issuePreview.type || ""))}</TableCell>
-                          <TableCell className="max-w-[400px] truncate text-sm">{toPublisherIssueMessage(issuePreview)}</TableCell>
-                          <TableCell className="text-muted-foreground text-[10px]">
+                          <TableCell className="min-w-[24rem] whitespace-normal text-sm leading-relaxed">
+                            {toPublisherIssueMessage(issuePreview)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-[10px] text-muted-foreground">
                             {safeFormat(task.created_at, "HH:mm")}
                           </TableCell>
                         </TableRow>
@@ -718,17 +728,19 @@ export default function DataQualityQueue() {
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground">No open tasks for this report.</p>
+              <div className="surface-muted forensic-frame rounded-[calc(var(--radius-sm))] px-4 py-10 text-center text-sm text-muted-foreground">
+                No open tasks remain for this statement.
+              </div>
             )}
           </CardContent>
         </Card>
       )}
 
       <Sheet open={!!selectedTask} onOpenChange={(open) => !open && setSelectedTask(null)}>
-        <SheetContent className="w-[min(96vw,1180px)] max-w-[min(96vw,1180px)] overflow-y-auto sm:max-w-[min(92vw,1180px)]">
+        <SheetContent className="w-[min(98vw,1260px)] max-w-[min(98vw,1260px)] overflow-y-auto p-0 sm:max-w-[min(95vw,1260px)]">
           {selectedTask && activeDetail ? (
             <>
-              <SheetHeader>
+              <SheetHeader className="border-b border-[hsl(var(--border)/0.1)] px-6 pb-5 pt-6">
                 <SheetTitle className="text-xl flex items-center justify-between pr-8">
                   <div className="flex flex-col">
                     <span>
@@ -750,9 +762,9 @@ export default function DataQualityQueue() {
                 </SheetTitle>
               </SheetHeader>
 
-              <div className="mt-6 rhythm-section">
+              <div className="mt-6 px-6 pb-6 rhythm-section">
                 {/* 1. Decision Card (Action Area) */}
-                <div className="border-t border-black/20 pt-4">
+                <div className="surface-hero forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="p-1">
                       {selectedTask.status === "resolved"
@@ -766,8 +778,8 @@ export default function DataQualityQueue() {
 
                   {selectedTask.status === "resolved" ? (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <div className="space-y-4 border-t border-black/20 pt-3">
-                        <div className="flex items-center justify-between border-b border-black/20 pb-3">
+                      <div className="space-y-4 border-t border-[hsl(var(--border)/0.1)] pt-3">
+                        <div className="flex items-center justify-between border-b border-[hsl(var(--border)/0.1)] pb-3">
                           <div className="flex items-center gap-2">
                             <Lock className="h-3 w-3 text-foreground" />
                             <span className="text-[10px] font-black tracking-widest text-foreground uppercase">Audit Trail Locked</span>
@@ -796,7 +808,7 @@ export default function DataQualityQueue() {
                             <span className="font-medium font-mono text-xs">{safeFormat(selectedTask.resolved_at, "PPP 'at' HH:mm")}</span>
                           </div>
 
-                          <div className="mt-2 border-t border-black/20 pt-3">
+                          <div className="mt-2 border-t border-[hsl(var(--border)/0.1)] pt-3">
                             <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Impact Analysis</p>
                             <div className="space-y-2">
                               <p className="text-sm">
@@ -831,7 +843,7 @@ export default function DataQualityQueue() {
                     <>
                       {/* Multi-Issue Warning */}
                       {activeDetail.errors.length > 1 && (
-                        <div className="mb-4 border-t border-black/20 pt-3 text-foreground text-xs flex items-start gap-2">
+                        <div className="mb-4 flex items-start gap-2 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--tone-warning)/0.16)] bg-[hsl(var(--tone-warning)/0.08)] px-4 py-3 text-xs text-foreground">
                           <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-[hsl(var(--tone-warning))]" />
                           <div>
                             <p className="font-bold">Multiple issues found for this row.</p>
@@ -845,7 +857,7 @@ export default function DataQualityQueue() {
                         <div className="rhythm-section">
                           {/* Progress Indicator */}
                           {activeDetail.errors.length > 1 && (
-                            <div className="flex items-center justify-between border-t border-black/20 py-2 text-[10px] font-black uppercase tracking-tighter text-foreground">
+                            <div className="flex items-center justify-between border-t border-[hsl(var(--border)/0.1)] py-2 text-[10px] font-black uppercase tracking-tighter text-foreground">
                               <span>
                                 Now Resolving: Issue {activeDetail.activeIssueIndex + 1} of {activeDetail.errors.length}
                               </span>
@@ -863,7 +875,7 @@ export default function DataQualityQueue() {
                           )}
 
                           {/* Active Error Form */}
-                          <div className="space-y-4 border-t border-black/20 pt-3">
+                          <div className="surface-elevated forensic-frame space-y-4 rounded-[calc(var(--radius-sm))] p-4">
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                 {toReadableField(activeDetail.activeError.field || "Review item")}
@@ -1033,7 +1045,7 @@ export default function DataQualityQueue() {
 
                           {/* Remaining Issues List (Read Only) */}
                           {activeDetail.errors.length > 1 && (
-                            <div className="space-y-2">
+                            <div className="surface-elevated forensic-frame space-y-2 rounded-[calc(var(--radius-sm))] p-4">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">
                                   Remaining Fixes ({Math.max(0, activeDetail.errors.length - 1)})
@@ -1066,7 +1078,7 @@ export default function DataQualityQueue() {
                               {activeDetail.errors
                                 .filter((_: any, idx: number) => idx !== activeDetail.activeIssueIndex)
                                 .map((err: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 border-b border-black/15 py-1.5 text-[10px] text-muted-foreground">
+                                <div key={i} className="flex items-center gap-2 border-b border-[hsl(var(--border)/0.08)] py-1.5 text-[10px] text-muted-foreground">
                                   <div className="h-1.5 w-1.5 bg-muted-foreground" />
                                   <span className="font-bold">{toPublisherIssueLabel(err?.type)}</span>: {toPublisherIssueMessage(err)}
                                 </div>
@@ -1077,7 +1089,7 @@ export default function DataQualityQueue() {
 
                         {/* Mass Fix Toggle */}
                         {(activeDetail.isCurrency || activeDetail.isPeriod) && (
-                          <div className="flex items-center space-x-2 border-t border-black/20 py-3">
+                          <div className="surface-elevated forensic-frame flex items-center space-x-2 rounded-[calc(var(--radius-sm))] px-4 py-3">
                             <Checkbox
                               id="mass-fix"
                               checked={applyToReport}
@@ -1097,13 +1109,13 @@ export default function DataQualityQueue() {
                           </div>
                         )}
 
-                        <div className="space-y-2">
+                        <div className="surface-elevated forensic-frame space-y-2 rounded-[calc(var(--radius-sm))] p-4">
                           <Label htmlFor="resolution-note" className="text-[10px] uppercase font-bold text-muted-foreground">Reviewer Note (Optional)</Label>
                           <Textarea
                             id="resolution-note"
                             placeholder="Audit trail note..."
                             value={resolutionNote}
-                            className="resize-none h-20 text-sm focus:ring-2 focus:ring-primary"
+                            className="h-20 resize-none text-sm"
                             onChange={(e) => setResolutionNote(e.target.value)}
                           />
                         </div>
@@ -1117,7 +1129,7 @@ export default function DataQualityQueue() {
                             {actionMutation.isPending ? "Saving..." : "Save Review"}
                           </Button>
                           <Button
-                            variant="ghost"
+                            variant="quiet"
                             onClick={() => actionMutation.mutate({ taskId: selectedTask.id, action: "dismiss" })}
                             disabled={actionMutation.isPending}
                             className="flex-1 text-muted-foreground text-xs"
@@ -1131,14 +1143,14 @@ export default function DataQualityQueue() {
                 </div>
 
                 {/* 2. Evidence Grid */}
-                <section className="border-t border-black/20 pt-4">
-                  <h3 className="pb-2 text-sm font-display text-muted-foreground">Source Evidence</h3>
+                <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
+                  <h3 className="pb-3 text-sm font-display text-muted-foreground">Source Evidence</h3>
                   {sourceRow ? (
                     <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
                       {Object.entries((sourceRow.raw_payload as any) || {})
                         .filter(([_, v]) => v !== null && v !== undefined && v !== "")
                         .map(([key, value]) => (
-                          <div key={key} className="flex flex-col border-b border-black/15 py-1">
+                          <div key={key} className="flex flex-col border-b border-[hsl(var(--border)/0.08)] py-1">
                             <span className="text-[10px] font-bold uppercase text-muted-foreground">
                               {String(key).replace(/_/g, " ")}
                             </span>
@@ -1153,14 +1165,14 @@ export default function DataQualityQueue() {
 
                 {/* 3. Normalized Mapping */}
                 {transaction?.custom_properties && Object.keys(transaction.custom_properties).length > 0 && (
-                  <section className="border-t border-black/20 pt-4">
+                  <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
                     <h3 className="flex items-center gap-2 pb-2 text-sm font-display text-foreground">
                       <ClipboardCheck className="h-3 w-3" />
                       Mapped Custom Data
                     </h3>
                     <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
                       {Object.entries((transaction.custom_properties as any) || {}).map(([key, value]) => (
-                        <div key={key} className="flex flex-col border-b border-black/15 py-1">
+                        <div key={key} className="flex flex-col border-b border-[hsl(var(--border)/0.08)] py-1">
                           <span className="text-[10px] font-bold uppercase text-muted-foreground">
                             {String(key).replace(/_/g, " ")}
                           </span>
@@ -1171,12 +1183,12 @@ export default function DataQualityQueue() {
                   </section>
                 )}
 
-                <section className="border-t border-black/20 pt-4">
-                  <h3 className="pb-2 text-sm font-display text-muted-foreground">System Mapping</h3>
+                <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
+                  <h3 className="pb-3 text-sm font-display text-muted-foreground">System Mapping</h3>
                   {sourceFields.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                       {sourceFields.map((field) => (
-                        <div key={field.id} className="border-t border-black/20 pt-3">
+                        <div key={field.id} className="border-t border-[hsl(var(--border)/0.08)] pt-3">
                           <p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">{field.field_name}</p>
                           <p className="truncate text-sm font-semibold" title={field.normalized_value?.toString()}>
                             {field.normalized_value ?? <span className="text-destructive">Missing</span>}
@@ -1203,7 +1215,7 @@ export default function DataQualityQueue() {
                 </section>
 
                 {/* 4. Technical Details (Collapsible) */}
-                <details className="group border-t border-black/20 pt-3">
+                <details className="group surface-muted forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                     Technical Details (Advanced)
                   </summary>
@@ -1211,13 +1223,13 @@ export default function DataQualityQueue() {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Task Payload</p>
-                        <pre className="max-h-40 overflow-auto border border-black/15 bg-background p-3 text-[10px] text-muted-foreground">
+                        <pre className="max-h-40 overflow-auto rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.84)] p-3 text-[10px] text-muted-foreground">
                           {JSON.stringify(selectedTask.payload, null, 2)}
                         </pre>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Source Raw Evidence</p>
-                        <pre className="max-h-40 overflow-auto border border-black/15 bg-background p-3 text-[10px] text-muted-foreground">
+                        <pre className="max-h-40 overflow-auto rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.08)] bg-[hsl(var(--surface-panel)/0.84)] p-3 text-[10px] text-muted-foreground">
                           {JSON.stringify(sourceRow?.evidence || sourceRow?.raw_payload, null, 2)}
                         </pre>
                       </div>
