@@ -13,9 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ClipboardCheck, AlertTriangle, CircleCheckBig, Lock } from "lucide-react";
+import { ClipboardCheck, AlertTriangle, ChevronLeft, ChevronRight, CircleCheckBig, Lock } from "lucide-react";
 import { format, isValid } from "date-fns";
 import { KpiStrip, PageHeader } from "@/components/layout";
+import { cn } from "@/lib/utils";
 
 type ReviewTask = Tables<"review_tasks">;
 type SourceRow = Tables<"source_rows">;
@@ -146,6 +147,32 @@ const toPublisherIssueMessage = (issue: QueueIssue | null | undefined): string =
       return "Source evidence is incomplete. Please confirm or provide the missing source details.";
     default:
       return String(issue.message || "Please review this row and confirm the correct value.");
+  }
+};
+
+const toIssueValueText = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const parseCorrectedPeriod = (value: string | null | undefined): { start?: string; end?: string } => {
+  if (!value || !value.startsWith("{")) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as { start?: string; end?: string })
+      : {};
+  } catch {
+    return {};
   }
 };
 
@@ -552,6 +579,28 @@ export default function DataQualityQueue() {
     };
   }, [selectedTask, activeIssueIndex]);
 
+  const sourcePayload = useMemo(() => {
+    const raw = sourceRow?.raw_payload;
+    return raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, any>) : null;
+  }, [sourceRow]);
+
+  const activeTrackTitle = sourcePayload?.track_title || sourcePayload?.track_name || "Unknown Track";
+  const activeArtistName = sourcePayload?.track_artist || sourcePayload?.artist_name || "Unknown Artist";
+  const activeIssueLabel = activeDetail
+    ? toPublisherIssueLabel(String(activeDetail.activeError.type || activeDetail.payload?.error_type || selectedTask?.task_type || ""))
+    : "Review needed";
+  const activeIssueMessage = activeDetail ? toPublisherIssueMessage(activeDetail.activeError) : "";
+  const activeFieldLabel = activeDetail?.activeError.field ? toReadableField(activeDetail.activeError.field) : "Review item";
+  const activeActualValue = activeDetail ? toIssueValueText(activeDetail.activeError.actual) : null;
+  const activeExpectedValue = activeDetail ? toIssueValueText(activeDetail.activeError.expected) : null;
+  const correctedPeriod = useMemo(() => parseCorrectedPeriod(resolutionForm.correctedValue), [resolutionForm.correctedValue]);
+  const canApplyToStatement = Boolean(activeDetail && (activeDetail.isCurrency || activeDetail.isPeriod));
+  const saveReviewLabel = actionMutation.isPending
+    ? "Saving..."
+    : activeDetail && activeDetail.errors.length > 1 && activeDetail.activeIssueIndex < activeDetail.errors.length - 1
+      ? "Save and continue"
+      : "Save resolution";
+
   return (
     <div className="rhythm-page min-w-0 overflow-x-hidden">
       <PageHeader
@@ -741,40 +790,46 @@ export default function DataQualityQueue() {
           {selectedTask && activeDetail ? (
             <>
               <SheetHeader className="border-b border-[hsl(var(--border)/0.1)] px-6 pb-5 pt-6">
-                <SheetTitle className="text-xl flex items-center justify-between pr-8">
-                  <div className="flex flex-col">
-                    <span>
-                      {(sourceRow?.raw_payload as any)?.track_title || (sourceRow?.raw_payload as any)?.track_name || "Unknown Track"}
-                    </span>
-                    <span className="text-sm font-normal text-muted-foreground">
-                      by {(sourceRow?.raw_payload as any)?.track_artist || (sourceRow?.raw_payload as any)?.artist_name || "Unknown Artist"}
-                    </span>
-                    {sourceRow && (
-                      <span className="text-[10px] mt-1 font-bold uppercase text-primary/60 tracking-wider">
-                        Audit Reference: Page {sourceRow.source_page || 1}, Row {sourceRow.source_row_index + 1}
+                <div className="flex flex-col gap-4 pr-8 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="editorial-kicker">
+                        {selectedTask.status === "resolved" ? "Resolved issue" : "Resolve issue"}
                       </span>
-                    )}
+                      <StatusBadge status={selectedTask.status} />
+                      <StatusBadge status={selectedTask.severity} />
+                    </div>
+                    <SheetTitle className="min-w-0 break-words text-xl">{activeIssueLabel}</SheetTitle>
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-foreground">{activeTrackTitle}</p>
+                      <p className="text-sm text-muted-foreground">by {activeArtistName}</p>
+                      {sourceRow ? (
+                        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[hsl(var(--brand-accent-soft))]">
+                          Page {sourceRow.source_page || 1} • Row {sourceRow.source_row_index + 1}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <StatusBadge status={selectedTask.status} />
-                    <StatusBadge status={selectedTask.severity} />
-                  </div>
-                </SheetTitle>
+                </div>
               </SheetHeader>
 
-              <div className="mt-6 px-6 pb-6 rhythm-section">
+              <div className="mt-6 space-y-6 px-6 pb-6">
                 {/* 1. Decision Card (Action Area) */}
-                <div className="surface-hero forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-1">
-                      {selectedTask.status === "resolved"
-                        ? <CircleCheckBig className="h-5 w-5 text-[hsl(var(--tone-success))]" />
-                        : <ClipboardCheck className="h-5 w-5 text-[hsl(var(--brand-accent))]" />}
+                <div
+                  className={cn(
+                    selectedTask.status === "resolved"
+                      ? "surface-hero forensic-frame rounded-[calc(var(--radius)-2px)] p-5"
+                      : "space-y-5",
+                  )}
+                >
+                  {selectedTask.status === "resolved" ? (
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="p-1">
+                        <CircleCheckBig className="h-5 w-5 text-[hsl(var(--tone-success))]" />
+                      </div>
+                      <h3 className="font-display text-xl">Resolution Summary</h3>
                     </div>
-                    <h3 className="font-display text-xl">
-                      {selectedTask.status === "resolved" ? "Resolution Summary" : selectedTask.status === "in_progress" ? "Continue Review" : "Review Decision"}
-                    </h3>
-                  </div>
+                  ) : null}
 
                   {selectedTask.status === "resolved" ? (
                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -841,53 +896,83 @@ export default function DataQualityQueue() {
                     </div>
                   ) : (
                     <>
-                      {/* Multi-Issue Warning */}
-                      {activeDetail.errors.length > 1 && (
-                        <div className="mb-4 flex items-start gap-2 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--tone-warning)/0.16)] bg-[hsl(var(--tone-warning)/0.08)] px-4 py-3 text-xs text-foreground">
-                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-[hsl(var(--tone-warning))]" />
-                          <div>
-                            <p className="font-bold">Multiple issues found for this row.</p>
-                            <p>Please resolve each issue below. The task will stay open until all critical items are fixed.</p>
+                      <div className="surface-hero forensic-frame mb-4 rounded-[calc(var(--radius)-2px)] p-5">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 space-y-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="editorial-kicker">Review context</span>
+                              {activeDetail.errors.length > 1 ? (
+                                <span className="rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.78)] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                                  Issue {activeDetail.activeIssueIndex + 1} of {activeDetail.errors.length}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="max-w-3xl text-sm leading-6 text-foreground/88">{activeIssueMessage}</p>
+                          </div>
+
+                          {activeDetail.errors.length > 1 ? (
+                            <div className="flex items-center gap-2 self-start">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={activeDetail.activeIssueIndex === 0}
+                                onClick={() => setActiveIssueIndex((current) => Math.max(0, current - 1))}
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                                Previous
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                disabled={activeDetail.activeIssueIndex >= activeDetail.errors.length - 1}
+                                onClick={() => setActiveIssueIndex((current) => Math.min(activeDetail.errors.length - 1, current + 1))}
+                              >
+                                Next
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Field</p>
+                            <p className="mt-2 text-sm font-semibold capitalize text-foreground">{activeFieldLabel}</p>
+                          </div>
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Current value</p>
+                            <p className="mt-2 break-words font-mono text-xs text-foreground [overflow-wrap:anywhere]">
+                              {activeActualValue ?? "Not supplied"}
+                            </p>
+                          </div>
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">
+                              {activeExpectedValue ? "Expected" : "Audit reference"}
+                            </p>
+                            <p className="mt-2 break-words font-mono text-xs text-foreground [overflow-wrap:anywhere]">
+                              {activeExpectedValue ?? (sourceRow ? `Page ${sourceRow.source_page || 1} • Row ${sourceRow.source_row_index + 1}` : "This row")}
+                            </p>
                           </div>
                         </div>
-                      )}
+                      </div>
 
                       {/* Dynamic Resolution Form */}
-                      <div className="rhythm-section">
-                        <div className="rhythm-section">
-                          {/* Progress Indicator */}
-                          {activeDetail.errors.length > 1 && (
-                            <div className="flex items-center justify-between border-t border-[hsl(var(--border)/0.1)] py-2 text-[10px] font-black uppercase tracking-tighter text-foreground">
-                              <span>
-                                Now Resolving: Issue {activeDetail.activeIssueIndex + 1} of {activeDetail.errors.length}
-                              </span>
-                              <div className="flex gap-1">
-                                {activeDetail.errors.map((_: any, i: number) => (
-                                  <div
-                                    key={i}
-                                    className={`h-1.5 w-4 border border-border ${
-                                      i === activeDetail.activeIssueIndex ? "bg-foreground" : "bg-transparent"
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)]">
+                        <div className="space-y-4">
                           {/* Active Error Form */}
                           <div className="surface-elevated forensic-frame space-y-4 rounded-[calc(var(--radius-sm))] p-4">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                {toReadableField(activeDetail.activeError.field || "Review item")}
-                              </span>
-                              {activeDetail.activeError.severity && <StatusBadge status={activeDetail.activeError.severity} />}
+                            <div className="space-y-1.5">
+                              <h4 className="text-base font-semibold text-foreground">Choose the right fix</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Keep the correction as focused as possible for this issue.
+                              </p>
                             </div>
 
                             {activeDetail.isHeaderMapping && (
                               <div className="space-y-3">
-                                <p className="text-sm text-foreground">
-                                  {toPublisherIssueMessage(activeDetail.activeError)}
-                                </p>
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Map this header to</Label>
                                 <Select
                                   value={resolutionForm.canonicalField || "__none__"}
                                   onValueChange={(value) =>
@@ -924,8 +1009,8 @@ export default function DataQualityQueue() {
                                 </Select>
 
                                 {resolutionForm.canonicalField === "custom_property" && (
-                                  <div className="space-y-2 pt-2 animate-in fade-in slide-in-from-top-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Property Name (System ID)</Label>
+                                  <div className="space-y-2 pt-1 animate-in fade-in slide-in-from-top-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Custom property key</Label>
                                     <Input
                                       type="text"
                                       className="font-mono"
@@ -935,8 +1020,8 @@ export default function DataQualityQueue() {
                                         setResolutionForm({ ...resolutionForm, customMappingKey: toSnakeCase(e.target.value) })
                                       }
                                     />
-                                    <p className="text-[10px] text-muted-foreground italic">
-                                      This will be saved as <span className="font-bold text-primary">{resolutionForm.customMappingKey || "..."}</span>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      Saves as <span className="font-mono text-foreground">{resolutionForm.customMappingKey || "..."}</span>
                                     </p>
                                   </div>
                                 )}
@@ -945,27 +1030,26 @@ export default function DataQualityQueue() {
 
                             {activeDetail.isUncertainty && (
                               <div className="space-y-3">
-                                <p className="text-sm text-foreground">
-                                  {toPublisherIssueMessage(activeDetail.activeError)}
-                                </p>
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Correct value (optional)</Label>
                                 <Input
                                   type="text"
-                                  placeholder="Enter correct value"
+                                  placeholder="Enter the correct value if you want to override"
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
                                 />
+                                <p className="text-xs text-muted-foreground">
+                                  Leave this blank if the extracted value is acceptable and you only want to approve it.
+                                </p>
                               </div>
                             )}
 
                             {activeDetail.isCorrection && (
                               <div className="space-y-3">
-                                <p className="text-sm text-foreground">
-                                  {toPublisherIssueMessage(activeDetail.activeError)}
-                                </p>
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Correct {activeFieldLabel}</Label>
                                 <Input
                                   type="text"
                                   className="font-mono"
-                                  placeholder={`Enter corrected ${toReadableField(activeDetail.activeError.field || "value")}`}
+                                  placeholder={`Enter corrected ${activeFieldLabel}`}
                                   value={resolutionForm.correctedValue}
                                   onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
                                 />
@@ -974,7 +1058,7 @@ export default function DataQualityQueue() {
 
                             {activeDetail.isCurrency && (
                               <div className="space-y-3">
-                                <p className="text-sm text-foreground">Currency is missing.</p>
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Currency code</Label>
                                 <Select
                                   value={resolutionForm.correctedValue || "__none__"}
                                   onValueChange={(value) =>
@@ -988,7 +1072,7 @@ export default function DataQualityQueue() {
                                     <SelectValue placeholder="Select currency" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="__none__">Select...</SelectItem>
+                                    <SelectItem value="__none__">Select currency...</SelectItem>
                                     <SelectItem value="USD">USD - Dollar</SelectItem>
                                     <SelectItem value="EUR">EUR - Euro</SelectItem>
                                     <SelectItem value="GBP">GBP - Pound</SelectItem>
@@ -999,143 +1083,132 @@ export default function DataQualityQueue() {
                             )}
 
                             {activeDetail.isPeriod && (
-                              <div className="space-y-2">
-                                <p className="text-xs text-muted-foreground">{toPublisherIssueMessage(activeDetail.activeError)}</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <Input type="date" className="h-9 px-2 text-xs" onChange={(e) => {
-                                    try {
-                                      const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
-                                        ? JSON.parse(resolutionForm.correctedValue)
-                                        : {};
-                                      c.start = e.target.value;
-                                      setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify(c) });
-                                    } catch (err) {
-                                      setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify({ start: e.target.value }) });
-                                    }
-                                  }} />
-                                  <Input type="date" className="h-9 px-2 text-xs" onChange={(e) => {
-                                    try {
-                                      const c = (resolutionForm.correctedValue && resolutionForm.correctedValue.startsWith('{'))
-                                        ? JSON.parse(resolutionForm.correctedValue)
-                                        : {};
-                                      c.end = e.target.value;
-                                      setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify(c) });
-                                    } catch (err) {
-                                      setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify({ end: e.target.value }) });
-                                    }
-                                  }} />
+                              <div className="space-y-3">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Correct date window</Label>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Start date</Label>
+                                    <Input
+                                      type="date"
+                                      value={correctedPeriod.start ?? ""}
+                                      onChange={(e) => {
+                                        const nextValue = { ...correctedPeriod, start: e.target.value };
+                                        setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify(nextValue) });
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">End date</Label>
+                                    <Input
+                                      type="date"
+                                      value={correctedPeriod.end ?? ""}
+                                      onChange={(e) => {
+                                        const nextValue = { ...correctedPeriod, end: e.target.value };
+                                        setResolutionForm({ ...resolutionForm, correctedValue: JSON.stringify(nextValue) });
+                                      }}
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             )}
 
                             {activeDetail.isProvenance && (
-                              <div className="space-y-2">
-                                <p className="text-sm">{toPublisherIssueMessage(activeDetail.activeError)}</p>
-                                {activeDetail.activeError.field === "source_page" && (
-                                  <Input
-                                    type="number"
-                                    placeholder="Page #"
-                                    value={resolutionForm.correctedValue}
-                                    onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
-                                  />
+                              <div className="space-y-3">
+                                {activeDetail.activeError.field === "source_page" ? (
+                                  <>
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Source page</Label>
+                                    <Input
+                                      type="number"
+                                      placeholder="Page #"
+                                      value={resolutionForm.correctedValue}
+                                      onChange={(e) => setResolutionForm({ ...resolutionForm, correctedValue: e.target.value })}
+                                    />
+                                  </>
+                                ) : (
+                                  <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-3 py-3 text-sm text-muted-foreground">
+                                    No corrected value is needed here. Save the review once you have confirmed the source evidence is acceptable.
+                                  </div>
                                 )}
                               </div>
                             )}
+
+                            {!activeDetail.isHeaderMapping &&
+                              !activeDetail.isUncertainty &&
+                              !activeDetail.isCorrection &&
+                              !activeDetail.isCurrency &&
+                              !activeDetail.isPeriod &&
+                              !activeDetail.isProvenance && (
+                                <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] px-3 py-3 text-sm text-muted-foreground">
+                                  No data correction is required here. Save the review once you have confirmed the issue.
+                                </div>
+                              )}
                           </div>
 
-                          {/* Remaining Issues List (Read Only) */}
-                          {activeDetail.errors.length > 1 && (
-                            <div className="surface-elevated forensic-frame space-y-2 rounded-[calc(var(--radius-sm))] p-4">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-muted-foreground uppercase opacity-60">
-                                  Remaining Fixes ({Math.max(0, activeDetail.errors.length - 1)})
-                                </span>
-                                <div className="flex gap-2">
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={activeDetail.activeIssueIndex === 0}
-                                    onClick={() => setActiveIssueIndex((current) => Math.max(0, current - 1))}
-                                  >
-                                    Previous
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={activeDetail.activeIssueIndex >= activeDetail.errors.length - 1}
-                                    onClick={() =>
-                                      setActiveIssueIndex((current) =>
-                                        Math.min(activeDetail.errors.length - 1, current + 1)
-                                      )
-                                    }
-                                  >
-                                    Next
-                                  </Button>
-                                </div>
-                              </div>
-                              {activeDetail.errors
-                                .filter((_: any, idx: number) => idx !== activeDetail.activeIssueIndex)
-                                .map((err: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 border-b border-[hsl(var(--border)/0.08)] py-1.5 text-[10px] text-muted-foreground">
-                                  <div className="h-1.5 w-1.5 bg-muted-foreground" />
-                                  <span className="font-bold">{toPublisherIssueLabel(err?.type)}</span>: {toPublisherIssueMessage(err)}
-                                </div>
-                                ))}
-                            </div>
-                          )}
                         </div>
 
-                        {/* Mass Fix Toggle */}
-                        {(activeDetail.isCurrency || activeDetail.isPeriod) && (
-                          <div className="surface-elevated forensic-frame flex items-center space-x-2 rounded-[calc(var(--radius-sm))] px-4 py-3">
-                            <Checkbox
-                              id="mass-fix"
-                              checked={applyToReport}
-                              onCheckedChange={(checked) => setApplyToReport(!!checked)}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                              <label
-                                htmlFor="mass-fix"
-                                className="text-xs font-bold leading-none cursor-pointer text-foreground"
-                              >
-                                Apply to all similar issues in this statement
-                              </label>
-                              <p className="text-[10px] text-muted-foreground">
-                                Use this correction for all matching rows in {reports.find(r => r.id === selectedReportId)?.file_name || "this statement"}.
+                        <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+                          <div className="surface-hero forensic-frame space-y-4 rounded-[calc(var(--radius-sm))] p-4">
+                            <div className="space-y-1.5">
+                              <p className="editorial-kicker">Finalize</p>
+                              <h4 className="text-base font-semibold text-foreground">Apply this review</h4>
+                              <p className="text-sm leading-6 text-muted-foreground">
+                                {canApplyToStatement
+                                  ? `This will update the current issue now. You can also reuse the same correction across ${selectedReportName}.`
+                                  : "This will save the decision for the current issue only."}
                               </p>
                             </div>
+
+                            {canApplyToStatement && (
+                              <label
+                                htmlFor="mass-fix"
+                                className="flex cursor-pointer items-start gap-3 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.72)] p-3"
+                              >
+                                <Checkbox
+                                  id="mass-fix"
+                                  checked={applyToReport}
+                                  onCheckedChange={(checked) => setApplyToReport(!!checked)}
+                                  className="mt-0.5"
+                                />
+                                <span className="grid gap-1.5 leading-none">
+                                  <span className="text-sm font-semibold text-foreground">Apply across this statement</span>
+                                  <span className="text-xs leading-5 text-muted-foreground">
+                                    Reuse this correction for matching issues in {selectedReportName}.
+                                  </span>
+                                </span>
+                              </label>
+                            )}
+
+                            <div className="space-y-2">
+                              <Label htmlFor="resolution-note" className="text-[10px] uppercase font-bold text-muted-foreground">
+                                Reviewer note
+                              </Label>
+                              <Textarea
+                                id="resolution-note"
+                                placeholder="Add context for the audit trail..."
+                                value={resolutionNote}
+                                className="h-24 resize-none text-sm"
+                                onChange={(e) => setResolutionNote(e.target.value)}
+                              />
+                            </div>
+
+                            <div className="flex flex-col gap-2 pt-1">
+                              <Button
+                                onClick={handleResolve}
+                                disabled={actionMutation.isPending}
+                                className="w-full font-bold"
+                              >
+                                {saveReviewLabel}
+                              </Button>
+                              <Button
+                                variant="quiet"
+                                onClick={() => actionMutation.mutate({ taskId: selectedTask.id, action: "dismiss" })}
+                                disabled={actionMutation.isPending}
+                                className="w-full text-xs text-muted-foreground"
+                              >
+                                Skip for now
+                              </Button>
+                            </div>
                           </div>
-                        )}
-
-                        <div className="surface-elevated forensic-frame space-y-2 rounded-[calc(var(--radius-sm))] p-4">
-                          <Label htmlFor="resolution-note" className="text-[10px] uppercase font-bold text-muted-foreground">Reviewer Note (Optional)</Label>
-                          <Textarea
-                            id="resolution-note"
-                            placeholder="Audit trail note..."
-                            value={resolutionNote}
-                            className="h-20 resize-none text-sm"
-                            onChange={(e) => setResolutionNote(e.target.value)}
-                          />
-                        </div>
-
-                        <div className="flex gap-3 pt-2">
-                          <Button
-                            onClick={handleResolve}
-                            disabled={actionMutation.isPending}
-                            className="flex-1 font-bold"
-                          >
-                            {actionMutation.isPending ? "Saving..." : "Save Review"}
-                          </Button>
-                          <Button
-                            variant="quiet"
-                            onClick={() => actionMutation.mutate({ taskId: selectedTask.id, action: "dismiss" })}
-                            disabled={actionMutation.isPending}
-                            className="flex-1 text-muted-foreground text-xs"
-                          >
-                            Skip for Now
-                          </Button>
                         </div>
                       </div>
                     </>
@@ -1144,7 +1217,7 @@ export default function DataQualityQueue() {
 
                 {/* 2. Evidence Grid */}
                 <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
-                  <h3 className="pb-3 text-sm font-display text-muted-foreground">Source Evidence</h3>
+                  <h3 className="pb-3 text-sm font-display text-muted-foreground">Source</h3>
                   {sourceRow ? (
                     <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
                       {Object.entries((sourceRow.raw_payload as any) || {})
@@ -1159,7 +1232,7 @@ export default function DataQualityQueue() {
                         ))}
                     </div>
                   ) : (
-                    <p className="text-sm italic text-muted-foreground">No evidence data found for this row.</p>
+                    <p className="text-sm italic text-muted-foreground">No source data found for this row.</p>
                   )}
                 </section>
 
@@ -1168,7 +1241,7 @@ export default function DataQualityQueue() {
                   <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
                     <h3 className="flex items-center gap-2 pb-2 text-sm font-display text-foreground">
                       <ClipboardCheck className="h-3 w-3" />
-                      Mapped Custom Data
+                      Custom fields
                     </h3>
                     <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
                       {Object.entries((transaction.custom_properties as any) || {}).map(([key, value]) => (
@@ -1184,7 +1257,7 @@ export default function DataQualityQueue() {
                 )}
 
                 <section className="surface-elevated forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
-                  <h3 className="pb-3 text-sm font-display text-muted-foreground">System Mapping</h3>
+                  <h3 className="pb-3 text-sm font-display text-muted-foreground">Normalized row</h3>
                   {sourceFields.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                       {sourceFields.map((field) => (
@@ -1210,14 +1283,14 @@ export default function DataQualityQueue() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm italic text-muted-foreground">No mappings available for this row.</p>
+                    <p className="text-sm italic text-muted-foreground">No normalized values are available for this row.</p>
                   )}
                 </section>
 
                 {/* 4. Technical Details (Collapsible) */}
                 <details className="group surface-muted forensic-frame rounded-[calc(var(--radius)-2px)] p-5">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-                    Technical Details (Advanced)
+                    Technical details
                   </summary>
                   <div className="mt-4 space-y-4">
                     <div className="grid gap-4 md:grid-cols-2">
