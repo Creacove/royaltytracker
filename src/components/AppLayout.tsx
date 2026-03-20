@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { ArrowRightLeft, BarChart3, ChevronRight, LayoutDashboard, LogOut, Settings2, ShieldAlert, Upload } from "lucide-react";
 
+import { DeskProductMark } from "@/components/DeskProductMark";
 import type { RouteMeta } from "@/lib/route-meta";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -83,14 +84,12 @@ function AppLayoutContent({
       >
         <SidebarHeader className="shell-rail gap-3 rounded-[calc(var(--radius)-2px)] border border-sidebar-border/40 px-4 py-4 shadow-[0_24px_36px_-30px_hsl(var(--surface-shadow)/0.24)] md:gap-2.5 md:px-3.5 md:py-3">
           <Link to={hasAnyUploads ? "/" : "/reports"} className="group flex flex-col items-start gap-2.5 rounded-[calc(var(--radius-sm))] px-0.5 py-0.5 text-left md:gap-2">
-            <img
-              src="/ordersounds-logo.png"
-              alt="OrderSounds"
-              className="h-7 w-auto object-contain drop-shadow-[0_8px_12px_hsl(var(--surface-shadow)/0.08)] motion-standard group-hover:-translate-y-0.5 md:h-6"
+            <DeskProductMark
+              compact
+              className="motion-standard group-hover:-translate-y-0.5"
+              logoClassName="drop-shadow-[0_8px_12px_hsl(var(--surface-shadow)/0.08)]"
+              descriptor="Unified music reporting workspace"
             />
-            <p className="editorial-caption text-left text-[10px] tracking-[0.05em] text-muted-foreground">
-              Forensic royalty workspace
-            </p>
           </Link>
           <Link
             to="/workspace"

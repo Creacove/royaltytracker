@@ -201,160 +201,228 @@ export default function ActivateWorkspace({
   const sponsoredMessage =
     subscriptionState.sponsorExpiresAt &&
     `Partner sponsorship active through ${new Date(subscriptionState.sponsorExpiresAt).toLocaleDateString()}. After this date, reactivate billing at $149/month to continue.`;
+  const canManageBillingAccess =
+    subscriptionState.canManageBilling ||
+    onboardingState.activeMembershipRole === "owner" ||
+    onboardingState.activeMembershipRole === "admin" ||
+    onboardingState.isPlatformAdmin;
 
   return (
-    <div className="space-y-5">
-      <Card className="overflow-hidden border-border/60">
-        <CardContent className="grid gap-4 bg-[linear-gradient(140deg,hsl(var(--brand-accent-ghost)/0.80),transparent_65%)] p-6 md:grid-cols-[1.35fr_1fr]">
-          <div className="space-y-2">
-            <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Activation</p>
-            <h1 className="font-display text-3xl tracking-[0.04em]">Activate your workspace</h1>
-            <p className="text-sm text-muted-foreground">
-              OrderSounds is a paid subscription service. Choose a plan to continue.
-            </p>
+    <div className="space-y-6 pb-8">
+      <Card surface="hero" className="overflow-hidden">
+        <CardContent className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1.1fr)_360px] lg:p-7">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Activation</Badge>
+              <Badge variant="outline">{onboardingState.companyName ?? "Workspace"}</Badge>
+              {currentPlan ? <Badge variant="outline">{currentPlan.name}</Badge> : null}
+            </div>
+            <div className="space-y-2">
+              <h1 className="type-display-hero text-[clamp(2.2rem,2vw+1.5rem,3.5rem)] leading-[0.94] text-foreground">
+                Activate the workspace behind the reporting.
+              </h1>
+              <p className="max-w-3xl text-sm leading-7 text-muted-foreground">
+                Choose the plan or apply a partner code that unlocks one workspace for music reporting, analysis,
+                anomaly detection, and faster decisions.
+              </p>
+            </div>
           </div>
-          <div className="flex flex-wrap items-start justify-start gap-2 md:justify-end">
-            <Badge variant="outline">{onboardingState.companyName ?? "Workspace"}</Badge>
-            {currentPlan && <Badge variant="outline">{currentPlan.name}</Badge>}
+
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.76)] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Workspace</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{onboardingState.companyName ?? "Pending workspace"}</p>
+            </div>
+            <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.76)] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Status</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {subscriptionState.effectiveSubscriptionStatus.replaceAll("_", " ")}
+              </p>
+            </div>
+            <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.76)] p-4">
+              <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Access</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {canManageBillingAccess ? "Billing manager" : "Owner or admin required"}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {!(subscriptionState.canManageBilling || onboardingState.activeMembershipRole === "owner" || onboardingState.activeMembershipRole === "admin" || onboardingState.isPlatformAdmin) && (
-        <Card className="border-border/60">
+      {!canManageBillingAccess && (
+        <Card surface="elevated">
           <CardHeader>
             <CardTitle>Billing access required</CardTitle>
-            <CardDescription>
-              Only workspace owners/admins can activate billing. Contact your workspace owner/admin to continue.
-            </CardDescription>
+            <CardDescription>Only workspace owners or admins can activate billing for this workspace.</CardDescription>
           </CardHeader>
           <CardContent>
             <Button asChild variant="outline">
-              <Link to="/settings">Open Settings</Link>
+              <Link to="/settings">Open settings</Link>
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {(subscriptionState.canManageBilling || onboardingState.activeMembershipRole === "owner" || onboardingState.activeMembershipRole === "admin" || onboardingState.isPlatformAdmin) && (
-        <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {PLAN_CATALOG.map((plan) => {
-              const isCurrent = subscriptionState.planCode === plan.planCode;
-              return (
-                <Card key={plan.planCode} className="border-border/60">
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <CardTitle className="flex items-center gap-2">
-                          {plan.name}
-                          {plan.featured && <Badge variant="outline">Most Popular</Badge>}
-                        </CardTitle>
-                        <CardDescription>{plan.priceLabel}</CardDescription>
-                      </div>
-                      {isCurrent && <Badge variant="outline">Current</Badge>}
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
-                    <p>{plan.seats} workspace seat{plan.seats > 1 ? "s" : ""}</p>
-                    <p>{plan.statements} processed statements / month</p>
-                    <p>{plan.rows} normalized rows / month</p>
-                    <p>{plan.aiRequests} AI analysis requests / month</p>
-                    <Button
-                      className="w-full"
-                      onClick={() => void handleStartCheckout(plan.planCode)}
-                      disabled={pendingPlan !== null}
+      {canManageBillingAccess && (
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_360px]">
+          <div className="space-y-6">
+            <Card surface="elevated">
+              <CardHeader>
+                <CardTitle>Choose a plan</CardTitle>
+                <CardDescription>Pick the plan that matches the reporting volume and team using the Desk.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 lg:grid-cols-2">
+                {PLAN_CATALOG.map((plan) => {
+                  const isCurrent = subscriptionState.planCode === plan.planCode;
+                  return (
+                    <Card
+                      key={plan.planCode}
+                      surface={plan.featured ? "hero" : "elevated"}
+                      className="h-full border-[hsl(var(--border)/0.12)]"
                     >
-                      <Rocket className="mr-2 h-4 w-4" />
-                      {pendingPlan === plan.planCode ? "Redirecting..." : "Activate Workspace"}
+                      <CardHeader className="space-y-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <CardTitle>{plan.name}</CardTitle>
+                              {plan.featured ? <Badge variant="outline">Recommended</Badge> : null}
+                              {isCurrent ? <Badge variant="outline">Current</Badge> : null}
+                            </div>
+                            <CardDescription>{plan.priceLabel}</CardDescription>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.74)] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Seats</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">
+                              {plan.seats} workspace seat{plan.seats > 1 ? "s" : ""}
+                            </p>
+                          </div>
+                          <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.74)] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Statements</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{plan.statements} / month</p>
+                          </div>
+                          <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.74)] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Rows</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{plan.rows}</p>
+                          </div>
+                          <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] bg-[hsl(var(--surface-panel)/0.74)] p-3">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">AI requests</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{plan.aiRequests} / month</p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <Button
+                          className="w-full"
+                          onClick={() => void handleStartCheckout(plan.planCode)}
+                          disabled={pendingPlan !== null}
+                        >
+                          <Rocket className="mr-2 h-4 w-4" />
+                          {pendingPlan === plan.planCode ? "Redirecting..." : "Activate workspace"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            {!subscriptionState.needsActivation && (
+              <Card surface="elevated">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-[hsl(var(--tone-success))]" />
+                    Workspace active
+                  </CardTitle>
+                  <CardDescription>
+                    Billing status: {subscriptionState.effectiveSubscriptionStatus.replaceAll("_", " ")}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] p-3">
+                      <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Seats</p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">
+                        {subscriptionState.seatsUsed}
+                        {subscriptionState.seatLimit ? ` / ${subscriptionState.seatLimit}` : ""}
+                      </p>
+                    </div>
+                    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] p-3">
+                      <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Statements</p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">
+                        {subscriptionState.statementsUsed}
+                        {subscriptionState.statementsLimit ? ` / ${subscriptionState.statementsLimit}` : ""}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{toPercent(subscriptionState.statementsUsageRatio)}</p>
+                    </div>
+                    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.1)] p-3">
+                      <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">AI requests</p>
+                      <p className="mt-2 text-sm font-semibold text-foreground">
+                        {subscriptionState.aiRequestsUsed}
+                        {subscriptionState.aiRequestsLimit ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{toPercent(subscriptionState.aiUsageRatio)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild>
+                      <Link to="/">Enter workspace</Link>
                     </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    {subscriptionState.canManageBilling && subscriptionState.effectiveSubscriptionStatus === "active_paid" && (
+                      <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingPortal}>
+                        {openingPortal ? "Opening portal..." : "Manage billing"}
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
-          <Card className="border-border/60">
-            <CardHeader>
-              <CardTitle>Partner access code</CardTitle>
-              <CardDescription>Have a partner code? Apply it below for sponsored access.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <form className="space-y-3" onSubmit={handleRedeemCode}>
-                <div className="space-y-2">
-                  <Label htmlFor="partner-code">Partner code</Label>
-                  <Input
-                    id="partner-code"
-                    value={partnerCode}
-                    onChange={(event) => setPartnerCode(event.target.value)}
-                    placeholder="OSP-XXXXXXXXXXXX"
-                  />
-                </div>
-                <Button type="submit" variant="outline" disabled={redeemingCode}>
-                  <Lock className="mr-2 h-4 w-4" />
-                  {redeemingCode ? "Applying code..." : "Apply code"}
-                </Button>
-              </form>
+          <div className="space-y-6">
+            <Card surface="elevated">
+              <CardHeader>
+                <CardTitle>Partner code</CardTitle>
+                <CardDescription>Apply sponsorship here if this reporting workspace was provisioned through a partner agreement.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <form className="space-y-3" onSubmit={handleRedeemCode}>
+                  <div className="space-y-2">
+                    <Label htmlFor="partner-code">Partner code</Label>
+                    <Input
+                      id="partner-code"
+                      value={partnerCode}
+                      onChange={(event) => setPartnerCode(event.target.value)}
+                      placeholder="OSP-XXXXXXXXXXXX"
+                    />
+                  </div>
+                  <Button type="submit" variant="outline" className="w-full" disabled={redeemingCode}>
+                    <Lock className="mr-2 h-4 w-4" />
+                    {redeemingCode ? "Applying code..." : "Apply code"}
+                  </Button>
+                </form>
 
-              {sponsoredMessage && (
-                <div className="rounded-sm border border-border/50 bg-background/60 p-3 text-sm text-muted-foreground">
-                  {sponsoredMessage}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </>
-      )}
+                {sponsoredMessage ? (
+                  <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--brand-accent)/0.12)] bg-[hsl(var(--brand-accent-ghost)/0.5)] p-4 text-sm leading-6 text-muted-foreground">
+                    {sponsoredMessage}
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
 
-      {!subscriptionState.needsActivation && (
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-[hsl(var(--tone-success))]" />
-              Workspace active
-            </CardTitle>
-            <CardDescription>
-              Billing status: {subscriptionState.effectiveSubscriptionStatus.replaceAll("_", " ")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div className="rounded-sm border border-border/50 p-3">
-                <p className="text-xs text-muted-foreground">Seats</p>
-                <p className="font-medium">
-                  {subscriptionState.seatsUsed}
-                  {subscriptionState.seatLimit ? ` / ${subscriptionState.seatLimit}` : ""}
-                </p>
-              </div>
-              <div className="rounded-sm border border-border/50 p-3">
-                <p className="text-xs text-muted-foreground">Statements</p>
-                <p className="font-medium">
-                  {subscriptionState.statementsUsed}
-                  {subscriptionState.statementsLimit ? ` / ${subscriptionState.statementsLimit}` : ""}
-                </p>
-                <p className="text-[11px] text-muted-foreground">{toPercent(subscriptionState.statementsUsageRatio)}</p>
-              </div>
-              <div className="rounded-sm border border-border/50 p-3">
-                <p className="text-xs text-muted-foreground">AI Requests</p>
-                <p className="font-medium">
-                  {subscriptionState.aiRequestsUsed}
-                  {subscriptionState.aiRequestsLimit ? ` / ${subscriptionState.aiRequestsLimit}` : ""}
-                </p>
-                <p className="text-[11px] text-muted-foreground">{toPercent(subscriptionState.aiUsageRatio)}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild>
-                <Link to="/">Enter Workspace</Link>
-              </Button>
-              {subscriptionState.canManageBilling && subscriptionState.effectiveSubscriptionStatus === "active_paid" && (
-                <Button variant="outline" onClick={handleOpenBillingPortal} disabled={openingPortal}>
-                  {openingPortal ? "Opening portal..." : "Manage Billing"}
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+            <Card surface="muted">
+              <CardHeader>
+                <CardTitle>What activation unlocks</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
+                <p>The workspace can start ingesting and reviewing music reporting under the selected plan limits.</p>
+                <p>Seats, statement volume, and AI usage become visible across the workspace and billing views.</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       )}
     </div>
   );

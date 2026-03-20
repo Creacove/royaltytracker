@@ -1,6 +1,7 @@
-﻿import { useEffect, useMemo, useState } from "react";
-import { Building2, CheckCircle2, ShieldCheck, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Building2, ShieldCheck, UserRound } from "lucide-react";
 
+import { EntryShell } from "@/components/layout/EntryShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,7 +35,7 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
   const [timezone, setTimezone] = useState(initialState.timezone);
   const [monthlyStatementVolume, setMonthlyStatementVolume] = useState(initialState.monthlyStatementVolume ?? "");
   const [primaryCmoCount, setPrimaryCmoCount] = useState(
-    initialState.primaryCmoCount === null ? "" : String(initialState.primaryCmoCount)
+    initialState.primaryCmoCount === null ? "" : String(initialState.primaryCmoCount),
   );
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
@@ -132,210 +133,195 @@ export default function Onboarding({ initialState, onCompleted }: OnboardingProp
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6">
-      <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-[1200px] overflow-hidden rounded-md border border-border/50 md:grid-cols-[1.05fr_1fr]">
-        <section className="relative hidden border-r border-border/50 bg-[linear-gradient(145deg,hsl(var(--brand-accent-ghost)/0.80),transparent_72%)] p-8 md:flex md:flex-col md:justify-between">
-          <div className="space-y-6">
-            <img src="/ordersounds-logo.png" alt="OrderSounds" className="h-8 w-auto object-contain" />
-            <div className="space-y-2">
-              <h1 className="font-display text-4xl leading-none tracking-[0.04em]">Partner Onboarding</h1>
-              <p className="text-sm text-muted-foreground">
-                We configure your publisher workspace for clean statement ingestion and reliable royalty visibility.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <UserRound className="mt-0.5 h-4 w-4 text-[hsl(var(--brand-accent))]" />
-                <div>
-                  <p className="text-sm font-medium">Account identity</p>
-                  <p className="text-xs text-muted-foreground">Capture role and contact metadata for support and audit.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Building2 className="mt-0.5 h-4 w-4 text-[hsl(var(--brand-accent))]" />
-                <div>
-                  <p className="text-sm font-medium">Publisher setup</p>
-                  <p className="text-xs text-muted-foreground">
-                    Configure workspace defaults for onboarding and statement normalization.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 text-[hsl(var(--brand-accent))]" />
-                <div>
-                  <p className="text-sm font-medium">Invitation-only access</p>
-                  <p className="text-xs text-muted-foreground">
-                    Workspace access remains restricted to approved partner identities.
-                  </p>
-                </div>
-              </div>
-            </div>
+    <EntryShell
+      eyebrow="OrderSounds Desk setup"
+      title="Set up the workspace behind the reporting."
+      description="Capture the operator profile and workspace defaults that let music reporting land in one normalized workspace for analysis and decision-making."
+      badge={inviteRole ? `${inviteRole} invite` : "Partner onboarding"}
+      points={[
+        {
+          icon: <UserRound className="h-4 w-4" />,
+          title: "Identity and role",
+          description: "Capture the operator details that will appear throughout support, audit, and approvals.",
+        },
+        {
+          icon: <Building2 className="h-4 w-4" />,
+          title: "Workspace defaults",
+          description: "Set the currency, timezone, and reporting profile that statement normalization depends on.",
+        },
+        {
+          icon: <ShieldCheck className="h-4 w-4" />,
+          title: "Tight access model",
+          description: "Only owners, admins, or platform administrators can change workspace-wide setup.",
+        },
+      ]}
+      contentClassName="max-w-[760px]"
+    >
+      <Card surface="hero" className="w-full">
+        <CardHeader className="space-y-3 border-b border-[hsl(var(--border)/0.1)]">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-[hsl(var(--brand-accent)/0.14)] bg-[hsl(var(--brand-accent-ghost)/0.62)] text-[hsl(var(--brand-accent))]"
+            >
+              Workspace setup
+            </Badge>
+            {initialState.hasPendingInvitation ? <Badge variant="outline">Invitation detected</Badge> : null}
+            {inviteRole ? <Badge variant="outline">Role: {inviteRole}</Badge> : null}
           </div>
-
-          <div className="space-y-2 border-t border-border/45 pt-5">
-            <p className="text-xs uppercase tracking-[0.08em] text-muted-foreground">Activation</p>
-            <p className="text-sm">Once this form is completed, you enter the production workspace immediately.</p>
+          <div className="space-y-2">
+            <CardTitle className="text-[1.95rem]">Complete onboarding</CardTitle>
+            <CardDescription>Only the fields that affect operator identity, workspace defaults, and reporting normalization stay here.</CardDescription>
           </div>
-        </section>
+        </CardHeader>
 
-        <section className="flex items-center justify-center bg-background p-4 md:p-8">
-          <Card className="w-full max-w-xl border-0 bg-transparent shadow-none">
-            <CardHeader className="px-0">
-              <div className="mb-2 flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-[hsl(var(--brand-accent))]" />
-                <CardTitle className="text-3xl">Complete Workspace Setup</CardTitle>
+        <CardContent className="space-y-5 pt-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="surface-elevated forensic-frame space-y-4 rounded-[calc(var(--radius-sm))] p-4">
+              <div className="space-y-1">
+                <p className="editorial-kicker">Operator</p>
+                <h3 className="text-base font-semibold text-foreground">Who is entering the workspace?</h3>
               </div>
-              <CardDescription>Tell us about your role and publisher profile to finalize onboarding.</CardDescription>
-              {initialState.hasPendingInvitation && (
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="outline">Invitation detected</Badge>
-                  {inviteRole && <Badge variant="outline">Role: {inviteRole}</Badge>}
-                </div>
-              )}
-            </CardHeader>
 
-            <CardContent className="px-0">
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-3">
-                  <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">User profile</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="firstName">First name</Label>
-                      <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="lastName">Last name</Label>
-                      <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
-                    </div>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="jobTitle">Job title</Label>
-                      <Input id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">Phone</Label>
-                      <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1..." />
-                    </div>
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName">First name</Label>
+                  <Input id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="lastName">Last name</Label>
+                  <Input id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="jobTitle">Job title</Label>
+                  <Input id="jobTitle" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1..." />
+                </div>
+              </div>
+            </div>
+
+            {canEditWorkspaceProfile ? (
+              <div className="surface-elevated forensic-frame space-y-4 rounded-[calc(var(--radius-sm))] p-4">
+                <div className="space-y-1">
+                  <p className="editorial-kicker">Workspace</p>
+                  <h3 className="text-base font-semibold text-foreground">Set the operating defaults</h3>
                 </div>
 
-                {canEditWorkspaceProfile ? (
-                  <div className="space-y-3">
-                    <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">
-                      Publisher workspace
-                    </p>
+                <div className="space-y-2">
+                  <Label htmlFor="companyName">Workspace name</Label>
+                  <Input
+                    id="companyName"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    required={!companyLocked}
+                    disabled={companyLocked}
+                  />
+                  {companyLocked ? (
+                    <p className="text-sm text-muted-foreground">This workspace name is locked by the invitation and cannot be changed here.</p>
+                  ) : null}
+                </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="companyName">Workspace name</Label>
-                      <Input
-                        id="companyName"
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        required={!companyLocked}
-                        disabled={companyLocked}
-                      />
-                      {companyLocked && (
-                        <p className="text-xs text-muted-foreground">
-                          Workspace name is fixed by your invitation and cannot be changed here.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="website">Website</Label>
-                        <Input
-                          id="website"
-                          value={website}
-                          onChange={(e) => setWebsite(e.target.value)}
-                          placeholder="https://"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="countryCode">Country (ISO code)</Label>
-                        <Input
-                          id="countryCode"
-                          value={countryCode}
-                          onChange={(e) => setCountryCode(e.target.value)}
-                          placeholder="US"
-                          maxLength={3}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="defaultCurrency">Default currency</Label>
-                        <Input
-                          id="defaultCurrency"
-                          value={defaultCurrency}
-                          onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
-                          placeholder="USD"
-                          maxLength={3}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="timezone">Timezone</Label>
-                        <Input
-                          id="timezone"
-                          value={timezone}
-                          onChange={(e) => setTimezone(e.target.value)}
-                          placeholder="UTC"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Monthly statement volume</Label>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {statementVolumeOptions.map((option) => (
-                          <Button
-                            key={option.value}
-                            type="button"
-                            variant={monthlyStatementVolume === option.value ? "default" : "outline"}
-                            className="justify-start"
-                            onClick={() => setMonthlyStatementVolume(option.value)}
-                          >
-                            {option.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="primaryCmoCount">Primary CMO relationships</Label>
-                      <Input
-                        id="primaryCmoCount"
-                        type="number"
-                        min={0}
-                        value={primaryCmoCount}
-                        onChange={(e) => setPrimaryCmoCount(e.target.value)}
-                        placeholder="Example: 6"
-                      />
-                    </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="website">Website</Label>
+                    <Input
+                      id="website"
+                      value={website}
+                      onChange={(e) => setWebsite(e.target.value)}
+                      placeholder="https://"
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-2 rounded-md border border-border/50 bg-muted/20 p-4">
-                    <p className="font-display text-xs uppercase tracking-[0.08em] text-muted-foreground">Workspace access</p>
-                    <p className="text-sm">
-                      You are joining <span className="font-medium">{companyName || "your workspace"}</span> as{" "}
-                      <span className="font-medium">{inviteRole ?? "member"}</span>.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Workspace profile settings are managed by owners/admins and are not editable during member onboarding.
-                    </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="countryCode">Country</Label>
+                    <Input
+                      id="countryCode"
+                      value={countryCode}
+                      onChange={(e) => setCountryCode(e.target.value)}
+                      placeholder="US"
+                      maxLength={3}
+                    />
                   </div>
-                )}
+                </div>
 
-                <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "Finalizing..." : "Enter Workspace"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </section>
-      </div>
-    </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="defaultCurrency">Default currency</Label>
+                    <Input
+                      id="defaultCurrency"
+                      value={defaultCurrency}
+                      onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
+                      placeholder="USD"
+                      maxLength={3}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="timezone">Timezone</Label>
+                    <Input
+                      id="timezone"
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      placeholder="UTC"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Monthly statement volume</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {statementVolumeOptions.map((option) => (
+                      <Button
+                        key={option.value}
+                        type="button"
+                        variant={monthlyStatementVolume === option.value ? "default" : "quiet"}
+                        className="justify-start"
+                        onClick={() => setMonthlyStatementVolume(option.value)}
+                      >
+                        {option.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="primaryCmoCount">Primary CMO relationships</Label>
+                  <Input
+                    id="primaryCmoCount"
+                    type="number"
+                    min={0}
+                    value={primaryCmoCount}
+                    onChange={(e) => setPrimaryCmoCount(e.target.value)}
+                    placeholder="Example: 6"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="surface-elevated forensic-frame space-y-3 rounded-[calc(var(--radius-sm))] p-4">
+                <div className="space-y-1">
+                  <p className="editorial-kicker">Workspace access</p>
+                  <h3 className="text-base font-semibold text-foreground">Your membership is ready</h3>
+                </div>
+                <p className="text-sm text-foreground/82">
+                  You are joining <span className="font-semibold">{companyName || "your workspace"}</span> as{" "}
+                  <span className="font-semibold">{inviteRole ?? "member"}</span>.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Workspace-wide defaults are managed by owners and admins, so this step only confirms your identity and role.
+                </p>
+              </div>
+            )}
+
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Finalizing..." : "Enter workspace"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </EntryShell>
   );
 }

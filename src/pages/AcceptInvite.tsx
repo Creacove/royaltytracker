@@ -1,36 +1,19 @@
-import { useEffect, useMemo, useState, useRef, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  MailCheck,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, MailCheck, ShieldCheck } from "lucide-react";
 
+import { EntryShell } from "@/components/layout/EntryShell";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-// ─── Step machine ────────────────────────────────────────────────────────────
-//  processing      → verifying the token / establishing the session
-//  set_password    → token ok, need to choose a password
-//  complete_profile → password set, need to fill name/workspace details
-//  recovery        → token expired/invalid; ask them to re-request an invite link
-//  error           → unrecoverable error
 type AcceptStep = "processing" | "set_password" | "recovery" | "error";
 
-// ─── URL parsing ─────────────────────────────────────────────────────────────
 type InviteUrlState = {
   accessToken: string | null;
   refreshToken: string | null;
@@ -46,9 +29,7 @@ type InviteUrlState = {
 
 function parseInviteUrlState(): InviteUrlState {
   const hashParams = new URLSearchParams(
-    window.location.hash.startsWith("#")
-      ? window.location.hash.slice(1)
-      : window.location.hash
+    window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
   );
   const searchParams = new URLSearchParams(window.location.search);
   const read = (key: string) => hashParams.get(key) ?? searchParams.get(key);
@@ -63,10 +44,6 @@ function parseInviteUrlState(): InviteUrlState {
   const authErrorDescription = read("error_description");
   const invitedEmailHint = read("email");
 
-  const hasAuthParams = Boolean(
-    accessToken || refreshToken || code || tokenHash || rawToken || flowType || authError || authErrorDescription
-  );
-
   return {
     accessToken,
     refreshToken,
@@ -77,7 +54,9 @@ function parseInviteUrlState(): InviteUrlState {
     authError,
     authErrorDescription,
     invitedEmailHint,
-    hasAuthParams,
+    hasAuthParams: Boolean(
+      accessToken || refreshToken || code || tokenHash || rawToken || flowType || authError || authErrorDescription,
+    ),
   };
 }
 
@@ -90,42 +69,26 @@ function decodeAuthError(errorDescription: string | null): string | null {
   }
 }
 
-// ─── Statement volume options (same as Onboarding page) ──────────────────────
-const statementVolumeOptions = [
-  { value: "0-25", label: "0-25 / month" },
-  { value: "26-100", label: "26-100 / month" },
-  { value: "101-500", label: "101-500 / month" },
-  { value: "500+", label: "500+ / month" },
-];
-
-// ─── Component ───────────────────────────────────────────────────────────────
 export default function AcceptInvite() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [urlState] = useState<InviteUrlState>(() => parseInviteUrlState());
 
-  // ── Step state ──────────────────────────────────────────────────────────
   const [step, setStepState] = useState<AcceptStep>("processing");
   const currentStepRef = useRef<AcceptStep>("processing");
-
-  const setStep = (newStep: AcceptStep) => {
-    currentStepRef.current = newStep;
-    setStepState(newStep);
+  const setStep = (nextStep: AcceptStep) => {
+    currentStepRef.current = nextStep;
+    setStepState(nextStep);
   };
 
   const [detail, setDetail] = useState("Verifying your invite and creating a secure session.");
-  const [sessionRef, setSessionRef] = useState<Session | null>(null);
-
   const [inviteEmail, setInviteEmail] = useState(urlState.invitedEmailHint ?? "");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
-
-  // ── Recovery ──────────────────────────────────────────────────────────────
   const [recoveryEmail, setRecoveryEmail] = useState(urlState.invitedEmailHint ?? "");
   const [sendingResend, setSendingResend] = useState(false);
 
-  // ─── Token resolution effect ──────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     let redirectedToVerify = false;
@@ -144,43 +107,31 @@ export default function AcceptInvite() {
 
     const handleSessionReady = async (session: Session) => {
       if (cancelled) return;
+
       const email = session.user.email ?? "";
       if (email) {
         setInviteEmail(email);
         setRecoveryEmail(email);
       }
 
-      // All invite flows require setting a password on first entry
-      // (new user = no password set yet). Non-invite flows (e.g. existing
-      // members clicking a magic link) are already onboarded — send them home.
       const flowType = urlState.flowType;
       const isInviteFlow = !flowType || flowType === "invite" || flowType === "email";
 
-      setSessionRef(session);
-
       if (isInviteFlow) {
-        // GUARD: Only move to set_password if we are currently in processing.
-        // This prevents the auth state change (triggered by updateUser) from
-        // resetting the wizard back to the password step after success.
         if (!cancelled && currentStepRef.current === "processing") {
           setStep("set_password");
         }
         return;
       }
 
-      // Recovery (password reset from Settings page) — go to settings
       if (flowType === "recovery") {
         navigate("/settings?password_reset=1", { replace: true });
         return;
       }
 
-      // Fallback: if already onboarded, just go home
       navigate("/", { replace: true });
     };
 
-
-
-    // Auth state change listener (handles PKCE code flows)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -189,24 +140,33 @@ export default function AcceptInvite() {
     });
 
     const resolveInvite = async () => {
-      // 1. Direct token pair (legacy hash flow)
       if (urlState.accessToken && urlState.refreshToken) {
         const { data, error } = await supabase.auth.setSession({
           access_token: urlState.accessToken,
           refresh_token: urlState.refreshToken,
         });
-        if (error) { failWithError(error.message); return; }
-        if (data.session) { await handleSessionReady(data.session); return; }
+        if (error) {
+          failWithError(error.message);
+          return;
+        }
+        if (data.session) {
+          await handleSessionReady(data.session);
+          return;
+        }
       }
 
-      // 2. PKCE code
       if (urlState.code) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(urlState.code);
-        if (error) { failWithError(error.message); return; }
-        if (data.session) { await handleSessionReady(data.session); return; }
+        if (error) {
+          failWithError(error.message);
+          return;
+        }
+        if (data.session) {
+          await handleSessionReady(data.session);
+          return;
+        }
       }
 
-      // 3. OTP token_hash (email OTP / invite links with token_hash param)
       if (urlState.tokenHash && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
         const normalizedType = urlState.flowType.toLowerCase();
         const otpTypes =
@@ -245,7 +205,6 @@ export default function AcceptInvite() {
         }
       }
 
-      // 4. Raw token → redirect through Supabase verify endpoint
       if (urlState.rawToken && urlState.flowType && !urlState.accessToken && !urlState.refreshToken && !urlState.code) {
         redirectedToVerify = true;
         const verifyUrl = new URL("/auth/v1/verify", import.meta.env.VITE_SUPABASE_URL);
@@ -256,23 +215,32 @@ export default function AcceptInvite() {
         return;
       }
 
-      // 5. Session may already exist (e.g. page reload after partial flow)
       const sessionResult = await supabase.auth.getSession();
-      if (sessionResult.error) { failWithError(sessionResult.error.message); return; }
-      if (sessionResult.data.session) { await handleSessionReady(sessionResult.data.session); return; }
+      if (sessionResult.error) {
+        failWithError(sessionResult.error.message);
+        return;
+      }
+      if (sessionResult.data.session) {
+        await handleSessionReady(sessionResult.data.session);
+        return;
+      }
 
-      // 6. Poll for a session that might be set asynchronously (auth state change fires)
       if (urlState.hasAuthParams) {
         for (let attempt = 0; attempt < 20; attempt += 1) {
           const { data, error } = await supabase.auth.getSession();
           if (cancelled) return;
-          if (error) { failWithError(error.message); return; }
-          if (data.session) { await handleSessionReady(data.session); return; }
+          if (error) {
+            failWithError(error.message);
+            return;
+          }
+          if (data.session) {
+            await handleSessionReady(data.session);
+            return;
+          }
           await new Promise((resolve) => setTimeout(resolve, 400));
         }
       }
 
-      // 7. Auth error from the URL (e.g. expired token redirect from Supabase)
       const decodedAuthError = decodeAuthError(urlState.authErrorDescription);
       if (decodedAuthError) {
         failToRecovery(`${decodedAuthError} Enter your email to receive a new invite link.`);
@@ -291,13 +259,14 @@ export default function AcceptInvite() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── Step 2: Set password ──────────────────────────────────────────────────
   const handleSetPassword = async (event: FormEvent) => {
     event.preventDefault();
+
     if (newPassword.length < 8) {
       toast({ title: "Password too short", description: "Use at least 8 characters.", variant: "destructive" });
       return;
     }
+
     if (newPassword !== confirmPassword) {
       toast({ title: "Passwords don't match", description: "Both fields must match.", variant: "destructive" });
       return;
@@ -317,23 +286,16 @@ export default function AcceptInvite() {
     navigate("/", { replace: true });
   };
 
-
-
-  // ─── Recovery: resend invite link ─────────────────────────────────────────
-  // Recovery sends a fresh auth link back to /accept-invite so users can
-  // re-enter this wizard without being redirected into Settings.
   const handleResendInviteLink = async (event: FormEvent) => {
     event.preventDefault();
     const email = recoveryEmail.trim().toLowerCase();
+
     if (!email) {
       toast({ title: "Email required", description: "Enter your invited email address.", variant: "destructive" });
       return;
     }
 
     setSendingResend(true);
-
-    // Attempt: use resetPasswordForEmail but redirect back to /accept-invite
-    // so the user re-enters the same wizard flow (not /settings recovery).
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/accept-invite`,
     });
@@ -351,66 +313,132 @@ export default function AcceptInvite() {
     });
   };
 
-  // ─── Derived display values ────────────────────────────────────────────────
   const stepTitle = useMemo(() => {
     switch (step) {
-      case "processing": return "Accepting Invite";
-      case "set_password": return "Set Your Password";
-      case "recovery": return "Get a New Link";
-      case "error": return "Something Went Wrong";
+      case "processing":
+        return "Verifying invite";
+      case "set_password":
+        return "Create your password";
+      case "recovery":
+        return "Request a new link";
+      case "error":
+        return "Invite unavailable";
+    }
+  }, [step]);
+
+  const stepDescription = useMemo(() => {
+    switch (step) {
+      case "processing":
+        return "We are confirming the secure invite token and preparing the workspace session.";
+      case "set_password":
+        return `This secures access for ${inviteEmail || "your invited email"} before you enter the workspace.`;
+      case "recovery":
+        return "The previous link can no longer be used. Send a fresh invite to the same email.";
+      case "error":
+        return "We could not complete the invite flow from this link. You can return to sign in and try again.";
+    }
+  }, [step, inviteEmail]);
+
+  const shellTitle = useMemo(() => {
+    switch (step) {
+      case "processing":
+        return "Secure workspace entry is being prepared.";
+      case "set_password":
+        return "Finish the first secure step.";
+      case "recovery":
+        return "Expired link. Clean recovery.";
+      case "error":
+        return "The invite did not complete cleanly.";
+    }
+  }, [step]);
+
+  const shellDescription = useMemo(() => {
+    switch (step) {
+      case "processing":
+        return "OrderSounds verifies every invite before the reporting workspace opens, so access stays explicit and traceable.";
+      case "set_password":
+        return "A one-time password step locks the account to the invited identity before the user enters the reporting workspace.";
+      case "recovery":
+        return "Recovery should be simple. Re-issue the link and return the user to the same secure setup flow.";
+      case "error":
+        return "If the link cannot be trusted or completed, the safest outcome is to stop here and restart from a clean sign-in path.";
     }
   }, [step]);
 
   const stepIcon = useMemo(() => {
     switch (step) {
-      case "processing": return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
-      case "set_password": return <ShieldCheck className="h-5 w-5 text-primary" />;
-      case "recovery": return <MailCheck className="h-5 w-5 text-primary" />;
-      case "error": return <AlertCircle className="h-5 w-5 text-destructive" />;
+      case "processing":
+        return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
+      case "set_password":
+        return <ShieldCheck className="h-5 w-5 text-primary" />;
+      case "recovery":
+        return <MailCheck className="h-5 w-5 text-primary" />;
+      case "error":
+        return <AlertCircle className="h-5 w-5 text-destructive" />;
     }
   }, [step]);
 
-  const activeProgressIdx = step === "set_password" ? 0 : -1;
-
-  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 flex items-center justify-center">
-      <Card className="w-full max-w-lg border border-border/50">
-        <CardHeader className="text-center pb-3">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-border/60 bg-background">
-            {stepIcon}
-          </div>
-          <CardTitle className="text-xl">{stepTitle}</CardTitle>
-          {(step === "set_password") && (
-            <CardDescription>
-              {`Setting up account for ${inviteEmail || "your email"}`}
-            </CardDescription>
-          )}
-
-          {/* Step progress indicator */}
-          {activeProgressIdx >= 0 && (
-            <div className="mt-3 flex items-center justify-center gap-2">
-              <div className="flex flex-col items-center gap-0.5">
-                <div className={`h-1.5 w-12 rounded-full bg-primary`} />
-                <span className="text-[10px] text-muted-foreground transition-colors">Setup password</span>
-              </div>
+    <EntryShell
+      eyebrow="Invitation flow"
+      title={shellTitle}
+      description={shellDescription}
+      badge={step === "set_password" ? "Invite confirmed" : step === "processing" ? "Verifying" : "Secure recovery"}
+      points={[
+        {
+          icon: <ShieldCheck className="h-4 w-4" />,
+          title: "Identity first",
+          description: "The invited email is confirmed before a password or reporting session is accepted.",
+        },
+        {
+          icon: <CheckCircle2 className="h-4 w-4" />,
+          title: "Clean handoff",
+          description: "Once the password is set, the user moves directly into the Desk without another setup loop.",
+        },
+      ]}
+    >
+      <Card surface="hero" className="w-full">
+        <CardHeader className="space-y-3 border-b border-[hsl(var(--border)/0.1)]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.78)]">
+              {stepIcon}
             </div>
-          )}
+            <div className="space-y-1">
+              <Badge
+                variant="outline"
+                className="w-fit border-[hsl(var(--brand-accent)/0.14)] bg-[hsl(var(--brand-accent-ghost)/0.62)] text-[hsl(var(--brand-accent))]"
+              >
+                {step === "set_password"
+                  ? "Secure setup"
+                  : step === "processing"
+                    ? "Validating invite"
+                    : step === "recovery"
+                      ? "Recovery"
+                      : "Blocked"}
+              </Badge>
+              <CardTitle className="text-[1.85rem]">{stepTitle}</CardTitle>
+            </div>
+          </div>
+          <CardDescription>{stepDescription}</CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          {/* ── PROCESSING ── */}
+        <CardContent className="space-y-4 pt-6">
           {step === "processing" && (
-            <p className="text-center text-sm text-muted-foreground">{detail}</p>
+            <div className="space-y-4 rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.74)] p-5 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.88)]">
+                <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--brand-accent))]" />
+              </div>
+              <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
+            </div>
           )}
 
-          {/* ── SET PASSWORD ── */}
           {step === "set_password" && (
             <form onSubmit={handleSetPassword} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="invite-email">Email</Label>
-                <Input id="invite-email" type="email" value={inviteEmail} disabled />
+              <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.74)] p-4">
+                <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">Invited email</p>
+                <p className="mt-2 text-sm font-semibold text-foreground">{inviteEmail || "your email"}</p>
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="new-password">New password</Label>
                 <Input
@@ -424,6 +452,7 @@ export default function AcceptInvite() {
                   autoFocus
                 />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="confirm-password">Confirm password</Label>
                 <Input
@@ -436,21 +465,22 @@ export default function AcceptInvite() {
                   required
                 />
               </div>
+
               <Button type="submit" className="w-full" disabled={savingPassword}>
-                {savingPassword ? "Securing account..." : "Set Password & Continue →"}
+                {savingPassword ? "Securing account..." : "Set password and continue"}
               </Button>
             </form>
           )}
 
-
-
-          {/* ── RECOVERY ── */}
           {step === "recovery" && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground text-center">{detail}</p>
+              <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.74)] p-4 text-sm leading-6 text-muted-foreground">
+                {detail}
+              </div>
+
               <form onSubmit={handleResendInviteLink} className="space-y-3">
                 <div className="space-y-2">
-                  <Label htmlFor="recovery-email">Your invited email</Label>
+                  <Label htmlFor="recovery-email">Invited email</Label>
                   <Input
                     id="recovery-email"
                     type="email"
@@ -460,33 +490,31 @@ export default function AcceptInvite() {
                     required
                   />
                 </div>
+
                 <Button type="submit" className="w-full" disabled={sendingResend}>
-                  {sendingResend ? "Sending..." : "Send New Invite Link"}
+                  {sendingResend ? "Sending..." : "Send new invite link"}
                 </Button>
               </form>
-            </div>
-          )}
 
-          {/* ── ERROR ── */}
-          {step === "error" && (
-            <div className="space-y-4 text-center">
-              <p className="text-sm text-muted-foreground">{detail}</p>
-              <Button variant="default" className="w-full" onClick={() => navigate("/", { replace: true })}>
-                Go to Sign In
+              <Button variant="ghost" className="w-full" onClick={() => navigate("/", { replace: true })}>
+                Back to sign in
               </Button>
             </div>
           )}
 
-          {/* Go to sign-in escape hatch (recovery step) */}
-          {step === "recovery" && (
-            <div className="text-center pt-1">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/", { replace: true })}>
-                Back to Sign In
+          {step === "error" && (
+            <div className="space-y-4">
+              <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--tone-critical)/0.18)] bg-[hsl(var(--tone-critical)/0.08)] p-4 text-sm leading-6 text-foreground/82">
+                {detail}
+              </div>
+
+              <Button className="w-full" onClick={() => navigate("/", { replace: true })}>
+                Go to sign in
               </Button>
             </div>
           )}
         </CardContent>
       </Card>
-    </div>
+    </EntryShell>
   );
 }
