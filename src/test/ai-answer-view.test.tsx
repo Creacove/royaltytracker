@@ -1,0 +1,87 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import type { AiInsightsTurnResponse } from "@/types/insights";
+import { AiAnswerView } from "@/components/insights/AiAnswerView";
+
+function samplePayload(overrides: Partial<AiInsightsTurnResponse> = {}): AiInsightsTurnResponse {
+  return {
+    conversation_id: "conv_1",
+    resolved_mode: "workspace-general",
+    resolved_entities: {},
+    answer_title: "Catalog shift",
+    executive_answer:
+      "Revenue accelerated in Germany and Spotify remains the strongest platform, but unresolved payout blockers are still suppressing clean visibility.",
+    why_this_matters:
+      "The current mix supports reallocating attention toward Germany while cleaning failed rows before they distort the next planning cycle.",
+    evidence: {
+      row_count: 12,
+      scanned_rows: 24,
+      from_date: "2026-01-01",
+      to_date: "2026-03-31",
+      provenance: ["assistant_workspace_overview_v1"],
+      system_confidence: "high",
+    },
+    actions: [{ label: "Open transactions", href: "/transactions", kind: "primary" }],
+    follow_up_questions: ["Which territories should we prioritise next?"],
+    visual: {
+      type: "line",
+      title: "Revenue trend",
+      x: "month_start",
+      y: ["net_revenue"],
+      rows: [
+        { month_start: "2026-01-01", net_revenue: 1200 },
+        { month_start: "2026-02-01", net_revenue: 1800 },
+      ],
+    },
+    kpis: [{ label: "Net revenue", value: "$1,800" }],
+    recommendations: [
+      {
+        title: "Lean into Germany",
+        rationale: "It is driving the strongest recent lift.",
+      },
+    ],
+    citations: [
+      {
+        title: "Workspace overview",
+        source_type: "workspace_data",
+      },
+    ],
+    render_hints: {
+      layout: "prose_first",
+      density: "expanded",
+      visual_preference: "chart",
+      show_confidence_badges: true,
+      evidence_visibility: "collapsed",
+      visible_artifact_ids: ["fallback-visual", "fallback-recommendations"],
+    } as any,
+    ...overrides,
+  };
+}
+
+describe("AiAnswerView", () => {
+  it("renders a prose-first answer and keeps evidence collapsed by default", () => {
+    render(<AiAnswerView payload={samplePayload()} onUseQuestion={vi.fn()} />);
+
+    expect(screen.getByText(/Revenue accelerated in Germany/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show evidence/i })).toBeInTheDocument();
+    expect(screen.queryByText("Sources")).not.toBeInTheDocument();
+  });
+
+  it("reveals citations and evidence details when opened", () => {
+    render(<AiAnswerView payload={samplePayload()} onUseQuestion={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /show evidence/i }));
+
+    expect(screen.getByText("Sources")).toBeInTheDocument();
+    expect(screen.getByText("Workspace overview")).toBeInTheDocument();
+  });
+
+  it("shows only the selected support artifacts in the default view", () => {
+    render(<AiAnswerView payload={samplePayload()} onUseQuestion={vi.fn()} />);
+
+    expect(screen.getByText("Revenue trend")).toBeInTheDocument();
+    expect(screen.getByText("Recommendations")).toBeInTheDocument();
+    expect(screen.queryByText("Evidence Table")).not.toBeInTheDocument();
+  });
+});

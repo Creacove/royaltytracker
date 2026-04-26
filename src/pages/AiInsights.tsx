@@ -44,6 +44,7 @@ import type {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AiAnswerView } from "@/components/insights/AiAnswerView";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1247,7 +1248,7 @@ export default function AiInsights() {
 
                           {turn.payload ? (
                             <div className="min-w-0">
-                              <AdaptiveAnswerStack payload={turn.payload} onUseQuestion={submitQuestionText} />
+                              <AiAnswerView payload={turn.payload} onUseQuestion={submitQuestionText} />
                             </div>
                           ) : (
                             <div className="surface-elevated forensic-frame w-full max-w-full rounded-[calc(var(--radius-sm))] px-4 py-4 md:max-w-[90%] xl:max-w-full">

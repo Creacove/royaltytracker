@@ -39,6 +39,12 @@ verify_jwt = false
 [functions.run-normalization]
 verify_jwt = false
 
+[functions.prepare-track-matches]
+verify_jwt = false
+
+[functions.submit-track-match-decisions]
+verify_jwt = false
+
 [functions.run-validation]
 verify_jwt = false
 

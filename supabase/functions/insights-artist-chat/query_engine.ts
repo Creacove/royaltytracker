@@ -274,6 +274,10 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     if (normalizedQuestion.includes(alias)) selectedColumns.push(field);
   }
 
+  const hasField = (...names: string[]): boolean => catalog.columns.some((c) => names.includes(c.field_key));
+  const firstAvailable = (...names: string[]): string | null =>
+    names.find((name) => hasField(name)) ?? null;
+
   const asksRevenue = /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
   const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q);
   const asksTerritory = /\b(territory|country|market|region|geo|geography)\b/i.test(q);
@@ -287,8 +291,18 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     /\b(gross|net|revenue|payout|leakage|leak)\b/i.test(q);
   const asksConfidenceRisk = /\b(confidence risk|mapping|validation|low confidence|high confidence|quality issue|quality risk|attribution|rights|rights-related|payout leak|payout leakage|leakage)\b/i.test(q);
   const asksRightsLeakage = /\b(rights|rights type|royalty rate|payout leakage|leakage|contract issue|effective royalty)\b/i.test(q);
+  const asksOwnership = (
+    /\b(owner|owns|ownership|split|splits|share|shares|rightsholder|publisher|writer|admin|collection|collect(?:s|ion|ed)?|ipi|cae)\b/i.test(q) &&
+    /\b(work|song|track|recording|composition|catalog|rights?)\b/i.test(q)
+  ) || /\bwho owns\b/i.test(q);
+  const asksEntitlement = (
+    /\b(owed|payable|entitlement|payout|pay[-\s]?out|getting from|earning from|earning on|paid from|what is .* getting)\b/i.test(q) &&
+    /\b(writer|publisher|artist|owner|payee|song|work|track|recording)\b/i.test(q)
+  );
   const asksPoor = /\b(poor|worst|lowest|underperform|bottom)\b/i.test(q);
   const asksStrategyAllocation = /\b(focus|strategy|priorit|budget|no-regret|what should|next step|allocate)\b/i.test(q);
+  const rightsDimensionField = firstAvailable("work_title", "recording_title", "track_title");
+  const rightsStreamField = firstAvailable("rights_stream", "rights_type", "rights_family");
 
   const dimensions: string[] = [];
   if (asksPlatform) dimensions.push("platform");
@@ -296,6 +310,13 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (asksRightsLeakage) dimensions.push("rights_type");
   if (/\b(rights|rights[-\s]?type|royalty type)\b/i.test(q)) dimensions.push("rights_type");
   if (asksTrend && !asksPeriodComparison) dimensions.push("event_date");
+  if (asksOwnership || asksEntitlement) {
+    dimensions.push("party_name");
+    if (rightsDimensionField) dimensions.push(rightsDimensionField);
+    if (rightsStreamField) dimensions.push(rightsStreamField);
+    if (hasField("share_kind")) dimensions.push("share_kind");
+    if (hasField("basis_type")) dimensions.push("basis_type");
+  }
   // For "underperforming / worst" track questions, group by track
   if (asksPoor && !dimensions.includes("track_title")) dimensions.push("track_title");
 
@@ -304,6 +325,8 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     if (catalog.columns.some((c) => c.field_key === "net_revenue")) metrics.push("net_revenue");
     else if (catalog.columns.some((c) => c.field_key === "gross_revenue")) metrics.push("gross_revenue");
   }
+  if ((asksOwnership || asksEntitlement) && hasField("share_pct")) metrics.push("share_pct");
+  if ((asksOwnership || asksEntitlement) && hasField("confidence")) metrics.push("confidence");
   if (metrics.length === 0 && catalog.columns.some((c) => c.field_key === "quantity")) metrics.push("quantity");
 
   const inferredFromAliases = unique(selectedColumns.filter((c) => c !== "event_date"));
@@ -334,6 +357,10 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
     ...(asksConfidenceRisk ? ["mapping_confidence", "validation_status", "gross_revenue", "net_revenue"] : []),
     ...(asksRightsLeakage ? ["rights_type", "net_revenue", "gross_revenue"] : []),
+    ...(asksOwnership ? ["party_name", "share_pct", "share_kind", "basis_type"] : []),
+    ...(asksOwnership && rightsDimensionField ? [rightsDimensionField] : []),
+    ...(asksEntitlement ? ["party_name", "share_pct", "share_kind", "basis_type"] : []),
+    ...(asksEntitlement && rightsDimensionField ? [rightsDimensionField] : []),
   ]);
   const planFilters: AnalysisPlan["filters"] = [];
   if (comparisonWindow) {
@@ -352,6 +379,10 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
 
   const intent = asksPeriodComparison
     ? "period_comparison"
+    : asksEntitlement
+    ? "entitlement_estimation"
+    : asksOwnership
+    ? "rights_ownership"
     : asksGrossNetGap
     ? "gap_analysis"
     : asksRightsLeakage
@@ -386,6 +417,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
       ...(asksGrossNetGap ? ["gross_revenue", "net_revenue"] : []),
       ...(asksConfidenceRisk ? ["gross_revenue", "net_revenue", "mapping_confidence"] : []),
       ...(asksRightsLeakage ? ["gross_revenue", "net_revenue"] : []),
+      ...(asksOwnership || asksEntitlement ? ["share_pct"] : []),
     ]).slice(0, 3),
     dimensions: unique(dimensions).slice(0, 3),
     filters: planFilters,
@@ -396,6 +428,8 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     top_n: inferTopN(question),
     sort_by: asksGrossNetGap
       ? "gross_net_gap_abs"
+      : asksOwnership || asksEntitlement
+      ? "share_pct"
       : asksOpportunityRisk
       ? "opportunity_score"
       : (metrics[0] ?? "net_revenue"),
@@ -435,24 +469,133 @@ function buildRowEnrichedCte(customFields: string[]): string {
     )`;
 }
 
+function resolveCatalogColumns(names: string[], catalog: ArtistCatalog, byKey: Map<string, CatalogColumn>): CatalogColumn[] {
+  const result: CatalogColumn[] = [];
+  for (const name of unique(names)) {
+    const direct = byKey.get(name);
+    if (direct) {
+      result.push(direct);
+      continue;
+    }
+    const resolved = resolveColumnByAlias(name, catalog);
+    if (resolved && byKey.has(resolved)) result.push(byKey.get(resolved)!);
+  }
+  return result;
+}
+
+function sourceKindFilterSql(intent: AnalysisPlan["intent"]): string | null {
+  if ([
+    "revenue_analysis",
+    "platform_analysis",
+    "territory_analysis",
+    "trend_analysis",
+    "gap_analysis",
+    "quality_risk_impact",
+    "period_comparison",
+    "opportunity_risk_tracks",
+    "rights_leakage",
+  ].includes(intent)) {
+    return "lower(COALESCE(r.source_kind, '')) IN ('income', 'legacy_income')";
+  }
+  if (intent === "rights_ownership") {
+    return "lower(COALESCE(r.source_kind, '')) IN ('rights', 'entitlement')";
+  }
+  if (intent === "entitlement_estimation") {
+    return "lower(COALESCE(r.source_kind, '')) IN ('entitlement', 'rights')";
+  }
+  return null;
+}
+
 export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): { sql: string; chosen_columns: string[] } {
   const byKey = new Map(catalog.columns.map((c) => [c.field_key, c] as const));
 
-  if (plan.intent === "gap_analysis") {
-    const resolveGapDims = (names: string[]): CatalogColumn[] => {
-      const cols: CatalogColumn[] = [];
-      for (const name of unique(names)) {
-        const direct = byKey.get(name);
-        if (direct) {
-          cols.push(direct);
-          continue;
-        }
-        const resolved = resolveColumnByAlias(name, catalog);
-        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
-      }
-      return cols;
+  if (plan.intent === "rights_ownership") {
+    const dims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 5);
+    if (!dims.some((d) => d.field_key === "party_name") && byKey.has("party_name")) dims.unshift(byKey.get("party_name")!);
+    if (!dims.some((d) => d.field_key === "work_title") && byKey.has("work_title")) dims.push(byKey.get("work_title")!);
+    else if (!dims.some((d) => d.field_key === "recording_title") && byKey.has("recording_title")) dims.push(byKey.get("recording_title")!);
+    if (!dims.some((d) => d.field_key === "rights_stream") && byKey.has("rights_stream")) dims.push(byKey.get("rights_stream")!);
+    if (!dims.some((d) => d.field_key === "share_kind") && byKey.has("share_kind")) dims.push(byKey.get("share_kind")!);
+    if (!dims.some((d) => d.field_key === "basis_type") && byKey.has("basis_type")) dims.push(byKey.get("basis_type")!);
+    const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const dimAliases = dims.map((d) => d.field_key);
+    const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
+    const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
+    const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
+    const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
+    const sql = `${rowEnrichedCte}
+    SELECT
+      ${dimWithComma}MAX(COALESCE(r.share_pct, 0))::numeric AS share_pct,
+      MAX(COALESCE(r.confidence, 0))::numeric AS confidence,
+      BOOL_OR(COALESCE(r.is_conflicted, false)) AS is_conflicted
+    FROM row_enriched r
+    ${whereSql}
+    ${groupBy}
+    ORDER BY share_pct DESC NULLS LAST, confidence DESC NULLS LAST
+    LIMIT ${limit}`;
+    return {
+      sql,
+      chosen_columns: [...dimAliases, "share_pct", "confidence", "is_conflicted"],
     };
-    const dims = resolveGapDims(plan.dimensions)
+  }
+
+  if (plan.intent === "entitlement_estimation") {
+    const dims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
+      .filter((c) => c.field_key !== "event_date")
+      .filter((c) => isSafeSqlIdentifier(c.field_key))
+      .slice(0, 5);
+    if (!dims.some((d) => d.field_key === "party_name") && byKey.has("party_name")) dims.unshift(byKey.get("party_name")!);
+    if (!dims.some((d) => d.field_key === "work_title") && byKey.has("work_title")) dims.push(byKey.get("work_title")!);
+    else if (!dims.some((d) => d.field_key === "recording_title") && byKey.has("recording_title")) dims.push(byKey.get("recording_title")!);
+    if (!dims.some((d) => d.field_key === "rights_stream") && byKey.has("rights_stream")) dims.push(byKey.get("rights_stream")!);
+    if (!dims.some((d) => d.field_key === "share_kind") && byKey.has("share_kind")) dims.push(byKey.get("share_kind")!);
+    if (!dims.some((d) => d.field_key === "basis_type") && byKey.has("basis_type")) dims.push(byKey.get("basis_type")!);
+    const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const dimAliases = dims.map((d) => d.field_key);
+    const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n        ");
+    const dimProjection = dimSelect.length > 0 ? `${dimSelect},\n        ` : "";
+    const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
+    const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
+    const sql = `${rowEnrichedCte},
+    entitlement_rollup AS (
+      SELECT
+        ${dimProjection}MAX(COALESCE(r.share_pct, 0))::numeric AS share_pct,
+        MAX(COALESCE(r.confidence, 0))::numeric AS confidence,
+        BOOL_OR(COALESCE(r.is_conflicted, false)) AS is_conflicted,
+        MAX(
+          CASE
+            WHEN lower(COALESCE(r.share_kind, '')) = 'payable' THEN 3
+            WHEN lower(COALESCE(r.basis_type, '')) = 'estimated' THEN 2
+            WHEN lower(COALESCE(r.share_kind, '')) = 'registered' THEN 1
+            ELSE 0
+          END
+        ) AS payable_rank
+      FROM row_enriched r
+      ${whereSql}
+      ${groupBy}
+    )
+    SELECT
+      ${dimAliases.join(",\n      ")}${dimAliases.length > 0 ? ",\n      " : ""}share_pct,
+      confidence,
+      is_conflicted
+    FROM entitlement_rollup
+    ORDER BY payable_rank DESC, share_pct DESC NULLS LAST, confidence DESC NULLS LAST
+    LIMIT ${limit}`;
+    return {
+      sql,
+      chosen_columns: [...dimAliases, "share_pct", "confidence", "is_conflicted"],
+    };
+  }
+
+  if (plan.intent === "gap_analysis") {
+    const dims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
       .filter((c) => c.field_key !== "event_date")
       .filter((c) => isSafeSqlIdentifier(c.field_key))
       .slice(0, 3);
@@ -461,6 +604,8 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
     SELECT
@@ -472,6 +617,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
         ELSE ((SUM(COALESCE(r.gross_revenue, 0)) - SUM(COALESCE(r.net_revenue, 0))) / NULLIF(SUM(COALESCE(r.gross_revenue, 0)), 0))::numeric
       END AS gross_net_gap_pct
     FROM row_enriched r
+    ${whereSql}
     ${groupBy}
     ORDER BY gross_net_gap_abs DESC NULLS LAST
     LIMIT ${limit}`;
@@ -482,20 +628,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   }
 
   if (plan.intent === "quality_risk_impact") {
-    const resolveQualityDims = (names: string[]): CatalogColumn[] => {
-      const cols: CatalogColumn[] = [];
-      for (const name of unique(names)) {
-        const direct = byKey.get(name);
-        if (direct) {
-          cols.push(direct);
-          continue;
-        }
-        const resolved = resolveColumnByAlias(name, catalog);
-        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
-      }
-      return cols;
-    };
-    const dims = resolveQualityDims(plan.dimensions)
+    const dims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
       .filter((c) => c.field_key !== "event_date")
       .filter((c) => isSafeSqlIdentifier(c.field_key))
       .slice(0, 3);
@@ -505,6 +638,8 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
     SELECT
@@ -514,6 +649,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
       SUM(CASE WHEN lower(COALESCE(r.validation_status, '')) IN ('failed','critical') THEN 1 ELSE 0 END)::numeric AS validation_critical_rows,
       COUNT(*)::numeric AS row_count
     FROM row_enriched r
+    ${whereSql}
     ${groupBy}
     ORDER BY gross_revenue DESC NULLS LAST
     LIMIT ${limit}`;
@@ -524,20 +660,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   }
 
   if (plan.intent === "period_comparison") {
-    const resolvePeriodDims = (names: string[]): CatalogColumn[] => {
-      const cols: CatalogColumn[] = [];
-      for (const name of unique(names)) {
-        const direct = byKey.get(name);
-        if (direct) {
-          cols.push(direct);
-          continue;
-        }
-        const resolved = resolveColumnByAlias(name, catalog);
-        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
-      }
-      return cols;
-    };
-    const periodDims = resolvePeriodDims(plan.dimensions)
+    const periodDims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
       .filter((c) => c.field_key !== "event_date")
       .filter((c) => isSafeSqlIdentifier(c.field_key))
       .slice(0, 2);
@@ -558,11 +681,14 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimFinalWithComma = dimCols.length > 0 ? `${dimCols.join(",\n      ")},\n      ` : "";
     const dimOrderBy = dimCols.length > 0 ? `${dimCols.join(", ")}, ` : "";
     const dimRowSelectWithComma = dimCols.length > 0 ? `${dimCols.join(",\n        ")},\n        ` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceWhere = sourceFilter ? `AND ${sourceFilter.replaceAll("r.", "c.")}` : "";
 
     const sql = `${rowEnrichedCte},
     bounds AS (
       SELECT MAX(c.event_date)::date AS max_date
       FROM scoped_core c
+      WHERE ${sourceKindFilterSql(plan.intent)?.replaceAll("r.", "c.") ?? "TRUE"}
     ),
     last_period AS (
       SELECT
@@ -571,6 +697,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
         SUM(COALESCE(c.quantity, 0))::numeric AS last_quantity
       FROM row_enriched c
       WHERE c.event_date::date > ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql})::date
+      ${sourceWhere}
       ${dimGroupClause}
     ),
     prior_period AS (
@@ -581,6 +708,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
       FROM row_enriched c
       WHERE c.event_date::date > ((SELECT b.max_date FROM bounds b) - ${doubleOffsetSql})::date
         AND c.event_date::date <= ((SELECT b.max_date FROM bounds b) - ${currentOffsetSql})::date
+      ${sourceWhere}
       ${dimGroupClause}
     ),
     dim_rows AS (
@@ -648,6 +776,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
 
   if (plan.intent === "opportunity_risk_tracks") {
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 5)));
+    const incomeFilter = sourceKindFilterSql(plan.intent)?.replaceAll("r.", "c.") ?? "TRUE";
     const sql = `WITH track_rollup AS (
       SELECT
         c.track_title,
@@ -656,6 +785,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
         SUM(CASE WHEN lower(COALESCE(c.validation_status, '')) IN ('failed','critical') THEN 1 ELSE 0 END)::numeric AS critical_rows,
         COUNT(*)::numeric AS total_rows
       FROM scoped_core c
+      WHERE ${incomeFilter}
       GROUP BY 1
     ),
     scored AS (
@@ -689,30 +819,20 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   }
 
   if (plan.intent === "rights_leakage") {
-    const resolveDims = (names: string[]): CatalogColumn[] => {
-      const cols: CatalogColumn[] = [];
-      for (const name of unique(names)) {
-        const direct = byKey.get(name);
-        if (direct) {
-          cols.push(direct);
-          continue;
-        }
-        const resolved = resolveColumnByAlias(name, catalog);
-        if (resolved && byKey.has(resolved)) cols.push(byKey.get(resolved)!);
-      }
-      return cols;
-    };
-    const dims = resolveDims(plan.dimensions)
+    const dims = resolveCatalogColumns(plan.dimensions, catalog, byKey)
       .filter((c) => c.field_key !== "event_date")
       .filter((c) => isSafeSqlIdentifier(c.field_key))
       .slice(0, 4);
     if (!dims.some((d) => d.field_key === "rights_type") && byKey.has("rights_type")) dims.push(byKey.get("rights_type")!);
+    if (!dims.some((d) => d.field_key === "rights_stream") && byKey.has("rights_stream")) dims.push(byKey.get("rights_stream")!);
     if (!dims.some((d) => d.field_key === "track_title") && byKey.has("track_title")) dims.push(byKey.get("track_title")!);
     const rowEnrichedCte = buildRowEnrichedCte(dims.filter((d) => d.source === "custom").map((d) => d.field_key));
     const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
+    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
     SELECT
@@ -724,6 +844,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
         ELSE (SUM(COALESCE(r.net_revenue, 0)) / NULLIF(SUM(COALESCE(r.gross_revenue, 0)), 0))::numeric
       END AS effective_royalty_rate
     FROM row_enriched r
+    ${whereSql}
     ${groupBy}
     ORDER BY effective_royalty_rate ASC NULLS LAST, quantity DESC NULLS LAST
     LIMIT ${limit}`;
@@ -769,6 +890,8 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimExprs = dimensionCols.map((col) => buildDimensionExpr(col, plan.grain));
     const aliases = dimExprs.map((expr) => expr.split(/\s+AS\s+/i)[1]).filter(Boolean);
     const selectList = [...dimExprs, "COUNT(*) AS row_count"].join(",\n      ");
+    const baseSourceFilter = sourceKindFilterSql(plan.intent);
+    const whereSql = baseSourceFilter ? `WHERE ${baseSourceFilter}` : "";
     const groupBySql = aliases.length > 0 ? `GROUP BY ${aliases.map((_, i) => String(i + 1)).join(", ")}` : "";
     const orderBySql = `ORDER BY row_count DESC NULLS LAST`;
     return {
@@ -779,6 +902,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     SELECT
       ${selectList}
     FROM row_enriched r
+    ${whereSql}
     ${groupBySql}
     ${orderBySql}
     LIMIT ${limit}`,
@@ -807,6 +931,8 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   const metricAliases = finalMetrics.map((m) => m.field_key);
 
   const whereClauses: string[] = [];
+  const baseSourceFilter = sourceKindFilterSql(plan.intent);
+  if (baseSourceFilter) whereClauses.push(baseSourceFilter);
   for (const filter of plan.filters.slice(0, 4)) {
     if (filter.column.startsWith("__")) continue;
     // Resolve filter column through alias lookup
@@ -824,7 +950,8 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     }
   }
   if (relativeOffsetSql) {
-    whereClauses.push(`r.event_date::date > ((SELECT MAX(c.event_date)::date FROM scoped_core c) - ${relativeOffsetSql})::date`);
+    const sourceBoundsFilter = baseSourceFilter?.replaceAll("r.", "c.") ?? "TRUE";
+    whereClauses.push(`r.event_date::date > ((SELECT MAX(c.event_date)::date FROM scoped_core c WHERE ${sourceBoundsFilter}) - ${relativeOffsetSql})::date`);
   }
 
   let selectList = [...selectDimensionExprs, ...metricExprs].join(",\n      ");
@@ -939,6 +1066,15 @@ export function verifyQueryResult({
   const colSet = new Set(columns.map((c) => c.toLowerCase()));
   const checks: string[] = [];
   const warnings: string[] = [];
+  const planMetrics = plan?.metrics.map((m) => m.toLowerCase()) ?? [];
+  const planDimensions = plan?.dimensions.map((d) => d.toLowerCase()) ?? [];
+  const asksRevenue = planMetrics.some((m) => m.includes("revenue") || m === "net" || m === "gross") ||
+    /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
+  const asksPlatformRanking = planDimensions.includes("platform") || /\b(platform|dsp|service)\b/i.test(q);
+  const asksTerritoryRanking = planDimensions.includes("territory") || /\b(territory|country|market|region)\b/i.test(q);
+  const asksTrend = (plan?.grain && plan.grain !== "none") || planDimensions.includes("event_date") || plan?.intent === "period_comparison";
+  const asksOwnership = plan?.intent === "rights_ownership" || /\b(owner|owns|ownership|split|share|publisher|writer|rightsholder|collect)\b/i.test(q);
+  const asksEntitlement = plan?.intent === "entitlement_estimation" || /\b(owed|payable|entitlement|payout|get(?:ting)? from)\b/i.test(q);
   const hasRevenueColumn = colSet.has("net_revenue") || colSet.has("gross_revenue");
   const hasTimeColumn =
     colSet.has("event_date") ||
@@ -947,21 +1083,6 @@ export function verifyQueryResult({
     colSet.has("week_start") ||
     colSet.has("day_start") ||
     colSet.has("period_bucket");
-  const hasTrackDimension = colSet.has("track_title");
-  const hasPlatformDimension = colSet.has("platform");
-  const hasTerritoryDimension = colSet.has("territory");
-  const planMetrics = plan?.metrics.map((m) => m.toLowerCase()) ?? [];
-  const planDimensions = plan?.dimensions.map((d) => d.toLowerCase()) ?? [];
-  const asksTop = /\b(top|highest|best|lowest|worst|rank(?:ed|ing)?)\b/i.test(q);
-  const asksRevenue = planMetrics.some((m) => m.includes("revenue") || m === "net" || m === "gross") ||
-    /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
-  const asksTrack = planDimensions.includes("track_title");
-  const asksPlatformRanking = planDimensions.includes("platform");
-  const asksTerritoryRanking = planDimensions.includes("territory");
-  const asksTrend = (plan?.grain && plan.grain !== "none") || planDimensions.includes("event_date") || plan?.intent === "period_comparison";
-  const asksGapEvidence = plan?.intent === "gap_analysis";
-  const asksQualityRiskEvidence = plan?.intent === "quality_risk_impact";
-  const asksStrengths = /\b(strength|strengths|strongest|edge|advantage)\b/i.test(q) || plan?.intent === "catalog_strengths";
 
   if (rows.length === 0) {
     return {
@@ -972,61 +1093,69 @@ export function verifyQueryResult({
     };
   }
 
-  if (asksRevenue && !hasRevenueColumn) {
-    return { status: "failed", reason: "missing_revenue_metric", checks: ["revenue_metric_required"], warnings };
-  }
-
-  if (asksTop && asksTrack && !hasTrackDimension) {
-    return { status: "failed", reason: "missing_track_dimension", checks: ["track_dimension_required"], warnings };
-  }
-
-  if (asksPlatformRanking && !hasPlatformDimension) {
-    return { status: "failed", reason: "missing_platform_dimension", checks: ["platform_dimension_required"], warnings };
-  }
-
-  if (asksTerritoryRanking && !hasTerritoryDimension) {
-    return { status: "failed", reason: "missing_territory_dimension", checks: ["territory_dimension_required"], warnings };
-  }
-
-  if (asksTrend && !hasTimeColumn) {
-    return { status: "failed", reason: "missing_time_dimension", checks: ["time_dimension_required"], warnings };
-  }
-  if (asksGapEvidence && !(colSet.has("gross_revenue") && colSet.has("net_revenue") && colSet.has("gross_net_gap_abs"))) {
-    return { status: "failed", reason: "missing_gap_metric", checks: ["gap_metric_required"], warnings };
-  }
-  if (asksQualityRiskEvidence && !(colSet.has("mapping_confidence") || colSet.has("validation_critical_rows"))) {
-    return { status: "failed", reason: "missing_quality_risk_evidence", checks: ["quality_evidence_required"], warnings };
-  }
-
-  if (asksStrengths) {
-    const hasAnyStrengthDimension = hasTrackDimension || hasPlatformDimension || hasTerritoryDimension;
-    if (!hasAnyStrengthDimension || !hasRevenueColumn) {
-      return {
-        status: "failed",
-        reason: "insufficient_strength_evidence",
-        checks: ["strength_requires_dimension_and_revenue"],
-        warnings,
-      };
+  if (asksPlatformRanking) {
+    checks.push("platform_preferred");
+    if (!colSet.has("platform")) {
+      warnings.push("platform column not in output; result may be aggregated across all platforms");
     }
   }
 
-  if (asksRevenue && !hasNonNullNumeric(rows, ["net_revenue", "gross_revenue"])) {
-    warnings.push("revenue values in result are all zero or null");
+  if (asksTerritoryRanking) {
+    checks.push("territory_preferred");
+    if (!colSet.has("territory")) {
+      warnings.push("territory column not in output; result may be aggregated across all territories");
+    }
+  }
+
+  if (asksRevenue) {
+    checks.push("revenue_preferred");
+    if (!hasRevenueColumn) {
+      warnings.push("revenue column not in output; a proxy metric may have been used");
+    } else if (!hasNonNullNumeric(rows, ["net_revenue", "gross_revenue"])) {
+      warnings.push("revenue values in result are zero or null");
+    }
+  }
+
+  if (asksTrend) {
+    checks.push("time_grain_preferred");
+    if (!hasTimeColumn) {
+      warnings.push("no time-grain column in output; trend may not be visible");
+    }
+  }
+
+  if (asksOwnership) {
+    checks.push("rights_preferred");
+    if (!colSet.has("party_name")) {
+      warnings.push("party dimension not in output; ownership may be aggregated");
+    }
+    if (!colSet.has("share_pct") || !hasNonNullNumeric(rows, ["share_pct"])) {
+      warnings.push("share percentages are unavailable in the current result");
+    }
+  }
+
+  if (asksEntitlement) {
+    checks.push("entitlement_preferred");
+    if (!colSet.has("share_pct") || !hasNonNullNumeric(rows, ["share_pct"])) {
+      warnings.push("no share percentages were returned for this entitlement question");
+    }
+    const hasPayableSignal = rows.some((row) => {
+      const shareKind = typeof row.share_kind === "string" ? row.share_kind.toLowerCase() : "";
+      const basisType = typeof row.basis_type === "string" ? row.basis_type.toLowerCase() : "";
+      return shareKind === "payable" || basisType === "estimated";
+    });
+    if (!hasPayableSignal) {
+      warnings.push("payable contract terms are unavailable; answer may rely on registered rights only");
+    }
   }
 
   const explicitTopMatch = q.match(/\b(top|highest|best|first)\s+(\d{1,3})\b/i);
   const explicitTopN = explicitTopMatch ? Number(explicitTopMatch[2]) : 0;
-  if (plan && asksTop && explicitTopN > 0) {
+  if (plan && explicitTopN > 0) {
     checks.push("top_n_respected");
-    const requestedTopN = explicitTopN;
-    if (requestedTopN > 0 && rows.length > requestedTopN) {
-      warnings.push(`expected at most ${requestedTopN} rows but got ${rows.length}`);
-    }
-    if (requestedTopN >= 3 && rows.length < Math.min(requestedTopN, 3)) {
-      warnings.push(`asked for top ${requestedTopN} but only ${rows.length} ranked row(s) returned`);
+    if (rows.length > explicitTopN) {
+      warnings.push(`expected at most ${explicitTopN} rows but got ${rows.length}`);
     }
   }
 
   return { status: "passed", checks, warnings };
-
 }

@@ -17,6 +17,7 @@ import { ClipboardCheck, AlertTriangle, ChevronLeft, ChevronRight, CircleCheckBi
 import { format, isValid } from "date-fns";
 import { KpiStrip, PageHeader } from "@/components/layout";
 import { cn } from "@/lib/utils";
+import { isTrackMatchTaskPayload } from "@/lib/report-workflow";
 
 type ReviewTask = Tables<"review_tasks">;
 type SourceRow = Tables<"source_rows">;
@@ -228,12 +229,15 @@ export default function DataQualityQueue() {
       // Get task counts per report
       const { data: taskSummary, error: taskError } = await supabase
         .from("review_tasks")
-        .select("report_id, status, severity");
+        .select("report_id, status, severity, payload");
 
       if (taskError) throw taskError;
 
       return reportsData.map(report => {
-        const reportTasks = (taskSummary || []).filter(t => t.report_id === report.id);
+        const reportTasks = (taskSummary || []).filter((task) => {
+          if (task.report_id !== report.id) return false;
+          return !isTrackMatchTaskPayload(toTaskPayload(task.payload as ReviewTask["payload"]));
+        });
         const open = reportTasks.filter(t => t.status === "open" || t.status === "in_progress").length;
         const critical = reportTasks.filter(t => (t.status === "open" || t.status === "in_progress") && t.severity === "critical").length;
         const resolved = reportTasks.filter(t => t.status === "resolved").length;
@@ -259,6 +263,11 @@ export default function DataQualityQueue() {
       return data ?? [];
     },
   });
+
+  const filteredTasks = useMemo(
+    () => tasks.filter((task) => !isTrackMatchTaskPayload(toTaskPayload(task.payload))),
+    [tasks],
+  );
 
   const { data: knownCustomFields = [] } = useQuery({
     queryKey: ["known-custom-fields"],
@@ -517,11 +526,11 @@ export default function DataQualityQueue() {
 
   const metrics = useMemo(() => {
     if (selectedReportId) {
-      const open = tasks.filter((task) => task.status === "open" || task.status === "in_progress").length;
-      const critical = tasks.filter(
+      const open = filteredTasks.filter((task) => task.status === "open" || task.status === "in_progress").length;
+      const critical = filteredTasks.filter(
         (task) => (task.status === "open" || task.status === "in_progress") && task.severity === "critical"
       ).length;
-      const resolved = tasks.filter((task) => task.status === "resolved").length;
+      const resolved = filteredTasks.filter((task) => task.status === "resolved").length;
       return { open, critical, resolved };
     } else {
       const open = reports.reduce((acc, r) => acc + (r.metrics?.open || 0), 0);
@@ -714,7 +723,7 @@ export default function DataQualityQueue() {
           <CardContent>
             {isLoadingTasks ? (
               <p className="text-sm text-muted-foreground">Loading tasks...</p>
-            ) : tasks.length > 0 ? (
+            ) : filteredTasks.length > 0 ? (
                <Table className="w-full min-w-[940px]" variant="evidence" density="compact">
                 <TableHeader>
                   <TableRow>
@@ -726,7 +735,7 @@ export default function DataQualityQueue() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {tasks.map((task) => (
+                  {filteredTasks.map((task) => (
                     (() => {
                       const taskPayload = toTaskPayload(task.payload);
                       const issueList = Array.isArray(taskPayload?.errors) ? taskPayload.errors : [];

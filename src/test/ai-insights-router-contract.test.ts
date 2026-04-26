@@ -104,4 +104,32 @@ describe("ai insights response contract", () => {
     };
     expect(isAiInsightsTurnResponse(adaptiveFixture)).toBe(true);
   });
+
+  it("accepts prose-first answer design metadata for the current viewer contract", () => {
+    const proseFixture = {
+      ...base,
+      resolved_mode: "workspace-general",
+      render_hints: {
+        layout: "prose_first",
+        density: "expanded",
+        visual_preference: "chart",
+        show_confidence_badges: true,
+        evidence_visibility: "collapsed",
+        visible_artifact_ids: ["fallback-visual"],
+        answer_depth: "deep",
+      },
+      answer_design: {
+        capabilities: [
+          "financial_performance",
+          "market_and_platform_context",
+          "executive_summary",
+        ],
+        depth: "deep",
+        external_enrichment_allowed: true,
+        evidence_visibility: "collapsed",
+      },
+    };
+
+    expect(isAiInsightsTurnResponse(proseFixture)).toBe(true);
+  });
 });

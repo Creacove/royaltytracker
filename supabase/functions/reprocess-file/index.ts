@@ -112,6 +112,32 @@ serve(async (req) => {
       });
     }
 
+    const trackMatching = await invokeStage("prepare-track-matches");
+    if (!trackMatching.ok) {
+      return new Response(trackMatching.text, {
+        status: trackMatching.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const trackMatchingData = trackMatching.text ? JSON.parse(trackMatching.text) : null;
+    if (trackMatchingData?.task_count > 0) {
+      return new Response(
+        JSON.stringify({
+          status: "awaiting_track_match",
+          report_id: reportId,
+          ingestion: ingestion.text ? JSON.parse(ingestion.text) : null,
+          extraction: extraction.text ? JSON.parse(extraction.text) : null,
+          normalization: normalization.text ? JSON.parse(normalization.text) : null,
+          track_matching: trackMatchingData,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const validation = await invokeStage("run-validation");
     if (!validation.ok) {
       return new Response(validation.text, {
@@ -127,6 +153,7 @@ serve(async (req) => {
         ingestion: ingestion.text ? JSON.parse(ingestion.text) : null,
         extraction: extraction.text ? JSON.parse(extraction.text) : null,
         normalization: normalization.text ? JSON.parse(normalization.text) : null,
+        track_matching: trackMatchingData,
         validation: validation.text ? JSON.parse(validation.text) : null,
       }),
       {

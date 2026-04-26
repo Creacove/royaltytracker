@@ -313,6 +313,9 @@ export type AiInsightsEntityContext = {
   track_title?: string;
   artist_key?: string;
   artist_name?: string;
+  recording_id?: string;
+  work_id?: string;
+  party_id?: string;
 };
 
 export type AiInsightsEvidence = {
@@ -383,10 +386,20 @@ export type AiInsightsAnswerBlock = {
 };
 
 export type AiInsightsRenderHints = {
-  layout: "adaptive_card_stack";
+  layout: "adaptive_card_stack" | "prose_first";
   density: "compact" | "expanded";
   visual_preference: "chart" | "table" | "none";
   show_confidence_badges: boolean;
+  evidence_visibility?: "collapsed" | "expanded";
+  visible_artifact_ids?: string[];
+  answer_depth?: "concise" | "standard" | "deep";
+};
+
+export type AiInsightsAnswerDesign = {
+  capabilities: string[];
+  depth: "concise" | "standard" | "deep";
+  external_enrichment_allowed: boolean;
+  evidence_visibility: "collapsed" | "expanded";
 };
 
 export type AiInsightsTurnRequest = {
@@ -449,4 +462,5 @@ export type AiInsightsTurnResponse = {
   recommendations?: AiInsightsRecommendation[];
   citations?: AiInsightsCitation[];
   unknowns?: string[];
+  answer_design?: AiInsightsAnswerDesign;
 };

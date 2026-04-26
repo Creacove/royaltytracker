@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { designAssistantAnswer } from "../_shared/assistant-answer-design.ts";
+import { buildDecisionGradeAnswer } from "../_shared/assistant-answer-policy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -679,11 +681,7 @@ function buildAdaptiveBlocks(body: AdaptiveAnswerResponse): Array<Record<string,
   const blocks: Array<Record<string, unknown>> = [];
   const confidence = body.evidence?.system_confidence ?? "low";
   const hasVisualRows = Array.isArray(body.visual?.rows) && body.visual.rows.length > 0;
-  const enrichedSummary = enrichNarrativeSection(
-    body.why_this_matters,
-    body.external_context?.summary,
-    "Execution context",
-  );
+  const enrichedSummary = body.why_this_matters;
 
   blocks.push({
     id: "direct-answer",
@@ -914,24 +912,11 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
     ...normalizedBody,
     kpis: decorateKpisForDisplay(normalizedBody.kpis),
     visual: displayVisual,
-    executive_answer: enrichNarrativeSection(
-      normalizedBody.executive_answer,
-      normalizedBody.external_context?.summary,
-      "Market context",
-    ),
-    why_this_matters: enrichNarrativeSection(
-      normalizedBody.why_this_matters,
-      normalizedBody.external_context?.advisory_take ?? normalizedBody.external_context?.summary,
-      "Execution context",
-    ),
-    recommendations: enrichRecommendationsWithExternalContext(
-      Array.isArray(normalizedBody.recommendations)
-        ? normalizedBody.recommendations as Array<Record<string, unknown>>
-        : [],
-      normalizedBody.external_context?.recommendation_note
-        ?? normalizedBody.external_context?.advisory_take
-        ?? normalizedBody.external_context?.summary,
-    ),
+    executive_answer: normalizedBody.executive_answer,
+    why_this_matters: normalizedBody.why_this_matters,
+    recommendations: Array.isArray(normalizedBody.recommendations)
+      ? normalizedBody.recommendations as Array<Record<string, unknown>>
+      : [],
   };
   const answer_blocks = buildAdaptiveBlocks(enrichedBody);
   const evidence_map: Record<string, "workspace_data" | "external"> = {};
@@ -940,15 +925,45 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
       evidence_map[block.id] = block.source === "external" ? "external" : "workspace_data";
     }
   }
+  const design = designAssistantAnswer({
+    question:
+      (isRecord(body.diagnostics) && typeof body.diagnostics.request_question === "string"
+        ? body.diagnostics.request_question
+        : answerTextForPersona) || answerTextForPersona,
+    evidence: body.evidence,
+    visual: body.visual,
+    recommendations: Array.isArray(enrichedBody.recommendations) ? enrichedBody.recommendations : [],
+    citations: Array.isArray(enrichedBody.citations) ? enrichedBody.citations : [],
+    unknowns: Array.isArray(body.unknowns) ? body.unknowns.filter((item): item is string => typeof item === "string") : [],
+    conflicts: Array.isArray(body.claims) ? body.claims : [],
+  });
+
+  const blockKindForDesign = (type: string): string | null => {
+    if (type === "bar_chart") return "bar_chart";
+    if (type === "line_chart") return "line_chart";
+    if (type === "table") return "table";
+    if (type === "recommendations" || type === "action_plan" || type === "scenario_options") return "recommendations";
+    if (type === "citations") return "citations";
+    return null;
+  };
+
+  const visible_artifact_ids = design.artifacts
+    .map((artifact) => answer_blocks.find((block) => blockKindForDesign(typeof block.type === "string" ? block.type : "") === artifact.kind))
+    .filter((block): block is { id: string } => Boolean(block?.id))
+    .map((block) => block.id);
+
   const render_hints = {
-    layout: "adaptive_card_stack",
-    density: answer_blocks.length > 6 ? "expanded" : "compact",
+    layout: "prose_first",
+    density: design.depth === "deep" ? "expanded" : "compact",
     visual_preference: body.visual.type === "bar" || body.visual.type === "line"
       ? "chart"
       : body.visual.type === "table"
         ? "table"
         : "none",
     show_confidence_badges: true,
+    evidence_visibility: design.evidence_visibility,
+    visible_artifact_ids,
+    answer_depth: design.depth,
   };
 
   const recommendationBlock = answer_blocks.find((b) => b.type === "recommendations");
@@ -964,6 +979,12 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
     ...enrichedBody,
     detected_intent,
     detected_persona,
+    answer_design: {
+      capabilities: design.capabilities,
+      depth: design.depth,
+      external_enrichment_allowed: design.external_enrichment_allowed,
+      evidence_visibility: design.evidence_visibility,
+    },
     answer_blocks,
     render_hints,
     evidence_map,
@@ -2180,8 +2201,9 @@ function buildDataDrivenRecommendations(
       });
     }
   }
-  if ((targetRecommendationCount ?? 0) > 0 && deduped.length < targetRecommendationCount && !(asksTrendCompare && hasPlatform)) {
-    const gap = targetRecommendationCount - deduped.length;
+  const recommendationLimit = targetRecommendationCount ?? 4;
+  if ((targetRecommendationCount ?? 0) > 0 && deduped.length < recommendationLimit && !(asksTrendCompare && hasPlatform)) {
+    const gap = recommendationLimit - deduped.length;
     for (let i = 0; i < gap; i++) {
       if (recommendationTheme === "tour") {
         deduped.push({
@@ -2230,10 +2252,10 @@ function buildDataDrivenRecommendations(
   }
   const intentFiltered = deduped.filter((rec) => recommendationAllowedForIntent(String((rec as Record<string, unknown>).action ?? ""), intentFamily));
   const constrained = intentFiltered.length > 0 ? intentFiltered : deduped.slice(0, 1);
-  if ((targetRecommendationCount ?? 0) > 0 && constrained.length > targetRecommendationCount) {
-    return enrichRecommendationRecords(constrained.slice(0, targetRecommendationCount), recommendationTheme, visual);
+  if ((targetRecommendationCount ?? 0) > 0 && constrained.length > recommendationLimit) {
+    return enrichRecommendationRecords(constrained.slice(0, recommendationLimit), recommendationTheme, visual);
   }
-  return enrichRecommendationRecords(constrained.slice(0, targetRecommendationCount ?? 4), recommendationTheme, visual);
+  return enrichRecommendationRecords(constrained.slice(0, recommendationLimit), recommendationTheme, visual);
 }
 
 async function maybeFetchExternalContext(params: {
@@ -2318,8 +2340,8 @@ async function maybeFetchExternalContext(params: {
       const textParts: string[] = [];
       for (const item of outputItems) {
         if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-        const content = Array.isArray((item as Record<string, unknown>).content)
-          ? (item as Record<string, unknown>).content
+        const content: unknown[] = Array.isArray((item as Record<string, unknown>).content)
+          ? (item as Record<string, unknown>).content as unknown[]
           : [];
         for (const part of content) {
           if (!part || typeof part !== "object" || Array.isArray(part)) continue;
@@ -2333,13 +2355,13 @@ async function maybeFetchExternalContext(params: {
     const citations: Array<Record<string, unknown>> = [];
     for (const item of outputItems) {
       if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-      const content = Array.isArray((item as Record<string, unknown>).content)
-        ? (item as Record<string, unknown>).content
+      const content: unknown[] = Array.isArray((item as Record<string, unknown>).content)
+        ? (item as Record<string, unknown>).content as unknown[]
         : [];
       for (const part of content) {
         if (!part || typeof part !== "object" || Array.isArray(part)) continue;
-        const annotations = Array.isArray((part as Record<string, unknown>).annotations)
-          ? (part as Record<string, unknown>).annotations
+        const annotations: unknown[] = Array.isArray((part as Record<string, unknown>).annotations)
+          ? (part as Record<string, unknown>).annotations as unknown[]
           : [];
         for (const annotation of annotations) {
           if (!annotation || typeof annotation !== "object" || Array.isArray(annotation)) continue;
@@ -3570,11 +3592,30 @@ serve(async (req) => {
       const resolvedWhy =
         (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
         (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Artist-level reviewed evidence in scope.");
+      const answerPolicy = buildDecisionGradeAnswer({
+        question,
+        mode: "artist",
+        resolvedEntities,
+        visual,
+        kpis,
+        evidence: {
+          row_count: rowCount,
+          scanned_rows: rowCount,
+          from_date: assistantPayload.evidence?.from_date ?? fromDate,
+          to_date: assistantPayload.evidence?.to_date ?? toDate,
+          provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence.provenance : ["run_artist_chat_sql_v1"],
+          system_confidence: confidence,
+        },
+        assistantAnswer: assistantPayload.answer_text,
+        assistantWhy: resolvedWhy,
+        qualityOutcome: assistantPayload.quality_outcome,
+        diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
+      });
       const recommendationTheme = inferRecommendationTheme(question, visual);
-      const baseRecommendations = shouldConstrain
+      const baseRecommendations = shouldConstrain || answerPolicy.quality_outcome === "constrained"
         ? []
         : buildDataDrivenRecommendations(question, visual, resolvedWhy, intentFamily);
-      const shouldEnrich = shouldUseExternalContext({
+      const shouldEnrich = answerPolicy.external_context_allowed && shouldUseExternalContext({
         question,
         decisionFrame,
         intentFamily,
@@ -3607,10 +3648,12 @@ serve(async (req) => {
         return out;
       })();
       const isStrategyQuestion = isStrategyQuestionText(question);
-      const qualityOutcome = shouldConstrain ? "constrained" : (assistantPayload.quality_outcome ?? undefined);
-      const topRow = Array.isArray(visual.rows) && visual.rows.length > 0 ? visual.rows[0] : null;
+      const qualityOutcome = shouldConstrain || answerPolicy.quality_outcome === "constrained"
+        ? "constrained"
+        : (assistantPayload.quality_outcome ?? undefined);
       const requestedTopN = parseRequestedTopN(question);
       const returnedRows = Array.isArray(visual.rows) ? visual.rows.length : 0;
+      const topRow = Array.isArray(visual.rows) && visual.rows.length > 0 ? visual.rows[0] : null;
       const topTrack = topRow && typeof topRow.track_title === "string" ? topRow.track_title : null;
       const topPlatform = topRow && typeof topRow.platform === "string" ? topRow.platform : null;
       const strategyExecutiveFallback = topTrack
@@ -3649,22 +3692,27 @@ serve(async (req) => {
         externalContext: externalContext ?? undefined,
         intentFamily,
       });
-      const executiveOut = advisoryNarrative.executive;
-      const whyOut = advisoryNarrative.strategicTake;
+      const executiveOut = [tourBrief?.executive ?? answerPolicy.executive_answer, topCountCaveat, largestChange]
+        .filter(Boolean)
+        .join(" ");
+      const whyOut = tourBrief?.why ?? answerPolicy.why_this_matters;
       const recommendations = synthesizeAdvisorRecommendations({
         recommendations: baseRecommendations,
         theme: recommendationTheme,
         visual,
         executive: executiveOut,
         strategicTake: whyOut,
-        externalContext: externalContext ?? undefined,
       });
       const kpisOut = tourBrief
         ? [...tourBrief.kpis, ...kpis].slice(0, 6)
         : kpis;
-      const dataNotes = [...diagNotes];
+      const dataNotes = [...diagNotes, ...answerPolicy.data_notes];
       const followUpsFinal = qualityOutcome === "constrained"
-        ? [constrainedAskBackByReason(hardConstrainReason)]
+        ? [
+          answerPolicy.missing_requirements.length > 0
+            ? `To tighten this answer, add: ${answerPolicy.missing_requirements.join(", ")}.`
+            : constrainedAskBackByReason(hardConstrainReason),
+        ]
         : (followUps.length > 0
           ? followUps
           : [
@@ -3677,7 +3725,7 @@ serve(async (req) => {
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
         resolved_mode: "artist",
         resolved_entities: resolvedEntities,
-        answer_title: isStrategyQuestion
+        answer_title: answerPolicy.objective === "recommendation"
           ? "Strategic Priorities"
           : ((isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) || "Artist AI answer"),
         executive_answer: executiveOut,
@@ -3716,6 +3764,11 @@ serve(async (req) => {
           intent_family: intentFamily,
           decision_frame: decisionFrame,
           evidence_fit: evidenceFit,
+          answer_policy: {
+            objective: answerPolicy.objective,
+            missing_requirements: answerPolicy.missing_requirements,
+            external_context_allowed: answerPolicy.external_context_allowed,
+          },
         },
       });
     }
@@ -3849,6 +3902,25 @@ serve(async (req) => {
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
       const visual = toAiVisual(assistantPayload);
+      const answerPolicy = buildDecisionGradeAnswer({
+        question,
+        mode: "track",
+        resolvedEntities,
+        visual,
+        kpis,
+        evidence: {
+          row_count: rowCount,
+          scanned_rows: rowCount,
+          from_date: assistantPayload.evidence?.from_date ?? fromDate,
+          to_date: assistantPayload.evidence?.to_date ?? toDate,
+          provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence.provenance : ["run_track_chat_sql_v2"],
+          system_confidence: rowCount > 0 ? "high" : "low",
+        },
+        assistantAnswer: assistantPayload.answer_text,
+        assistantWhy: assistantPayload.why_this_matters,
+        qualityOutcome: assistantPayload.quality_outcome,
+        diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
+      });
 
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
@@ -3857,10 +3929,8 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Track AI answer",
-        executive_answer: assistantPayload.answer_text,
-        why_this_matters:
-          (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
-          (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Track-level reviewed evidence in scope."),
+        executive_answer: answerPolicy.executive_answer,
+        why_this_matters: answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -3884,7 +3954,7 @@ serve(async (req) => {
               "What should I review first to improve payout confidence?",
               "Show top leakage patterns for this track.",
             ],
-        quality_outcome: assistantPayload.quality_outcome ?? undefined,
+        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -3894,6 +3964,14 @@ serve(async (req) => {
         evidence_map: assistantPayload.evidence_map ?? undefined,
         unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
         clarification: assistantPayload.clarification ?? undefined,
+        diagnostics: {
+          ...(assistantPayload.diagnostics ?? {}),
+          answer_policy: {
+            objective: answerPolicy.objective,
+            missing_requirements: answerPolicy.missing_requirements,
+            external_context_allowed: answerPolicy.external_context_allowed,
+          },
+        },
       });
     }
 
@@ -4077,6 +4155,25 @@ serve(async (req) => {
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
       const visual = toAiVisual(assistantPayload);
+      const answerPolicy = buildDecisionGradeAnswer({
+        question,
+        mode: "workspace-general",
+        resolvedEntities,
+        visual,
+        kpis,
+        evidence: {
+          row_count: rowCount,
+          scanned_rows: rowCount,
+          from_date: assistantPayload.evidence?.from_date ?? fromDate,
+          to_date: assistantPayload.evidence?.to_date ?? toDate,
+          provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence.provenance : ["run_workspace_chat_sql_v1"],
+          system_confidence: rowCount > 0 ? "high" : "low",
+        },
+        assistantAnswer: assistantPayload.answer_text,
+        assistantWhy: assistantPayload.why_this_matters,
+        qualityOutcome: assistantPayload.quality_outcome,
+        diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
+      });
 
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
@@ -4085,10 +4182,8 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Workspace AI answer",
-        executive_answer: assistantPayload.answer_text,
-        why_this_matters:
-          (isNonEmptyString(assistantPayload.why_this_matters) && assistantPayload.why_this_matters) ||
-          (isNonEmptyString(assistantPayload.answer_title) ? assistantPayload.answer_title : "Workspace-level reviewed evidence in scope."),
+        executive_answer: answerPolicy.executive_answer,
+        why_this_matters: answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -4112,7 +4207,7 @@ serve(async (req) => {
               "Where are the biggest quality blockers across the workspace?",
               "Which tracks combine high opportunity with high risk?",
             ],
-        quality_outcome: assistantPayload.quality_outcome ?? undefined,
+        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -4122,7 +4217,14 @@ serve(async (req) => {
         evidence_map: assistantPayload.evidence_map ?? undefined,
         unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
         clarification: assistantPayload.clarification ?? undefined,
-        diagnostics: assistantPayload.diagnostics ?? undefined,
+        diagnostics: {
+          ...(assistantPayload.diagnostics ?? {}),
+          answer_policy: {
+            objective: answerPolicy.objective,
+            missing_requirements: answerPolicy.missing_requirements,
+            external_context_allowed: answerPolicy.external_context_allowed,
+          },
+        },
       });
     }
 

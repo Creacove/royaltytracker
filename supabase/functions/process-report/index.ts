@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { parse as parseCsv } from "https://deno.land/std@0.168.0/encoding/csv.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5?target=deno";
+import { classifyDocumentFamily, type ParserLane } from "../_shared/document-classification.ts";
 
 
 const corsHeaders = {
@@ -1012,7 +1013,8 @@ interface ValidationError {
 
 function validateRows(
   rows: TransactionRow[],
-  tolerance = 0.01
+  tolerance = 0.01,
+  parserLane: ParserLane = "income",
 ): { errors: ValidationError[]; accuracy: number } {
   const errors: ValidationError[] = [];
 
@@ -1052,19 +1054,20 @@ function validateRows(
       }
     }
 
-    // Required fields
-    for (const col of ["track_title", "platform", "territory"]) {
-      if (!r[col]) {
-        errors.push({
-          row_index: i,
-          error_type: "missing_required_field",
-          expected: null,
-          actual: null,
-          deviation: null,
-          severity: "warning",
-          field: col,
-          message: `Missing required field: ${col}`,
-        });
+    if (parserLane === "income" || parserLane === "mixed") {
+      for (const col of ["track_title", "platform", "territory"]) {
+        if (!r[col]) {
+          errors.push({
+            row_index: i,
+            error_type: "missing_required_field",
+            expected: null,
+            actual: null,
+            deviation: null,
+            severity: "warning",
+            field: col,
+            message: `Missing required field: ${col}`,
+          });
+        }
       }
     }
 
@@ -1501,6 +1504,10 @@ serve(async (req) => {
     if (fetchErr || !report) {
       throw new Error(`Report not found: ${fetchErr?.message}`);
     }
+    const workspaceCompanyId =
+      typeof (report as Record<string, unknown>).company_id === "string"
+        ? ((report as Record<string, unknown>).company_id as string)
+        : null;
 
     if (!isServiceRoleCaller && report.user_id !== authedUserId) {
       return new Response(
@@ -1806,6 +1813,38 @@ serve(async (req) => {
 
     // 7. Normalize
     const normalizedRows = rawRows.map(normalizeRow);
+    const documentFamily = classifyDocumentFamily(normalizedRows as unknown as Record<string, unknown>[]);
+
+    {
+      const { error: metadataErr } = await supabase
+        .from("cmo_reports")
+        .update({
+          document_kind: documentFamily.document_kind,
+          business_side: documentFamily.business_side,
+          parser_lane: documentFamily.parser_lane,
+          source_system: report.cmo_name ?? "workspace_upload",
+          source_reference: (report as Record<string, unknown>).statement_reference ?? report.file_name ?? null,
+        })
+        .eq("id", report_id);
+      if (metadataErr) throw new Error(`Failed to update report document metadata: ${metadataErr.message}`);
+    }
+
+    if (report.ingestion_file_id) {
+      const { error: ingestionMetadataErr } = await supabase
+        .from("ingestion_files")
+        .update({
+          company_id: workspaceCompanyId,
+          document_kind: documentFamily.document_kind,
+          business_side: documentFamily.business_side,
+          parser_lane: documentFamily.parser_lane,
+          source_system: report.cmo_name ?? "workspace_upload",
+          source_reference: (report as Record<string, unknown>).statement_reference ?? report.file_name ?? null,
+        })
+        .eq("id", report.ingestion_file_id);
+      if (ingestionMetadataErr) {
+        throw new Error(`Failed to update ingestion file document metadata: ${ingestionMetadataErr.message}`);
+      }
+    }
 
     // 8. Validate
     // Always validate so review queue behavior is consistent across parser modes.
@@ -1813,7 +1852,7 @@ serve(async (req) => {
     let accuracy = 100;
     let criticalRowIndices = new Set<number>();
     const validationBlockersByRow = new Map<number, ValidationError[]>();
-    const validation = validateRows(normalizedRows);
+    const validation = validateRows(normalizedRows, 0.01, documentFamily.parser_lane);
     validationErrors = validation.errors;
     accuracy = validation.accuracy;
     validationErrors.forEach((e) => {
@@ -1833,6 +1872,7 @@ serve(async (req) => {
       delete (rawPayload as Record<string, unknown>)._source_fields;
       return {
         report_id,
+        company_id: workspaceCompanyId,
         user_id: report.user_id,
         ingestion_file_id: report.ingestion_file_id ?? null,
         source_page: r.source_page ?? null,
@@ -1894,6 +1934,7 @@ serve(async (req) => {
 
           sourceFieldsToInsert.push({
             report_id,
+            company_id: workspaceCompanyId,
             user_id: report.user_id,
             source_row_id: sourceRowId,
             field_name: rawHeader,
@@ -1919,6 +1960,7 @@ serve(async (req) => {
 
         sourceFieldsToInsert.push({
           report_id,
+          company_id: workspaceCompanyId,
           user_id: report.user_id,
           source_row_id: sourceRowId,
           field_name: rawKey,
@@ -1944,8 +1986,10 @@ serve(async (req) => {
     }
 
     // 10. Insert transactions into royalty_transactions (now with source_row_id links)
-    const transactions = normalizedRows.map((r, i) => ({
+    const shouldInsertTransactions = documentFamily.parser_lane !== "rights";
+    const transactions = shouldInsertTransactions ? normalizedRows.map((r, i) => ({
       report_id,
+      company_id: workspaceCompanyId,
       user_id: report.user_id,
       track_title: r.track_title || r.artist_name || null,
       artist_name: r.track_artist || r.artist_name || null,
@@ -2022,7 +2066,11 @@ serve(async (req) => {
         });
         return extra;
       })(),
-    }));
+      basis_type: "observed",
+      asset_class: r.iswc ? "mixed" : "recording",
+      rights_family: r.rights_type ?? null,
+      rights_stream: r.usage_type ?? null,
+    })) : [];
 
     // Insert in batches of 500 and keep inserted ids for task linkage.
     const BATCH_SIZE = 500;
@@ -2046,6 +2094,34 @@ serve(async (req) => {
     }
 
     console.log(`[process-report] Inserted ${transactions.length} transactions`);
+
+    if (!shouldInsertTransactions) {
+      const catalogClaims = normalizedRows.map((r, i) => ({
+        company_id: workspaceCompanyId,
+        claim_type: documentFamily.document_kind,
+        basis_type: "registered",
+        source_report_id: report_id,
+        source_row_id: insertedSourceRowIds[i] ?? null,
+        subject_entity_type: r.iswc ? "work" : "recording",
+        subject_entity_id: null,
+        related_entity_type: r.publisher_name ? "party" : null,
+        related_entity_id: null,
+        payload: r,
+        confidence:
+          typeof r.mapping_confidence === "number"
+            ? r.mapping_confidence
+            : typeof r.ocr_confidence === "number"
+              ? (r.ocr_confidence <= 1 ? r.ocr_confidence * 100 : r.ocr_confidence)
+              : null,
+        resolution_status: "pending",
+      }));
+
+      for (let start = 0; start < catalogClaims.length; start += BATCH_SIZE) {
+        const batch = catalogClaims.slice(start, start + BATCH_SIZE);
+        const { error: claimErr } = await supabase.from("catalog_claims").insert(batch);
+        if (claimErr) throw new Error(`Failed to insert catalog claims: ${claimErr.message}`);
+      }
+    }
 
     // 10. Insert validation errors
     if (validationErrors.length > 0) {
@@ -2104,6 +2180,7 @@ serve(async (req) => {
         };
         return {
           report_id,
+          company_id: workspaceCompanyId,
           user_id: report.user_id,
           source_row_id: insertedSourceRowIds[rowIdx] ?? null,
           source_field_id: null,
@@ -2141,6 +2218,7 @@ serve(async (req) => {
         });
         return {
           report_id,
+          company_id: workspaceCompanyId,
           user_id: report.user_id,
           source_row_id: sampleRowIndex !== -1 ? insertedSourceRowIds[sampleRowIndex] : null,
           task_type: "mapping_unresolved",

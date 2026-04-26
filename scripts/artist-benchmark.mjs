@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -960,7 +959,9 @@ async function main() {
   process.exit(2);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+const entryArg = process.argv[1];
+
+if (entryArg && import.meta.url === pathToFileURL(entryArg).href) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

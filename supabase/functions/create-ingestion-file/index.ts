@@ -74,7 +74,7 @@ serve(async (req) => {
 
     const { data: report, error: reportErr } = await supabase
       .from("cmo_reports")
-      .select("id,user_id,file_name,file_path,file_size,cmo_name")
+      .select("id,user_id,company_id,file_name,file_path,file_size,cmo_name")
       .eq("id", reportId)
       .single();
     if (reportErr || !report) throw new Error(`Report not found: ${reportErr?.message ?? "missing"}`);
@@ -118,6 +118,7 @@ serve(async (req) => {
       const { data: inserted, error: insertErr } = await supabase
         .from("ingestion_files")
         .insert({
+          company_id: report.company_id ?? null,
           user_id: report.user_id,
           report_id: reportId,
           storage_bucket: "cmo-reports",
@@ -140,6 +141,7 @@ serve(async (req) => {
       await supabase
         .from("ingestion_files")
         .update({
+          company_id: report.company_id ?? null,
           report_id: reportId,
           file_path: report.file_path,
           file_name: report.file_name,

@@ -30,3 +30,4 @@ supabase/functions/.env
 *.sln
 *.sw?
 .vercel
+.worktrees/

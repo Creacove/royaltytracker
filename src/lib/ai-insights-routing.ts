@@ -37,6 +37,7 @@ export function isAiInsightsTurnResponse(input: unknown): input is AiInsightsTur
   if (input.recommendations != null && !Array.isArray(input.recommendations)) return false;
   if (input.citations != null && !Array.isArray(input.citations)) return false;
   if (input.unknowns != null && !Array.isArray(input.unknowns)) return false;
+  if (input.answer_design != null && !isObject(input.answer_design)) return false;
   if (input.quality_outcome != null && input.quality_outcome !== "pass" && input.quality_outcome !== "clarify" && input.quality_outcome !== "constrained") return false;
   if (input.clarification != null && !isObject(input.clarification)) return false;
   if (input.resolved_scope != null && !isObject(input.resolved_scope)) return false;

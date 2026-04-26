@@ -1,16 +1,23 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import type { Tables } from "@/integrations/supabase/types";
+import type { Json, Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
-import { Card, CardContent, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileText, Trash2, Search, Layers3, Building2, X, SlidersHorizontal } from "lucide-react";
+import {
+  Building2,
+  FileText,
+  Layers3,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { format } from "date-fns";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -29,10 +36,119 @@ import {
   EmptyStateBlock,
   PageHeader,
 } from "@/components/layout";
+import {
+  getWorkflowMode,
+  isActiveWorkflowStatus,
+  isTrackMatchTaskPayload,
+  reopenFilePicker,
+} from "@/lib/report-workflow";
+import { StatementWorkflowCard } from "@/components/reports/StatementWorkflowCard";
+import {
+  NO_MATCH_VALUE,
+  StatementTrackMatchDialog,
+  type StatementTrackMatchDialogTask,
+} from "@/components/reports/StatementTrackMatchDialog";
 
 type Report = Tables<"cmo_reports">;
 type Tx = Tables<"royalty_transactions">;
 type ExtractedRow = Tables<"document_ai_report_items">;
+type ReviewTask = Tables<"review_tasks">;
+type TrackMatchCandidate = {
+  track_key: string;
+  track_title: string;
+  artist_name: string;
+  isrc: string | null;
+};
+type TrackMatchTaskPayload = {
+  kind: "track_match";
+  group_key: string;
+  track_title: string;
+  artist_name: string;
+  isrc: string | null;
+  transaction_ids: string[];
+  source_row_ids: string[];
+  candidates: TrackMatchCandidate[];
+};
+
+const ACTIVE_WORKFLOW_STORAGE_KEY = "reports-active-workflow-id";
+
+const toJsonObject = (value: Json): Record<string, Json> | null => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, Json>;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, Json>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+};
+
+const readTrackMatchPayload = (value: ReviewTask["payload"]): TrackMatchTaskPayload | null => {
+  const payload = toJsonObject(value);
+  if (!payload || !isTrackMatchTaskPayload(payload)) return null;
+
+  const candidates = Array.isArray(payload.candidates)
+    ? payload.candidates
+        .map((candidate) =>
+          candidate && typeof candidate === "object" && !Array.isArray(candidate)
+            ? {
+                track_key: String((candidate as Record<string, Json>).track_key ?? ""),
+                track_title: String((candidate as Record<string, Json>).track_title ?? "Unknown track"),
+                artist_name: String((candidate as Record<string, Json>).artist_name ?? "Unknown artist"),
+                isrc:
+                  typeof (candidate as Record<string, Json>).isrc === "string"
+                    ? String((candidate as Record<string, Json>).isrc)
+                    : null,
+              }
+            : null,
+        )
+        .filter((candidate): candidate is TrackMatchCandidate => Boolean(candidate?.track_key))
+    : [];
+
+  return {
+    kind: "track_match",
+    group_key: String(payload.group_key ?? ""),
+    track_title: String(payload.track_title ?? "Unknown track"),
+    artist_name: String(payload.artist_name ?? "Unknown artist"),
+    isrc: typeof payload.isrc === "string" ? payload.isrc : null,
+    transaction_ids: Array.isArray(payload.transaction_ids) ? payload.transaction_ids.map(String) : [],
+    source_row_ids: Array.isArray(payload.source_row_ids) ? payload.source_row_ids.map(String) : [],
+    candidates,
+  };
+};
+
+const invokeFunction = async <TData,>(fn: string, body: Record<string, unknown>) => {
+  const { data, error } = await supabase.functions.invoke(fn, { body });
+  if (error) {
+    let message = error.message || `${fn} failed.`;
+    let status: number | undefined;
+
+    try {
+      const errWithContext = error as { context?: unknown };
+      const response = errWithContext.context as { status?: number; text?: () => Promise<string> } | undefined;
+      if (response && typeof response.text === "function") {
+        status = response.status;
+        const text = await response.text();
+        const parsed = text ? JSON.parse(text) : null;
+        message = parsed?.error ?? parsed?.message ?? text ?? message;
+      }
+    } catch {
+      // Keep the fallback message when the function error body cannot be parsed.
+    }
+
+    throw new Error(status ? `${fn} failed (${status}): ${message}` : `${fn} failed: ${message}`);
+  }
+
+  return data as TData;
+};
 
 const toCustomColumnLabel = (key: string) =>
   key
@@ -110,6 +226,13 @@ export default function Reports() {
   const [layout, setLayout] = useState<"grouped" | "flat">("flat");
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
+  const [isTrackMatchDialogOpen, setIsTrackMatchDialogOpen] = useState(false);
+  const [trackMatchSelections, setTrackMatchSelections] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [trackedWorkflowReportId, setTrackedWorkflowReportId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem(ACTIVE_WORKFLOW_STORAGE_KEY);
+  });
 
   const { data: reports = [], isLoading } = useQuery({
     queryKey: ["reports"],
@@ -123,8 +246,47 @@ export default function Reports() {
     },
     refetchInterval: (query) => {
       const data = query.state.data as Report[] | undefined;
-      return data?.some((r) => r.status === "pending" || r.status === "processing") ? 5000 : false;
+      return data?.some((report) => isActiveWorkflowStatus(report.status)) ? 5000 : false;
     },
+  });
+
+  const persistTrackedWorkflowReportId = useCallback((reportId: string | null) => {
+    setTrackedWorkflowReportId(reportId);
+    if (typeof window === "undefined") return;
+
+    if (reportId) {
+      window.sessionStorage.setItem(ACTIVE_WORKFLOW_STORAGE_KEY, reportId);
+      return;
+    }
+
+    window.sessionStorage.removeItem(ACTIVE_WORKFLOW_STORAGE_KEY);
+  }, []);
+
+  const activeWorkflowReport = useMemo(() => {
+    if (!trackedWorkflowReportId) return null;
+
+    return (
+      reports.find(
+        (report) => report.id === trackedWorkflowReportId && isActiveWorkflowStatus(report.status),
+      ) ?? null
+    );
+  }, [reports, trackedWorkflowReportId]);
+
+  const { data: activeTrackMatchReviewTasks = [] } = useQuery({
+    queryKey: ["report-track-match-tasks", activeWorkflowReport?.id],
+    enabled: !!activeWorkflowReport?.id,
+    queryFn: async (): Promise<ReviewTask[]> => {
+      const { data, error } = await supabase
+        .from("review_tasks")
+        .select("*")
+        .eq("report_id", activeWorkflowReport!.id)
+        .eq("task_type", "other")
+        .in("status", ["open", "in_progress"])
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    },
+    refetchInterval: activeWorkflowReport ? 5000 : false,
   });
 
   const { data: reportTransactions = [] } = useQuery({
@@ -140,6 +302,17 @@ export default function Reports() {
       return data ?? [];
     },
   });
+
+  const trackMatchTasks = useMemo(
+    () =>
+      activeTrackMatchReviewTasks
+        .map((task) => {
+          const parsedPayload = readTrackMatchPayload(task.payload);
+          return parsedPayload ? { ...task, parsedPayload } : null;
+        })
+        .filter((task): task is ReviewTask & { parsedPayload: TrackMatchTaskPayload } => Boolean(task)),
+    [activeTrackMatchReviewTasks],
+  );
 
   const { data: extractedRows = [] } = useQuery({
     queryKey: ["report-extracted-fields", selectedReport?.id],
@@ -167,29 +340,34 @@ export default function Reports() {
     return Array.from(keys).sort((a, b) => a.localeCompare(b));
   }, [reportTransactions]);
 
+  const tableReports = useMemo(
+    () => reports.filter((report) => !isActiveWorkflowStatus(report.status)),
+    [reports],
+  );
+
   const cmoOptions = useMemo(
-    () => Array.from(new Set(reports.map((r) => r.cmo_name))).sort((a, b) => a.localeCompare(b)),
-    [reports]
+    () => Array.from(new Set(tableReports.map((report) => report.cmo_name))).sort((a, b) => a.localeCompare(b)),
+    [tableReports],
   );
 
   const statusOptions = useMemo(
-    () => Array.from(new Set(reports.map((r) => r.status))).sort((a, b) => a.localeCompare(b)),
-    [reports]
+    () => Array.from(new Set(tableReports.map((report) => report.status))).sort((a, b) => a.localeCompare(b)),
+    [tableReports],
   );
 
   const filteredReports = useMemo(() => {
-    return reports.filter((r) => {
-      const byCmo = selectedCmo === "all" || r.cmo_name === selectedCmo;
-      const byStatus = selectedStatus === "all" || r.status === selectedStatus;
+    return tableReports.filter((report) => {
+      const byCmo = selectedCmo === "all" || report.cmo_name === selectedCmo;
+      const byStatus = selectedStatus === "all" || report.status === selectedStatus;
       const s = search.trim().toLowerCase();
       const bySearch =
         !s ||
-        [r.cmo_name, r.file_name, r.report_period, r.notes]
+        [report.cmo_name, report.file_name, report.report_period, report.notes]
           .map((v) => (v ?? "").toLowerCase())
           .some((v) => v.includes(s));
       return byCmo && byStatus && bySearch;
     });
-  }, [reports, search, selectedCmo, selectedStatus]);
+  }, [tableReports, search, selectedCmo, selectedStatus]);
 
   const groupedReports = useMemo(() => {
     const map = new Map<string, Report[]>();
@@ -222,15 +400,50 @@ export default function Reports() {
   }, []);
 
   const processingCount = useMemo(
-    () => filteredReports.filter((r) => r.status === "processing").length,
-    [filteredReports],
+    () => reports.filter((report) => isActiveWorkflowStatus(report.status)).length,
+    [reports],
   );
 
-  const hasAnyReports = reports.length > 0;
+  const hasAnyReports = tableReports.length > 0;
   const emptyReportDescription = hasAnyReports
     ? "No matching statements."
     : "No statements yet.";
 
+  useEffect(() => {
+    setTrackMatchSelections((current) => {
+      const nextSelections: Record<string, string> = {};
+      for (const task of trackMatchTasks) {
+        if (current[task.id]) {
+          nextSelections[task.id] = current[task.id];
+        }
+      }
+      return nextSelections;
+    });
+
+    if (trackMatchTasks.length === 0) {
+      setIsTrackMatchDialogOpen(false);
+    }
+  }, [trackMatchTasks]);
+
+  useEffect(() => {
+    if (!trackedWorkflowReportId || isLoading) return;
+
+    const trackedReport = reports.find((report) => report.id === trackedWorkflowReportId) ?? null;
+    if (!trackedReport || !isActiveWorkflowStatus(trackedReport.status)) {
+      persistTrackedWorkflowReportId(null);
+    }
+  }, [isLoading, persistTrackedWorkflowReportId, reports, trackedWorkflowReportId]);
+
+  const invalidateWorkflowQueries = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard-reports"] }),
+      queryClient.invalidateQueries({ queryKey: ["reports_with_tasks"] }),
+      queryClient.invalidateQueries({ queryKey: ["review-tasks"] }),
+      queryClient.invalidateQueries({ queryKey: ["report-track-match-tasks"] }),
+      queryClient.invalidateQueries({ queryKey: ["report-transactions"] }),
+    ]);
+  }, [queryClient]);
 
   const uploadMutation = useMutation({
     mutationFn: async () => {
@@ -257,50 +470,64 @@ export default function Reports() {
       if (insertError) throw insertError;
 
       const reportId = inserted.id;
-      const invokeStage = async (fn: string, body: Record<string, unknown> = {}) => {
-        const { data: userData, error: userErr } = await supabase.auth.getUser();
-        if (userErr || !userData.user) {
-          throw new Error("Session expired. Please sign in again.");
-        }
-
-        const { data, error } = await supabase.functions.invoke(fn, {
-          body: { report_id: reportId, ...body },
-        });
-        if (error) {
-          let message = error.message || `${fn} failed.`;
-          let status: number | undefined;
-          try {
-            const errWithContext = error as { context?: unknown };
-            const resp = errWithContext.context as { status?: number; text?: () => Promise<string> } | undefined;
-            if (resp && typeof resp.text === "function") {
-              status = resp.status;
-              const text = await resp.text();
-              const parsed = text ? JSON.parse(text) : null;
-              message = parsed?.error ?? parsed?.message ?? text ?? message;
-            }
-          } catch {
-            // Keep fallback message if response body parsing fails.
-          }
-          throw new Error(status ? `${fn} failed (${status}): ${message}` : `${fn} failed: ${message}`);
-        }
-        return data;
+      const data = await invokeFunction<{ status?: string; report_id?: string }>("reprocess-file", {
+        report_id: reportId,
+      });
+      return {
+        reportId,
+        status: typeof data?.status === "string" ? data.status : "reprocessed",
       };
-
-      await invokeStage("create-ingestion-file", { force_reprocess: true });
-      await invokeStage("process-report", { force_reprocess: true });
-      await invokeStage("run-normalization");
-      await invokeStage("run-validation");
     },
-    onSuccess: () => {
-      toast({ title: "Report processed", description: "Pipeline v2 completed with quality gate applied." });
-      setFile(null);
+    onSuccess: async (result) => {
+      persistTrackedWorkflowReportId(result.reportId);
+      await invalidateWorkflowQueries();
+      clearSelectedFile();
       setStatementName("");
       setReportPeriod("");
-      queryClient.invalidateQueries({ queryKey: ["reports"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-reports"] });
+      toast(
+        result.status === "awaiting_track_match"
+          ? {
+              title: "Track matching needed",
+              description: "Processing paused so you can confirm similar tracks before this statement moves to the table.",
+            }
+          : {
+              title: "Report processed",
+              description: "Processing finished and the statement is now available in the table.",
+            },
+      );
     },
     onError: (e: Error) => {
       toast({ title: "Upload failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const submitTrackMatchesMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeWorkflowReport) throw new Error("No active statement is waiting for track matching.");
+      if (trackMatchTasks.some((task) => !trackMatchSelections[task.id])) {
+        throw new Error("Choose a match or select No match for every track before continuing.");
+      }
+
+      return invokeFunction("submit-track-match-decisions", {
+        report_id: activeWorkflowReport.id,
+        decisions: trackMatchTasks.map((task) => ({
+          task_id: task.id,
+          candidate_track_key:
+            trackMatchSelections[task.id] === NO_MATCH_VALUE ? null : trackMatchSelections[task.id],
+        })),
+      });
+    },
+    onSuccess: async () => {
+      setIsTrackMatchDialogOpen(false);
+      setTrackMatchSelections({});
+      await invalidateWorkflowQueries();
+      toast({
+        title: "Track matches applied",
+        description: "Final processing resumed. The statement will move into the table as soon as validation finishes.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Matching failed", description: error.message, variant: "destructive" });
     },
   });
 
@@ -323,6 +550,13 @@ export default function Reports() {
     setStatementName((current) => current.trim() || deriveStatementName(selected.name));
   }, []);
 
+  const clearSelectedFile = useCallback(() => {
+    setFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragActive(false);
@@ -333,6 +567,43 @@ export default function Reports() {
       handleFileSelected(f);
     }
   }, [handleFileSelected]);
+
+  const activeWorkflowMode = useMemo(
+    () =>
+      getWorkflowMode({
+        hasTrackedWorkflow: Boolean(activeWorkflowReport),
+        hasSelectedFile: Boolean(file),
+        isUploading: uploadMutation.isPending,
+        hasTrackMatchTasks: trackMatchTasks.length > 0,
+        isSubmittingMatches: submitTrackMatchesMutation.isPending,
+      }),
+    [activeWorkflowReport, file, submitTrackMatchesMutation.isPending, trackMatchTasks.length, uploadMutation.isPending],
+  );
+
+  const activeWorkflowFileName = activeWorkflowReport?.file_name ?? file?.name ?? null;
+  const activeWorkflowStatementName = activeWorkflowReport?.cmo_name ?? (statementName.trim() || null);
+  const activeWorkflowPeriod = activeWorkflowReport?.report_period ?? (reportPeriod.trim() || null);
+  const unansweredTrackMatchCount = useMemo(
+    () => trackMatchTasks.filter((task) => !trackMatchSelections[task.id]).length,
+    [trackMatchSelections, trackMatchTasks],
+  );
+
+  const trackMatchDialogTasks = useMemo<StatementTrackMatchDialogTask[]>(
+    () =>
+      trackMatchTasks.map((task) => ({
+        id: task.id,
+        trackTitle: task.parsedPayload.track_title || "Unknown track",
+        artistName: task.parsedPayload.artist_name || "Unknown artist",
+        isrc: task.parsedPayload.isrc,
+        candidates: task.parsedPayload.candidates.map((candidate) => ({
+          trackKey: candidate.track_key,
+          trackTitle: candidate.track_title,
+          artistName: candidate.artist_name,
+          isrc: candidate.isrc,
+        })),
+      })),
+    [trackMatchTasks],
+  );
 
   const renderReportRows = (rows: Report[]) =>
     rows.map((r) => (
@@ -396,93 +667,44 @@ export default function Reports() {
         }
       />
 
-      <Card surface="hero">
-        <CardContent className="space-y-4 p-4 md:p-5">
-          <CardTitle className="text-[1.05rem]">Upload statement</CardTitle>
+      <StatementWorkflowCard
+        mode={activeWorkflowMode}
+        dragActive={dragActive}
+        file={file}
+        statementName={statementName}
+        reportPeriod={reportPeriod}
+        uploadPending={uploadMutation.isPending}
+        trackMatchCount={trackMatchTasks.length}
+        unansweredTrackMatchCount={unansweredTrackMatchCount}
+        workflowFileName={activeWorkflowFileName}
+        workflowStatementName={activeWorkflowStatementName}
+        workflowPeriod={activeWorkflowPeriod}
+        workflowCreatedAt={activeWorkflowReport?.created_at ?? null}
+        onFilePick={() => reopenFilePicker(fileInputRef.current)}
+        onClearFile={clearSelectedFile}
+        onStatementNameChange={setStatementName}
+        onReportPeriodChange={setReportPeriod}
+        onUpload={() => uploadMutation.mutate()}
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragActive(true);
+        }}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={handleDrop}
+        onContinueMatching={() => setIsTrackMatchDialogOpen(true)}
+      />
 
-          <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_minmax(160px,0.55fr)_auto] xl:items-end">
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragActive(true);
-              }}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={handleDrop}
-              className={`forensic-frame relative cursor-pointer overflow-hidden rounded-[calc(var(--radius)-2px)] border-2 border-dashed px-5 py-5 motion-standard ${
-                dragActive
-                  ? "border-[hsl(var(--brand-accent))] bg-[hsl(var(--brand-accent-ghost)/0.72)]"
-                  : "surface-elevated border-[hsl(var(--border)/0.12)] hover:border-[hsl(var(--brand-accent)/0.26)] hover:bg-[hsl(var(--surface-elevated)/0.98)]"
-              }`}
-              onClick={() => document.getElementById("pdf-upload")?.click()}
-            >
-              <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,hsl(var(--brand-accent)/0.75),transparent)]" />
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.82)] text-[hsl(var(--brand-accent))]">
-                  <Upload className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <p className="type-display-section truncate text-[1.1rem] text-foreground">
-                    {file ? file.name : "Choose a file"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {file
-                      ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
-                      : "PDF, Word, Excel, CSV, or image"}
-                  </p>
-                </div>
-              </div>
-              <input
-                id="pdf-upload"
-                type="file"
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.csv"
-                className="hidden"
-                onChange={(e) => handleFileSelected(e.target.files?.[0])}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="statement-name">Statement name</Label>
-              <Input
-                id="statement-name"
-                value={statementName}
-                onChange={(e) => setStatementName(e.target.value)}
-                placeholder="e.g. BMI Q1 2026"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="report-period">Period</Label>
-              <Input
-                id="report-period"
-                value={reportPeriod}
-                onChange={(e) => setReportPeriod(e.target.value)}
-                placeholder="e.g. Q1 2026"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2 xl:items-end">
-              <Button
-                className="w-full xl:w-auto"
-                onClick={() => uploadMutation.mutate()}
-                disabled={!file || !statementName.trim() || uploadMutation.isPending}
-              >
-                {uploadMutation.isPending ? "Uploading..." : "Upload"}
-              </Button>
-              {file ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="w-full xl:w-auto"
-                  onClick={() => setFile(null)}
-                >
-                  Clear
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <input
+        ref={fileInputRef}
+        id="statement-upload"
+        type="file"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.jpg,.jpeg,.png,.csv"
+        className="hidden"
+        onChange={(e) => {
+          handleFileSelected(e.target.files?.[0]);
+          e.currentTarget.value = "";
+        }}
+      />
 
       <Card surface="evidence">
         <CardContent className="p-4 md:p-5">
@@ -676,6 +898,26 @@ export default function Reports() {
         </CardContent>
       </Card>
 
+      <StatementTrackMatchDialog
+        open={isTrackMatchDialogOpen && trackMatchDialogTasks.length > 0}
+        pending={submitTrackMatchesMutation.isPending}
+        unansweredCount={unansweredTrackMatchCount}
+        tasks={trackMatchDialogTasks}
+        selections={trackMatchSelections}
+        onOpenChange={(open) => {
+          if (!submitTrackMatchesMutation.isPending) {
+            setIsTrackMatchDialogOpen(open);
+          }
+        }}
+        onSelect={(taskId, value) =>
+          setTrackMatchSelections((current) => ({
+            ...current,
+            [taskId]: value,
+          }))
+        }
+        onSubmit={() => submitTrackMatchesMutation.mutate()}
+      />
+
       <Sheet open={!!selectedReport} onOpenChange={(open) => !open && setSelectedReport(null)}>
         <SheetContent className="w-[min(98vw,1200px)] max-w-[min(98vw,1200px)] overflow-hidden p-0 [&>button]:hidden sm:max-w-[min(95vw,1200px)] lg:w-[calc(100vw-19rem)] lg:max-w-[calc(100vw-19rem)]">
           {selectedReport ? (
@@ -826,3 +1068,5 @@ export default function Reports() {
     </div>
   );
 }
+
+
