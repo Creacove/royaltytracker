@@ -324,9 +324,9 @@ SELECT
   'review_task'::TEXT AS fact_type,
   rt.severity,
   rt.status,
-  rt.error_type,
-  rt.message,
-  rt.field_name,
+  rt.task_type AS error_type,
+  rt.reason AS message,
+  COALESCE(rt.payload ->> 'field_name', rt.payload ->> 'field', rt.payload ->> 'unmapped_header') AS field_name,
   rt.created_at,
   'review_tasks'::TEXT AS source_ref
 FROM public.review_tasks rt
