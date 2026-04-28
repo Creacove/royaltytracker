@@ -36,3 +36,28 @@ export function reopenFilePicker(
   input.value = "";
   input.click();
 }
+
+export function pruneTrackMatchSelections(
+  current: Record<string, string>,
+  activeTaskIds: readonly string[],
+): Record<string, string> {
+  const activeTaskIdSet = new Set(activeTaskIds);
+  const nextSelections: Record<string, string> = {};
+
+  for (const [taskId, selectedTrackKey] of Object.entries(current)) {
+    if (activeTaskIdSet.has(taskId)) {
+      nextSelections[taskId] = selectedTrackKey;
+    }
+  }
+
+  const currentKeys = Object.keys(current);
+  const nextKeys = Object.keys(nextSelections);
+  if (
+    currentKeys.length === nextKeys.length &&
+    nextKeys.every((key) => current[key] === nextSelections[key])
+  ) {
+    return current;
+  }
+
+  return nextSelections;
+}

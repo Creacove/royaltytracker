@@ -16,6 +16,7 @@ import ActivateWorkspace from "@/pages/ActivateWorkspace";
 import Auth from "@/pages/Auth";
 import Dashboard from "@/pages/Dashboard";
 import Reports from "@/pages/Reports";
+import RightsSplits from "@/pages/RightsSplits";
 import Transactions from "@/pages/Transactions";
 import DataQualityQueue from "@/pages/DataQualityQueue";
 import AiInsights from "@/pages/AiInsights";
@@ -233,6 +234,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/" element={hasAnyUploads ? <Dashboard /> : <Navigate to="/reports" replace />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/rights-splits" element={<RightsSplits />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/ai-insights" element={<AiInsights />} />
 

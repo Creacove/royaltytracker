@@ -8,6 +8,11 @@ import {
   validatePlannedSql,
   verifyQueryResult,
 } from "./assistant-query-engine.ts";
+import {
+  planEvidence,
+  type EvidencePack,
+  type EvidencePlan,
+} from "./assistant-evidence/index.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -109,6 +114,13 @@ export type AssistantRuntimeConfig = {
     toDate: string,
     sql: string,
   ) => Promise<SqlExecutionResponse>;
+  runEvidencePlan?: (
+    userClient: any,
+    scope: RuntimeScope,
+    fromDate: string,
+    toDate: string,
+    evidencePlan: EvidencePlan,
+  ) => Promise<EvidencePack>;
   logTurn?: (
     adminClient: any | null,
     payload: Record<string, unknown>,
@@ -583,6 +595,181 @@ function buildAnswerBlocks(args: {
   return blocks;
 }
 
+function evidencePackRowCount(pack: EvidencePack): number {
+  return pack.resolved_entities.length +
+    pack.revenue_evidence.length +
+    pack.rights_evidence.length +
+    pack.split_evidence.length +
+    pack.computed_allocations.length +
+    pack.source_documents.length +
+    pack.quality_flags.length +
+    pack.missing_evidence.length;
+}
+
+function toTableRows(records: Array<Record<string, unknown>>, limit = 25): Array<Record<string, string | number | null>> {
+  return sanitizeRows(records.slice(0, limit));
+}
+
+function evidencePackPrimaryTable(pack: EvidencePack): { columns: string[]; rows: Array<Record<string, string | number | null>> } | undefined {
+  const allocationRows = pack.computed_allocations.map((allocation) => ({
+    party_name: allocation.party_name,
+    work_title: allocation.work_title,
+    allocation_amount: allocation.allocation_amount,
+    currency: allocation.currency,
+    share_pct: allocation.share_pct,
+    revenue_amount: allocation.revenue_amount,
+    allocation_label: allocation.allocation_label,
+    allocation_basis: allocation.allocation_basis,
+  }));
+  if (allocationRows.length > 0) {
+    return {
+      columns: ["party_name", "work_title", "allocation_amount", "currency", "share_pct", "revenue_amount", "allocation_label", "allocation_basis"],
+      rows: toTableRows(allocationRows),
+    };
+  }
+
+  const splitRows = pack.split_evidence.map((split) => ({
+    party_name: split.party_name ?? null,
+    work_title: split.work_title ?? null,
+    share_pct: split.share_pct ?? null,
+    canonical_rights_stream: split.canonical_rights_stream ?? null,
+    source_rights_code: split.source_rights_code ?? null,
+    review_status: split.review_status ?? null,
+    confidence: split.confidence ?? null,
+  }));
+  if (splitRows.length > 0) {
+    return {
+      columns: ["party_name", "work_title", "share_pct", "canonical_rights_stream", "source_rights_code", "review_status", "confidence"],
+      rows: toTableRows(splitRows),
+    };
+  }
+
+  const revenueRows = pack.revenue_evidence.map((revenue) => ({
+    work_title: revenue.work_title ?? revenue.recording_title ?? null,
+    net_revenue: revenue.net_revenue ?? null,
+    gross_revenue: revenue.gross_revenue ?? null,
+    currency: revenue.currency ?? null,
+    rights_stream: revenue.rights_stream ?? null,
+    platform: revenue.platform ?? null,
+    territory: revenue.territory ?? null,
+  }));
+  if (revenueRows.length > 0) {
+    return {
+      columns: ["work_title", "net_revenue", "gross_revenue", "currency", "rights_stream", "platform", "territory"],
+      rows: toTableRows(revenueRows),
+    };
+  }
+
+  return undefined;
+}
+
+function buildEvidencePackFallbackAnswer(pack: EvidencePack): { title: string; text: string; why: string; kpis: Array<{ label: string; value: string }> } {
+  const kpis = [
+    { label: "Revenue facts", value: String(pack.revenue_evidence.length) },
+    { label: "Split facts", value: String(pack.split_evidence.length + pack.rights_evidence.length) },
+    { label: "Allocations", value: String(pack.computed_allocations.length) },
+  ];
+
+  if (pack.computed_allocations.length > 0) {
+    const top = pack.computed_allocations[0];
+    const amount = `${top.currency ?? ""} ${top.allocation_amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}`.trim();
+    return {
+      title: "Estimated Allocation",
+      text: `${top.party_name} is linked to an ${top.allocation_label.replace(/_/g, " ")} of ${amount} for ${top.work_title ?? "the matched work"}, based on ${top.allocation_basis}.`,
+      why: pack.answer_constraints.length > 0
+        ? pack.answer_constraints.join(" ")
+        : "The allocation is calculated from matched revenue and rights evidence; the model is only explaining the computed evidence.",
+      kpis,
+    };
+  }
+
+  const missingRevenue = pack.missing_evidence.some((item) => item.evidence_class === "revenue_evidence");
+  const missingSplit = pack.missing_evidence.some((item) => item.evidence_class === "split_evidence");
+
+  if (missingRevenue && pack.split_evidence.length + pack.rights_evidence.length > 0) {
+    return {
+      title: "Split Evidence Found, Revenue Missing",
+      text: "I found split or rights evidence for this question, but there is no matching revenue evidence in the selected scope, so I cannot compute an allocation.",
+      why: pack.answer_constraints.join(" "),
+      kpis,
+    };
+  }
+
+  if (missingSplit && pack.revenue_evidence.length > 0) {
+    return {
+      title: "Revenue Found, Split Evidence Missing",
+      text: "I found revenue evidence for this question, but there is no matching split or rights evidence, so I cannot compute what the person should receive.",
+      why: pack.answer_constraints.join(" "),
+      kpis,
+    };
+  }
+
+  return {
+    title: "Evidence Pack Built",
+    text: pack.missing_evidence.length > 0
+      ? `I could not complete the answer because ${pack.missing_evidence.map((item) => item.reason).join(" ")}`
+      : "I gathered the available rights and revenue evidence, but no deterministic allocation was produced.",
+    why: pack.answer_constraints.join(" "),
+    kpis,
+  };
+}
+
+function evidencePackBlocks(pack: EvidencePack, title: string, text: string, table?: { columns: string[]; rows: Array<Record<string, string | number | null>> }) {
+  const blocks: Array<Record<string, unknown>> = [{
+    id: "direct-answer",
+    type: "direct_answer",
+    priority: 1,
+    source: "workspace_data",
+    payload: { title, text },
+  }];
+
+  if (table && table.rows.length > 0) {
+    blocks.push({
+      id: "evidence-pack-table",
+      type: "table",
+      priority: 4,
+      source: "workspace_data",
+      title: pack.computed_allocations.length > 0 ? "Allocation Basis" : "Evidence Used",
+      payload: table,
+    });
+  }
+
+  if (pack.quality_flags.length > 0 || pack.missing_evidence.length > 0) {
+    blocks.push({
+      id: "evidence-quality",
+      type: "risk_flags",
+      priority: 8,
+      source: "workspace_data",
+      title: "Evidence Limits",
+      payload: {
+        items: [
+          ...pack.missing_evidence.map((item) => item.reason),
+          ...pack.quality_flags.map((flag) => flag.message),
+        ],
+      },
+    });
+  }
+
+  if (pack.source_documents.length > 0) {
+    blocks.push({
+      id: "citations",
+      type: "citations",
+      priority: 9,
+      source: "workspace_data",
+      title: "Sources",
+      payload: {
+        items: pack.source_documents.slice(0, 8).map((source, index) => ({
+          title: asString(source.file_name) ?? asString(source.source_reference) ?? `Source ${index + 1}`,
+          publisher: asString(source.cmo_name) ?? asString(source.source_system) ?? undefined,
+          source_type: "workspace_data",
+        })),
+      },
+    });
+  }
+
+  return blocks;
+}
+
 async function defaultLogTurn(
   _adminClient: any | null,
   _payload: Record<string, unknown>,
@@ -631,6 +818,131 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const adminClient = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
       const priorThreadState = await loadThreadState(adminClient, requesterId, conversationId);
       const scopeEpoch = priorThreadState ? (priorThreadState.scope_token === scopeToken ? priorThreadState.scope_epoch : priorThreadState.scope_epoch + 1) : 1;
+
+      if (config.runEvidencePlan) {
+        if (action === "send_turn" || action === "plan_query") {
+          const evidencePlan = planEvidence({
+            question: question!,
+            from_date: fromDate,
+            to_date: toDate,
+            scope_mode: config.mode,
+            entity_context: scope.entityContext,
+          });
+        const resolvedScope = { mode: config.mode, entity_context: scope.entityContext, from_date: fromDate, to_date: toDate, scope_token: scopeToken, scope_epoch: scopeEpoch };
+
+        if (action === "plan_query") {
+          return new Response(JSON.stringify({
+            plan_id: crypto.randomUUID(),
+            understood_question: question,
+            evidence_plan: evidencePlan,
+            expected_evidence: evidencePlan.required_evidence,
+            diagnostics: {
+              planner: "assistant-evidence",
+              evidence_plan: evidencePlan,
+              stage: "evidence_plan",
+              legacy_sql_planner_used: false,
+            },
+            safety: { read_only: true, row_limit: SQL_ROW_LIMIT, timeout_ms: SQL_TIMEOUT_MS, [config.safetyFlag]: true },
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
+        const evidencePack = await config.runEvidencePlan(userClient, scope, fromDate, toDate, evidencePlan);
+        const fallback = buildEvidencePackFallbackAnswer(evidencePack);
+        let synthesized: { answer_title?: string; answer_text?: string; why_this_matters?: string; kpis?: unknown; follow_up_questions?: string[] } | null = null;
+
+        if (openAiKey) {
+          try {
+            synthesized = await callOpenAiJson({
+              apiKey: openAiKey,
+              model,
+              systemPrompt: "You are a music royalty analytics assistant. Use only the structured evidence pack. Do not invent calculations. If evidence is missing, state what is missing. Return JSON with answer_title, answer_text, why_this_matters, kpis, follow_up_questions.",
+              userPrompt: JSON.stringify({ question, evidence_pack: evidencePack }),
+            });
+          } catch {
+            synthesized = null;
+          }
+        }
+
+        const answerTitle = asString(synthesized?.answer_title) ?? fallback.title;
+        const answerText = asString(synthesized?.answer_text) ?? fallback.text;
+        const whyThisMatters = asString(synthesized?.why_this_matters) ?? fallback.why;
+        const kpis = sanitizeKpis(synthesized?.kpis);
+        const finalKpis = kpis.length > 0 ? kpis : fallback.kpis;
+        const table = evidencePackPrimaryTable(evidencePack);
+        const evidence = {
+          row_count: evidencePackRowCount(evidencePack),
+          duration_ms: 0,
+          from_date: fromDate,
+          to_date: toDate,
+          provenance: ["run_workspace_evidence_plan_v1"],
+        };
+        const answerBlocks = evidencePackBlocks(evidencePack, answerTitle, answerText, table);
+        const evidenceMap = Object.fromEntries(answerBlocks.filter((b) => typeof b.id === "string").map((b) => [String(b.id), "workspace_data"]));
+        const qualityOutcome = evidencePack.missing_evidence.some((item) => evidencePack.evidence_plan.required_evidence.includes(item.evidence_class))
+          ? "constrained"
+          : "pass";
+
+        await saveThreadState(adminClient, requesterId, {
+          conversation_id: conversationId,
+          scope_token: scopeToken,
+          scope_epoch: scopeEpoch,
+          intent: evidencePlan.family,
+          constraints: priorThreadState?.constraints ?? {},
+          selected_columns: evidencePlan.required_evidence,
+          missing_columns: evidencePack.missing_evidence.map((item) => item.evidence_class),
+          clarification: { pending: false },
+        });
+        await logTurn(adminClient, {
+          user_id: requesterId,
+          ...(config.scopeField && scope.scopeValue ? { [config.scopeField]: scope.scopeValue } : {}),
+          question,
+          analysis_plan: evidencePlan,
+          required_columns: evidencePlan.required_evidence,
+          chosen_columns: evidencePlan.nodes.map((node) => node.kind),
+          sql_text: null,
+          sql_hash: null,
+          row_count: evidence.row_count,
+          verifier_status: qualityOutcome,
+          insufficiency_reason: evidencePack.missing_evidence.length > 0 ? "missing_evidence" : null,
+          final_answer_meta: { conversation_id: conversationId, answer_title: answerTitle, evidence_pack_family: evidencePack.question_family },
+        });
+
+          return new Response(JSON.stringify({
+            conversation_id: conversationId,
+            runtime_patch: runtimePatch,
+            answer_title: answerTitle,
+            answer_text: answerText,
+            why_this_matters: whyThisMatters,
+            kpis: finalKpis,
+            table,
+            chart: { type: "none", x: "", y: [] },
+            evidence,
+            evidence_pack: evidencePack,
+            follow_up_questions: asArrayOfStrings(synthesized?.follow_up_questions).slice(0, 3),
+            quality_outcome: qualityOutcome,
+            resolved_scope: resolvedScope,
+            plan_trace: { intent: evidencePlan.family, evidence_plan: evidencePlan, missing_evidence: evidencePack.missing_evidence, constraints: evidencePack.answer_constraints },
+            claims: [],
+            answer_blocks: answerBlocks,
+            render_hints: { layout: "adaptive_card_stack", density: "expanded", visual_preference: table ? "table" : "none", show_confidence_badges: true, evidence_visibility: "collapsed" },
+            evidence_map: evidenceMap,
+            unknowns: evidencePack.answer_constraints,
+            diagnostics: {
+              intent: evidencePlan.family,
+              confidence: evidencePack.missing_evidence.length > 0 ? "medium" : "high",
+              used_fields: evidencePlan.nodes.map((node) => node.kind),
+              missing_fields: evidencePack.missing_evidence.map((item) => item.evidence_class),
+              strict_mode: false,
+              analysis_plan: evidencePlan,
+              verifier_status: qualityOutcome,
+              insufficiency_reason: evidencePack.missing_evidence.length > 0 ? "missing_evidence" : null,
+              compiler_source: "assistant-evidence",
+              legacy_sql_planner_used: false,
+              stage: "evidence_pack",
+            },
+          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
 
       if (action === "run_query") {
         if (!signingSecret) throw new Error("INSIGHTS_SIGNING_SECRET is required for run_query.");

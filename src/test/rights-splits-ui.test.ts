@@ -1,0 +1,50 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+const read = (relativePath: string) => readFileSync(path.resolve(process.cwd(), relativePath), "utf8");
+
+describe("rights and splits product surface", () => {
+  it("registers rights and splits as a first-class workspace section", () => {
+    const app = read("src/App.tsx");
+    const layout = read("src/components/AppLayout.tsx");
+    const routeMeta = read("src/lib/route-meta.ts");
+
+    expect(app).toContain('path="/rights-splits"');
+    expect(app).toContain("<RightsSplits />");
+    expect(layout).toContain('to: "/rights-splits"');
+    expect(layout).toContain('label: "Rights & Splits"');
+    expect(routeMeta).toContain('pathname.startsWith("/rights-splits")');
+    expect(routeMeta).toContain('title: "Rights & Splits"');
+  });
+
+  it("queries typed split claims and exposes review/provenance fields", () => {
+    const page = read("src/pages/RightsSplits.tsx");
+
+    expect(page).toContain('from("catalog_split_claims")');
+    expect(page).toContain("source_report_id");
+    expect(page).toContain("review_status");
+    expect(page).toContain("source_rights_code");
+    expect(page).toContain("canonical_rights_stream");
+    expect(page).toContain("source_row_id");
+  });
+
+  it("renders rights evidence instead of transaction tables for rights documents", () => {
+    const reports = read("src/pages/Reports.tsx");
+
+    expect(reports).toContain("isRightsDocument");
+    expect(reports).toContain('queryKey: ["report-split-claims"');
+    expect(reports).toContain('from("catalog_split_claims")');
+    expect(reports).toContain('TabsTrigger value="rights"');
+    expect(reports).toContain("Extracted Split Claims");
+  });
+
+  it("lets existing typed split claims force the report detail into rights mode", () => {
+    const reports = read("src/pages/Reports.tsx");
+
+    expect(reports).toContain("selectedReportMetadataIsRightsDocument");
+    expect(reports).toContain("selectedReportMetadataIsRightsDocument || reportSplitClaims.length > 0");
+    expect(reports).not.toContain("enabled: !!selectedReport?.id && selectedReportIsRightsDocument");
+  });
+});

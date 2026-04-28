@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { parse as parseCsv } from "https://deno.land/std@0.168.0/encoding/csv.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5?target=deno";
 import { classifyDocumentFamily, type ParserLane } from "../_shared/document-classification.ts";
+import { buildSplitClaimsFromRows, extractSacemCatalogueRowsFromText } from "../_shared/rights-splits.ts";
 
 
 const corsHeaders = {
@@ -266,6 +267,25 @@ const COLUMN_MAPPINGS: Record<string, string> = {
   "USAGE TYPE": "usage_type",
   LABEL: "label_name",
   PUBLISHER: "publisher_name",
+  "WORK TITLE": "work_title",
+  "TITRE DE L'OEUVRE": "work_title",
+  "TITRE DE L OEUVRE": "work_title",
+  "CODE OEUVRE": "source_work_code",
+  "NOM DE L'AYANT-DROIT": "party_name",
+  "NOM DE L AYANT DROIT": "party_name",
+  "CODE IPI": "ipi_number",
+  IPI: "ipi_number",
+  ROLE: "source_role",
+  "RÔLE": "source_role",
+  "CLE DE": "de_share",
+  "CLÉ DE": "de_share",
+  "CLE DR": "dr_share",
+  "CLÉ DR": "dr_share",
+  "CLE PH": "ph_share",
+  "CLÉ PH": "ph_share",
+  DE: "de_share",
+  DR: "dr_share",
+  PH: "ph_share",
 };
 
 const TRANSACTION_SIGNAL_FIELDS = [
@@ -282,6 +302,14 @@ const TRANSACTION_SIGNAL_FIELDS = [
   "commission",
   "publisher_share",
   "release_title",
+  "work_title",
+  "party_name",
+  "ipi_number",
+  "source_role",
+  "source_work_code",
+  "de_share",
+  "dr_share",
+  "ph_share",
 ] as const;
 
 const STANDARD_TRANSACTION_FIELDS = new Set<string>([
@@ -314,6 +342,14 @@ const STANDARD_TRANSACTION_FIELDS = new Set<string>([
   "amount_original",
   "amount_reporting",
   "quantity",
+  "work_title",
+  "party_name",
+  "ipi_number",
+  "source_role",
+  "source_work_code",
+  "de_share",
+  "dr_share",
+  "ph_share",
 ]);
 
 const DOCUMENT_AI_ITEM_FIELDS = [
@@ -988,7 +1024,7 @@ function normalizeRow(row: TransactionRow): TransactionRow {
   r.period_start = parseDate(r.sales_start);
   r.period_end = parseDate(r.sales_end);
   // Clean strings
-  for (const col of ["track_title", "artist_name", "track_artist", "release_title", "label_name", "publisher_name"]) {
+  for (const col of ["track_title", "artist_name", "track_artist", "release_title", "label_name", "publisher_name", "work_title", "party_name", "ipi_number", "source_role", "source_work_code", "de_share", "dr_share", "ph_share"]) {
     if (typeof r[col] === "string") {
       r[col] = r[col].replace(/\s+/g, " ").trim() || null;
     }
@@ -1677,8 +1713,16 @@ serve(async (req) => {
       // 5. Persist all Custom Extractor report-item fields for full-fidelity access.
       extractedItems = document ? extractDocumentAiReportItems(document) : [];
       // Logic for rawRows construction from DocAI
-      // Prefer directly mapping Custom Extractor `report_item` rows when available.
-      if (extractedItems.length > 0) {
+      // Prefer deterministic rights catalogue parsing when OCR text identifies
+      // a SACEM works catalogue; generic report_item extractors flatten this
+      // layout into track/artist fields and lose DE/DR/PH split semantics.
+      const sacemCatalogueRows = typeof document?.text === "string"
+        ? extractSacemCatalogueRowsFromText(document.text)
+        : [];
+      if (sacemCatalogueRows.length > 0) {
+        rawRows = sacemCatalogueRows;
+        console.log(`[process-report] Built ${rawRows.length} SACEM rights catalogue rows from OCR text`);
+      } else if (extractedItems.length > 0) {
         rawRows = extractedItems
           .map((item) => ({
             source_page: item.source_page,
@@ -2120,6 +2164,43 @@ serve(async (req) => {
         const batch = catalogClaims.slice(start, start + BATCH_SIZE);
         const { error: claimErr } = await supabase.from("catalog_claims").insert(batch);
         if (claimErr) throw new Error(`Failed to insert catalog claims: ${claimErr.message}`);
+      }
+
+      const typedSplitClaims = buildSplitClaimsFromRows(normalizedRows, {
+        source_report_id: report_id,
+        source_row_ids: insertedSourceRowIds,
+        source_language: "fr",
+        default_review_status: "pending",
+      }).map((claim) => ({
+        company_id: workspaceCompanyId,
+        source_report_id: claim.source_report_id,
+        source_row_id: claim.source_row_id,
+        work_id: claim.work_id,
+        party_id: claim.party_id,
+        work_title: claim.work_title,
+        iswc: claim.iswc,
+        source_work_code: claim.source_work_code,
+        party_name: claim.party_name,
+        ipi_number: claim.ipi_number,
+        source_role: claim.source_role,
+        source_rights_code: claim.source_rights_code,
+        source_rights_label: claim.source_rights_label,
+        source_language: claim.source_language,
+        canonical_rights_stream: claim.canonical_rights_stream,
+        share_pct: claim.share_pct,
+        territory_scope: claim.territory_scope,
+        valid_from: claim.valid_from,
+        valid_to: claim.valid_to,
+        confidence: claim.confidence,
+        review_status: claim.review_status,
+        managed_party_match: claim.managed_party_match,
+        raw_payload: claim.raw_payload,
+      }));
+
+      for (let start = 0; start < typedSplitClaims.length; start += BATCH_SIZE) {
+        const batch = typedSplitClaims.slice(start, start + BATCH_SIZE);
+        const { error: splitClaimErr } = await supabase.from("catalog_split_claims").insert(batch);
+        if (splitClaimErr) throw new Error(`Failed to insert catalog split claims: ${splitClaimErr.message}`);
       }
     }
 
