@@ -27,6 +27,19 @@ function rowHasAny(row: InputRow, fields: string[]): boolean {
   return fields.some((field) => hasValue(row[field]));
 }
 
+function rowHasSourceSplitShare(row: InputRow): boolean {
+  return rowHasAny(row, [
+    "de_share",
+    "dr_share",
+    "ph_share",
+    "source_de_share",
+    "source_dr_share",
+    "source_ph_share",
+    "source_rights_code",
+    "source_rights_label",
+  ]);
+}
+
 export function classifyDocumentFamily(rows: InputRow[]): {
   document_kind: DocumentKind;
   parser_lane: ParserLane;
@@ -37,7 +50,8 @@ export function classifyDocumentFamily(rows: InputRow[]): {
     (rowHasAny(row, ["platform", "territory"]) && rowHasAny(row, ["track_title", "isrc", "quantity"])),
   );
   const rightsRows = rows.filter((row) =>
-    rowHasAny(row, ["iswc", "share_pct", "rightsholder_name", "party_name", "work_title", "publisher_name"]),
+    rowHasAny(row, ["iswc", "share_pct", "rightsholder_name", "party_name", "work_title", "publisher_name", "ipi_number", "source_role"]) ||
+    rowHasSourceSplitShare(row),
   );
 
   const parser_lane: ParserLane =
@@ -54,11 +68,13 @@ export function classifyDocumentFamily(rows: InputRow[]): {
         ? "income_statement"
         : rowHasAny(rows[0] ?? {}, ["effective_start", "effective_end", "term_mode"])
           ? "contract_summary"
-          : rowHasAny(rows[0] ?? {}, ["share_pct", "split"])
+          : rowHasSourceSplitShare(rows[0] ?? {})
+            ? "split_sheet"
+            : rowHasAny(rows[0] ?? {}, ["share_pct", "split"])
             ? "rights_catalog"
             : "split_sheet";
 
-  const publishing = rows.some((row) => rowHasAny(row, ["iswc", "writer_name", "publisher_name", "work_title"]));
+  const publishing = rows.some((row) => rowHasAny(row, ["iswc", "writer_name", "publisher_name", "work_title", "ipi_number"]) || rowHasSourceSplitShare(row));
   const recording = rows.some((row) => rowHasAny(row, ["isrc", "track_title", "release_title", "upc"]));
   const business_side: BusinessSide = publishing && recording ? "mixed" : publishing ? "publishing" : recording ? "recording" : "unknown";
 

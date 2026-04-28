@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import type { Json, Tables } from "@/integrations/supabase/types";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -40,6 +41,7 @@ import {
   getWorkflowMode,
   isActiveWorkflowStatus,
   isTrackMatchTaskPayload,
+  pruneTrackMatchSelections,
   reopenFilePicker,
 } from "@/lib/report-workflow";
 import { StatementWorkflowCard } from "@/components/reports/StatementWorkflowCard";
@@ -49,10 +51,33 @@ import {
   type StatementTrackMatchDialogTask,
 } from "@/components/reports/StatementTrackMatchDialog";
 
-type Report = Tables<"cmo_reports">;
+type Report = Tables<"cmo_reports"> & {
+  document_kind?: string | null;
+  business_side?: string | null;
+  parser_lane?: string | null;
+};
 type Tx = Tables<"royalty_transactions">;
 type ExtractedRow = Tables<"document_ai_report_items">;
 type ReviewTask = Tables<"review_tasks">;
+type SplitClaim = {
+  id: string;
+  source_report_id: string | null;
+  source_row_id: string | null;
+  work_title: string | null;
+  iswc: string | null;
+  source_work_code: string | null;
+  party_name: string | null;
+  ipi_number: string | null;
+  source_role: string | null;
+  source_rights_code: string | null;
+  source_rights_label: string | null;
+  canonical_rights_stream: string | null;
+  share_pct: number | null;
+  territory_scope: string | null;
+  confidence: number | null;
+  review_status: string | null;
+  managed_party_match: boolean | null;
+};
 type TrackMatchCandidate = {
   track_key: string;
   track_title: string;
@@ -71,6 +96,11 @@ type TrackMatchTaskPayload = {
 };
 
 const ACTIVE_WORKFLOW_STORAGE_KEY = "reports-active-workflow-id";
+const EMPTY_REPORTS: Report[] = [];
+const EMPTY_TRANSACTIONS: Tx[] = [];
+const EMPTY_EXTRACTED_ROWS: ExtractedRow[] = [];
+const EMPTY_REVIEW_TASKS: ReviewTask[] = [];
+const EMPTY_SPLIT_CLAIMS: SplitClaim[] = [];
 
 const toJsonObject = (value: Json): Record<string, Json> | null => {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -177,6 +207,54 @@ const formatCustomValue = (value: unknown): string => {
   return String(value);
 };
 
+const splitClaimSelect = [
+  "id",
+  "source_report_id",
+  "source_row_id",
+  "work_title",
+  "iswc",
+  "source_work_code",
+  "party_name",
+  "ipi_number",
+  "source_role",
+  "source_rights_code",
+  "source_rights_label",
+  "canonical_rights_stream",
+  "share_pct",
+  "territory_scope",
+  "confidence",
+  "review_status",
+  "managed_party_match",
+].join(",");
+
+const formatDocumentLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const formatSharePct = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}%`;
+};
+
+const formatConfidencePct = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  const normalized = value <= 1 ? value * 100 : value;
+  return `${Math.round(normalized)}%`;
+};
+
+const isRightsDocument = (report: Report | null | undefined) => {
+  if (!report) return false;
+  return (
+    ["rights_catalog", "split_sheet", "contract_summary"].includes(report.document_kind ?? "") ||
+    report.parser_lane === "rights"
+  );
+};
+
 const deriveStatementName = (fileName: string) =>
   fileName
     .replace(/\.[^.]+$/, "")
@@ -234,7 +312,7 @@ export default function Reports() {
     return window.sessionStorage.getItem(ACTIVE_WORKFLOW_STORAGE_KEY);
   });
 
-  const { data: reports = [], isLoading } = useQuery({
+  const { data: reports = EMPTY_REPORTS, isLoading } = useQuery({
     queryKey: ["reports"],
     queryFn: async (): Promise<Report[]> => {
       const { data, error } = await supabase
@@ -272,7 +350,7 @@ export default function Reports() {
     );
   }, [reports, trackedWorkflowReportId]);
 
-  const { data: activeTrackMatchReviewTasks = [] } = useQuery({
+  const { data: activeTrackMatchReviewTasks = EMPTY_REVIEW_TASKS } = useQuery({
     queryKey: ["report-track-match-tasks", activeWorkflowReport?.id],
     enabled: !!activeWorkflowReport?.id,
     queryFn: async (): Promise<ReviewTask[]> => {
@@ -289,7 +367,7 @@ export default function Reports() {
     refetchInterval: activeWorkflowReport ? 5000 : false,
   });
 
-  const { data: reportTransactions = [] } = useQuery({
+  const { data: reportTransactions = EMPTY_TRANSACTIONS } = useQuery({
     queryKey: ["report-transactions", selectedReport?.id],
     enabled: !!selectedReport,
     queryFn: async (): Promise<Tx[]> => {
@@ -303,6 +381,25 @@ export default function Reports() {
     },
   });
 
+  const selectedReportMetadataIsRightsDocument = isRightsDocument(selectedReport);
+
+  const { data: reportSplitClaims = EMPTY_SPLIT_CLAIMS } = useQuery({
+    queryKey: ["report-split-claims", selectedReport?.id],
+    enabled: !!selectedReport?.id,
+    queryFn: async (): Promise<SplitClaim[]> => {
+      const { data, error } = await (supabase as any)
+        .from("catalog_split_claims")
+        .select(splitClaimSelect)
+        .eq("source_report_id", selectedReport!.id)
+        .order("work_title", { ascending: true })
+        .order("party_name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as SplitClaim[];
+    },
+  });
+
+  const selectedReportIsRightsDocument = selectedReportMetadataIsRightsDocument || reportSplitClaims.length > 0;
+
   const trackMatchTasks = useMemo(
     () =>
       activeTrackMatchReviewTasks
@@ -314,7 +411,7 @@ export default function Reports() {
     [activeTrackMatchReviewTasks],
   );
 
-  const { data: extractedRows = [] } = useQuery({
+  const { data: extractedRows = EMPTY_EXTRACTED_ROWS } = useQuery({
     queryKey: ["report-extracted-fields", selectedReport?.id],
     enabled: !!selectedReport,
     queryFn: async (): Promise<ExtractedRow[]> => {
@@ -411,13 +508,10 @@ export default function Reports() {
 
   useEffect(() => {
     setTrackMatchSelections((current) => {
-      const nextSelections: Record<string, string> = {};
-      for (const task of trackMatchTasks) {
-        if (current[task.id]) {
-          nextSelections[task.id] = current[task.id];
-        }
-      }
-      return nextSelections;
+      return pruneTrackMatchSelections(
+        current,
+        trackMatchTasks.map((task) => task.id),
+      );
     });
 
     if (trackMatchTasks.length === 0) {
@@ -944,23 +1038,37 @@ export default function Reports() {
             >
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
-                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Normalized lines</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{reportTransactions.length.toLocaleString()}</p>
+                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+                    {selectedReportIsRightsDocument ? "Split claims" : "Normalized lines"}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {(selectedReportIsRightsDocument ? reportSplitClaims.length : reportTransactions.length).toLocaleString()}
+                  </p>
                 </div>
                 <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
                   <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Extractor rows</p>
                   <p className="mt-2 text-2xl font-semibold text-foreground">{extractedRows.length.toLocaleString()}</p>
                 </div>
                 <div className="surface-intelligence forensic-frame rounded-[calc(var(--radius-sm))] p-4">
-                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Revenue</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{toMoney(selectedReport.total_revenue ?? 0)}</p>
+                  <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">
+                    {selectedReportIsRightsDocument ? "Document type" : "Revenue"}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {selectedReportIsRightsDocument
+                      ? formatDocumentLabel(selectedReport.document_kind ?? "rights_document")
+                      : toMoney(selectedReport.total_revenue ?? 0)}
+                  </p>
                 </div>
               </div>
 
               <Tabs defaultValue="summary" className="mt-5">
                 <TabsList>
                   <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="transactions">Processed Transactions</TabsTrigger>
+                  {selectedReportIsRightsDocument ? (
+                    <TabsTrigger value="rights">Rights Evidence</TabsTrigger>
+                  ) : (
+                    <TabsTrigger value="transactions">Processed Transactions</TabsTrigger>
+                  )}
                 </TabsList>
 
                 <TabsContent value="summary" className="mt-4">
@@ -981,6 +1089,9 @@ export default function Reports() {
                         "System Confidence Score",
                         selectedReport.accuracy_score != null ? `${selectedReport.accuracy_score}%` : null,
                       ],
+                      ["Document Type", formatDocumentLabel(selectedReport.document_kind)],
+                      ["Business Side", formatDocumentLabel(selectedReport.business_side)],
+                      ["Parser Lane", formatDocumentLabel(selectedReport.parser_lane)],
                       ["Error Count", selectedReport.error_count?.toLocaleString()],
                       ["Notes", selectedReport.notes],
                     ].map(([label, value]) => (
@@ -992,6 +1103,79 @@ export default function Reports() {
                   </div>
                 </TabsContent>
 
+                {selectedReportIsRightsDocument ? (
+                  <TabsContent value="rights" className="mt-4">
+                    <div className="mb-3">
+                      <p className="type-display-section text-lg text-foreground">Extracted Split Claims</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Rights rows are shown as source-backed split evidence, not revenue transactions.
+                      </p>
+                    </div>
+                    {reportSplitClaims.length > 0 ? (
+                      <Table className="min-w-[1180px]" variant="evidence" density="compact">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Work</TableHead>
+                            <TableHead>Party</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead>Source Right</TableHead>
+                            <TableHead>Canonical Stream</TableHead>
+                            <TableHead className="text-right">Share</TableHead>
+                            <TableHead>Review</TableHead>
+                            <TableHead>Provenance</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reportSplitClaims.slice(0, 200).map((claim) => (
+                            <TableRow key={claim.id}>
+                              <TableCell className="min-w-[220px]">
+                                <div className="font-medium text-foreground">{claim.work_title ?? "Untitled work"}</div>
+                                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
+                                  {claim.iswc ? <span>ISWC {claim.iswc}</span> : null}
+                                  {claim.source_work_code ? <span>Code {claim.source_work_code}</span> : null}
+                                </div>
+                              </TableCell>
+                              <TableCell className="min-w-[210px]">
+                                <div className="font-medium text-foreground">{claim.party_name ?? "Unknown party"}</div>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                                  {claim.ipi_number ? <span>IPI {claim.ipi_number}</span> : null}
+                                  {claim.managed_party_match ? <Badge variant="outline">Managed</Badge> : <Badge variant="outline">External</Badge>}
+                                </div>
+                              </TableCell>
+                              <TableCell>{claim.source_role ?? "-"}</TableCell>
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  <span className="font-mono text-xs">{claim.source_rights_code ?? "-"}</span>
+                                  <span className="text-xs text-muted-foreground">{claim.source_rights_label ?? "-"}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>{formatDocumentLabel(claim.canonical_rights_stream)}</TableCell>
+                              <TableCell className="text-right font-mono">{formatSharePct(claim.share_pct)}</TableCell>
+                              <TableCell>
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="outline">{formatDocumentLabel(claim.review_status ?? "pending")}</Badge>
+                                  <span className="text-[11px] text-muted-foreground">
+                                    Confidence {formatConfidencePct(claim.confidence)}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {claim.source_row_id ? claim.source_row_id.slice(0, 8) : "-"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <EmptyStateBlock
+                        icon={<FileText className="h-10 w-10" />}
+                        title="No split claims found"
+                        description="This document is classified as rights evidence, but no typed split claims are attached to this source report yet."
+                        variant="intelligence"
+                      />
+                    )}
+                  </TabsContent>
+                ) : (
                 <TabsContent value="transactions" className="mt-4">
                   {reportTransactions.length > 0 ? (
                       <Table className="min-w-[1480px]" variant="evidence" density="compact">
@@ -1060,6 +1244,7 @@ export default function Reports() {
                     <p className="text-sm text-muted-foreground">No normalized transactions available.</p>
                   )}
                 </TabsContent>
+                )}
               </Tabs>
             </DetailDrawerFrame>
           ) : null}

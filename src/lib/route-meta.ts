@@ -27,6 +27,13 @@ const routeMetaRegistry: Array<{ test: (pathname: string) => boolean; meta: Rout
     },
   },
   {
+    test: (pathname) => pathname.startsWith("/rights-splits"),
+    meta: {
+      title: "Rights & Splits",
+      subtitle: "Review split evidence, parties, works, and canonical rights context.",
+    },
+  },
+  {
     test: (pathname) => pathname.startsWith("/animations"),
     meta: {
       title: "Animations",
