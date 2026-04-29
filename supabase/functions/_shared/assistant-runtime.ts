@@ -13,6 +13,11 @@ import {
   type EvidencePack,
   type EvidencePlan,
 } from "./assistant-evidence/index.ts";
+import {
+  planAnswerEvidence,
+  type MultiEvidencePlan,
+  type SqlEvidenceJob,
+} from "./answer-planner.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -770,6 +775,122 @@ function evidencePackBlocks(pack: EvidencePack, title: string, text: string, tab
   return blocks;
 }
 
+type SqlEvidenceJobResult = {
+  job_id: string;
+  purpose: string;
+  requirement: "required" | "supporting" | "optional";
+  required_for_answer: boolean;
+  analysis_plan: AnalysisPlan;
+  columns: string[];
+  rows: Array<Record<string, string | number | null>>;
+  row_count: number;
+  chosen_columns: string[];
+  verifier_status: "passed" | "failed";
+  warnings: string[];
+  error?: string;
+};
+
+function evidencePackCaveats(pack: EvidencePack | null): string[] {
+  if (!pack) return [];
+  return unique([
+    ...pack.answer_constraints,
+    ...pack.missing_evidence.map((item) => item.reason),
+    ...pack.quality_flags.map((flag) => flag.message),
+  ]).slice(0, 6);
+}
+
+function buildEvidenceBundle(args: {
+  multiEvidencePlan: MultiEvidencePlan;
+  sqlJobs: SqlEvidenceJobResult[];
+  evidencePack: EvidencePack | null;
+}) {
+  return {
+    multi_evidence_plan: args.multiEvidencePlan,
+    sql_evidence_jobs: args.sqlJobs.map((job) => ({
+      job_id: job.job_id,
+      purpose: job.purpose,
+      requirement: job.requirement,
+      required_for_answer: job.required_for_answer,
+      row_count: job.row_count,
+      columns: job.columns,
+      rows: job.rows.slice(0, 12),
+      chosen_columns: job.chosen_columns,
+      verifier_status: job.verifier_status,
+      warnings: job.warnings,
+      error: job.error,
+    })),
+    structured_sidecar_evidence: args.evidencePack
+      ? {
+        question_family: args.evidencePack.question_family,
+        revenue_fact_count: args.evidencePack.revenue_evidence.length,
+        split_fact_count: args.evidencePack.split_evidence.length,
+        rights_fact_count: args.evidencePack.rights_evidence.length,
+        allocation_count: args.evidencePack.computed_allocations.length,
+        source_document_count: args.evidencePack.source_documents.length,
+        missing_evidence: args.evidencePack.missing_evidence,
+        caveats: evidencePackCaveats(args.evidencePack),
+      }
+      : null,
+  };
+}
+
+async function executeSupportingSqlEvidenceJobs(args: {
+  jobs: SqlEvidenceJob[];
+  catalog: ArtistCatalog;
+  config: AssistantRuntimeConfig;
+  userClient: any;
+  scope: RuntimeScope;
+  fromDate: string;
+  toDate: string;
+  question: string;
+}): Promise<SqlEvidenceJobResult[]> {
+  const results: SqlEvidenceJobResult[] = [];
+  for (const job of args.jobs.slice(0, 4)) {
+    try {
+      const compiled = compileSqlFromPlan(job.analysis_plan, args.catalog);
+      const cleanedSql = validatePlannedSql(compiled.sql);
+      const sqlResult = await args.config.runSql(args.userClient, args.scope, args.fromDate, args.toDate, cleanedSql);
+      const columns = asArrayOfStrings(sqlResult.columns);
+      const rows = sanitizeRows(sqlResult.rows);
+      const verifier = verifyQueryResult({
+        question: args.question,
+        plan: job.analysis_plan,
+        columns,
+        rows: rows as Array<Record<string, unknown>>,
+      });
+      results.push({
+        job_id: job.job_id,
+        purpose: job.purpose,
+        requirement: job.requirement,
+        required_for_answer: job.required_for_answer,
+        analysis_plan: job.analysis_plan,
+        columns,
+        rows: rows.slice(0, 25),
+        row_count: Number(sqlResult.row_count ?? rows.length),
+        chosen_columns: compiled.chosen_columns,
+        verifier_status: verifier.status,
+        warnings: verifier.warnings ?? [],
+      });
+    } catch (error) {
+      results.push({
+        job_id: job.job_id,
+        purpose: job.purpose,
+        requirement: job.requirement,
+        required_for_answer: job.required_for_answer,
+        analysis_plan: job.analysis_plan,
+        columns: [],
+        rows: [],
+        row_count: 0,
+        chosen_columns: [],
+        verifier_status: "failed",
+        warnings: [],
+        error: error instanceof Error ? error.message : "SQL evidence job failed.",
+      });
+    }
+  }
+  return results;
+}
+
 async function defaultLogTurn(
   _adminClient: any | null,
   _payload: Record<string, unknown>,
@@ -818,131 +939,6 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const adminClient = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null;
       const priorThreadState = await loadThreadState(adminClient, requesterId, conversationId);
       const scopeEpoch = priorThreadState ? (priorThreadState.scope_token === scopeToken ? priorThreadState.scope_epoch : priorThreadState.scope_epoch + 1) : 1;
-
-      if (config.runEvidencePlan) {
-        if (action === "send_turn" || action === "plan_query") {
-          const evidencePlan = planEvidence({
-            question: question!,
-            from_date: fromDate,
-            to_date: toDate,
-            scope_mode: config.mode,
-            entity_context: scope.entityContext,
-          });
-        const resolvedScope = { mode: config.mode, entity_context: scope.entityContext, from_date: fromDate, to_date: toDate, scope_token: scopeToken, scope_epoch: scopeEpoch };
-
-        if (action === "plan_query") {
-          return new Response(JSON.stringify({
-            plan_id: crypto.randomUUID(),
-            understood_question: question,
-            evidence_plan: evidencePlan,
-            expected_evidence: evidencePlan.required_evidence,
-            diagnostics: {
-              planner: "assistant-evidence",
-              evidence_plan: evidencePlan,
-              stage: "evidence_plan",
-              legacy_sql_planner_used: false,
-            },
-            safety: { read_only: true, row_limit: SQL_ROW_LIMIT, timeout_ms: SQL_TIMEOUT_MS, [config.safetyFlag]: true },
-          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-
-        const evidencePack = await config.runEvidencePlan(userClient, scope, fromDate, toDate, evidencePlan);
-        const fallback = buildEvidencePackFallbackAnswer(evidencePack);
-        let synthesized: { answer_title?: string; answer_text?: string; why_this_matters?: string; kpis?: unknown; follow_up_questions?: string[] } | null = null;
-
-        if (openAiKey) {
-          try {
-            synthesized = await callOpenAiJson({
-              apiKey: openAiKey,
-              model,
-              systemPrompt: "You are a music royalty analytics assistant. Use only the structured evidence pack. Do not invent calculations. If evidence is missing, state what is missing. Return JSON with answer_title, answer_text, why_this_matters, kpis, follow_up_questions.",
-              userPrompt: JSON.stringify({ question, evidence_pack: evidencePack }),
-            });
-          } catch {
-            synthesized = null;
-          }
-        }
-
-        const answerTitle = asString(synthesized?.answer_title) ?? fallback.title;
-        const answerText = asString(synthesized?.answer_text) ?? fallback.text;
-        const whyThisMatters = asString(synthesized?.why_this_matters) ?? fallback.why;
-        const kpis = sanitizeKpis(synthesized?.kpis);
-        const finalKpis = kpis.length > 0 ? kpis : fallback.kpis;
-        const table = evidencePackPrimaryTable(evidencePack);
-        const evidence = {
-          row_count: evidencePackRowCount(evidencePack),
-          duration_ms: 0,
-          from_date: fromDate,
-          to_date: toDate,
-          provenance: ["run_workspace_evidence_plan_v1"],
-        };
-        const answerBlocks = evidencePackBlocks(evidencePack, answerTitle, answerText, table);
-        const evidenceMap = Object.fromEntries(answerBlocks.filter((b) => typeof b.id === "string").map((b) => [String(b.id), "workspace_data"]));
-        const qualityOutcome = evidencePack.missing_evidence.some((item) => evidencePack.evidence_plan.required_evidence.includes(item.evidence_class))
-          ? "constrained"
-          : "pass";
-
-        await saveThreadState(adminClient, requesterId, {
-          conversation_id: conversationId,
-          scope_token: scopeToken,
-          scope_epoch: scopeEpoch,
-          intent: evidencePlan.family,
-          constraints: priorThreadState?.constraints ?? {},
-          selected_columns: evidencePlan.required_evidence,
-          missing_columns: evidencePack.missing_evidence.map((item) => item.evidence_class),
-          clarification: { pending: false },
-        });
-        await logTurn(adminClient, {
-          user_id: requesterId,
-          ...(config.scopeField && scope.scopeValue ? { [config.scopeField]: scope.scopeValue } : {}),
-          question,
-          analysis_plan: evidencePlan,
-          required_columns: evidencePlan.required_evidence,
-          chosen_columns: evidencePlan.nodes.map((node) => node.kind),
-          sql_text: null,
-          sql_hash: null,
-          row_count: evidence.row_count,
-          verifier_status: qualityOutcome,
-          insufficiency_reason: evidencePack.missing_evidence.length > 0 ? "missing_evidence" : null,
-          final_answer_meta: { conversation_id: conversationId, answer_title: answerTitle, evidence_pack_family: evidencePack.question_family },
-        });
-
-          return new Response(JSON.stringify({
-            conversation_id: conversationId,
-            runtime_patch: runtimePatch,
-            answer_title: answerTitle,
-            answer_text: answerText,
-            why_this_matters: whyThisMatters,
-            kpis: finalKpis,
-            table,
-            chart: { type: "none", x: "", y: [] },
-            evidence,
-            evidence_pack: evidencePack,
-            follow_up_questions: asArrayOfStrings(synthesized?.follow_up_questions).slice(0, 3),
-            quality_outcome: qualityOutcome,
-            resolved_scope: resolvedScope,
-            plan_trace: { intent: evidencePlan.family, evidence_plan: evidencePlan, missing_evidence: evidencePack.missing_evidence, constraints: evidencePack.answer_constraints },
-            claims: [],
-            answer_blocks: answerBlocks,
-            render_hints: { layout: "adaptive_card_stack", density: "expanded", visual_preference: table ? "table" : "none", show_confidence_badges: true, evidence_visibility: "collapsed" },
-            evidence_map: evidenceMap,
-            unknowns: evidencePack.answer_constraints,
-            diagnostics: {
-              intent: evidencePlan.family,
-              confidence: evidencePack.missing_evidence.length > 0 ? "medium" : "high",
-              used_fields: evidencePlan.nodes.map((node) => node.kind),
-              missing_fields: evidencePack.missing_evidence.map((item) => item.evidence_class),
-              strict_mode: false,
-              analysis_plan: evidencePlan,
-              verifier_status: qualityOutcome,
-              insufficiency_reason: evidencePack.missing_evidence.length > 0 ? "missing_evidence" : null,
-              compiler_source: "assistant-evidence",
-              legacy_sql_planner_used: false,
-              stage: "evidence_pack",
-            },
-          }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-      }
 
       if (action === "run_query") {
         if (!signingSecret) throw new Error("INSIGHTS_SIGNING_SECRET is required for run_query.");
@@ -993,6 +989,12 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const requiredColumns = unique(column_requirements.required);
       const catalogFields = new Set(catalog.columns.map((c) => c.field_key.toLowerCase()));
       const missingFields = unique([...column_requirements.missing_requested, ...requiredColumns.filter((field) => !catalogFields.has(field.toLowerCase()))]);
+      const multiEvidencePlan = planAnswerEvidence({
+        question: question!,
+        catalog,
+        mode: config.mode,
+        primaryPlan: plan,
+      });
 
       if (catalog.total_rows <= 0) {
         return new Response(JSON.stringify({
@@ -1028,9 +1030,17 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
           understood_question: question,
           sql_preview: sqlPreview,
           expected_columns: unique([...plan.dimensions, ...plan.metrics]),
+          multi_evidence_plan: multiEvidencePlan,
+          sql_evidence_jobs: multiEvidencePlan.sql_jobs.map((job) => ({
+            job_id: job.job_id,
+            purpose: job.purpose,
+            requirement: job.requirement,
+            required_for_answer: job.required_for_answer,
+            expected_columns: unique([...job.analysis_plan.dimensions, ...job.analysis_plan.metrics]),
+          })),
           execution_token: executionToken,
           expires_at: expiresAt,
-          diagnostics: { analysis_plan: plan, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, column_requirements, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "pending", insufficiency_reason: null, strict_mode: true, compiler_source: plan_source, stage: "compile" },
+          diagnostics: { analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, column_requirements, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "pending", insufficiency_reason: null, strict_mode: true, compiler_source: plan_source, stage: "compile", legacy_sql_planner_used: true },
           safety: { read_only: true, row_limit: SQL_ROW_LIMIT, timeout_ms: SQL_TIMEOUT_MS, [config.safetyFlag]: true },
         }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
@@ -1056,14 +1066,66 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      const primarySqlJob: SqlEvidenceJobResult = {
+        job_id: "primary",
+        purpose: "answer the main revenue question",
+        requirement: "required",
+        required_for_answer: true,
+        analysis_plan: plan,
+        columns,
+        rows: rows.slice(0, 25),
+        row_count: evidence.row_count,
+        chosen_columns: compiled.chosen_columns,
+        verifier_status: verifier.status,
+        warnings: verifier.warnings ?? [],
+      };
+      const supportingSqlJobs = await executeSupportingSqlEvidenceJobs({
+        jobs: multiEvidencePlan.sql_jobs.filter((job) => job.job_id !== "primary"),
+        catalog,
+        config,
+        userClient,
+        scope,
+        fromDate,
+        toDate,
+        question: question!,
+      });
+      let evidencePack: EvidencePack | null = null;
+      if (config.runEvidencePlan && multiEvidencePlan.sidecar_jobs.length > 0) {
+        try {
+          const evidencePlan = planEvidence({
+            question: question!,
+            from_date: fromDate,
+            to_date: toDate,
+            scope_mode: config.mode,
+            entity_context: scope.entityContext,
+          });
+          evidencePack = await config.runEvidencePlan(userClient, scope, fromDate, toDate, evidencePlan);
+        } catch {
+          evidencePack = null;
+        }
+      }
+      const sqlEvidenceJobs = [primarySqlJob, ...supportingSqlJobs];
+      const evidenceBundle = buildEvidenceBundle({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack });
+      const sidecarCaveats = evidencePackCaveats(evidencePack);
+
       let synthesized: { answer_title?: string; answer_text?: string; why_this_matters?: string; kpis?: unknown; chart?: { type?: "bar" | "line" | "none"; x?: string; y?: string[]; title?: string }; follow_up_questions?: string[] } | null = null;
       if (openAiKey) {
         try {
           synthesized = await callOpenAiJson({
             apiKey: openAiKey,
             model,
-            systemPrompt: "You are a music royalty analytics assistant. Use only the result provided and return JSON with answer_title, answer_text, why_this_matters, kpis, chart, follow_up_questions.",
-            userPrompt: JSON.stringify({ question, result: { columns, rows: rows.slice(0, 25), row_count: evidence.row_count } }),
+            systemPrompt: [
+              "You are a music royalty analytics assistant.",
+              "Use the SQL evidence jobs as the primary facts and the structured sidecar evidence only as supporting context.",
+              "Do not let missing rights, splits, documents, or external context collapse an answer that is supported by SQL revenue evidence.",
+              "If sidecar evidence is missing, add one short caveat and still answer from the available evidence.",
+              "Return JSON with answer_title, answer_text, why_this_matters, kpis, chart, follow_up_questions.",
+            ].join(" "),
+            userPrompt: JSON.stringify({
+              question,
+              result: { columns, rows: rows.slice(0, 25), row_count: evidence.row_count },
+              evidence_bundle: evidenceBundle,
+            }),
           });
         } catch {
           synthesized = null;
@@ -1080,7 +1142,8 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         : (asString(synthesized?.why_this_matters) ?? (quality.quality_outcome === "constrained" ? "Evidence is currently constrained; treat this as directional until data sufficiency improves." : ""));
       const kpis = sanitizeKpis(synthesized?.kpis);
       const claims = buildClaimsFromRows(columns, rows.slice(0, 25), config.sqlSourceRef);
-      const answerBlocks = buildAnswerBlocks({ title: answerTitle, text: answerText, why: whyThisMatters, kpis, columns, rows: rows.slice(0, 25), claims, unknowns: quality.unknowns, clarification: quality.clarification, quality_outcome: quality.quality_outcome });
+      const unknowns = unique([...quality.unknowns, ...sidecarCaveats]);
+      const answerBlocks = buildAnswerBlocks({ title: answerTitle, text: answerText, why: whyThisMatters, kpis, columns, rows: rows.slice(0, 25), claims, unknowns, clarification: quality.clarification, quality_outcome: quality.quality_outcome });
       const evidenceMap = Object.fromEntries(answerBlocks.filter((b) => typeof b.id === "string").map((b) => [String(b.id), "workspace_data"]));
       const chart = (() => {
         const proposed = synthesized?.chart;
@@ -1128,17 +1191,19 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         table: rows.length > 0 ? { columns, rows: rows.slice(0, 25) } : undefined,
         chart,
         evidence,
+        evidence_pack: evidencePack ?? undefined,
+        evidence_bundle: evidenceBundle,
         follow_up_questions: asArrayOfStrings(synthesized?.follow_up_questions).slice(0, 3),
         quality_outcome: quality.quality_outcome,
         clarification: quality.clarification,
         resolved_scope: resolvedScope,
-        plan_trace: { intent: sql_intent, selected_columns: compiled.chosen_columns, missing_columns: missingFields, column_requirements, constraints },
+        plan_trace: { intent: sql_intent, selected_columns: compiled.chosen_columns, missing_columns: missingFields, column_requirements, constraints, multi_evidence_plan: multiEvidencePlan, evidence_pack_missing: evidencePack?.missing_evidence ?? [] },
         claims,
         answer_blocks: answerBlocks,
         render_hints: { layout: "adaptive_card_stack", density: quality.quality_outcome === "pass" ? "expanded" : "compact", visual_preference: chart.type === "none" ? "table" : "chart", show_confidence_badges: true },
         evidence_map: evidenceMap,
-        unknowns: quality.unknowns,
-        diagnostics: { intent: plan.intent, confidence: verifier.status === "passed" ? plan.confidence : "low", used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: false, analysis_plan: plan, column_requirements, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: verifier.status, insufficiency_reason: null, compiler_source: plan_source, stage: "verify" },
+        unknowns,
+        diagnostics: { intent: plan.intent, confidence: verifier.status === "passed" ? plan.confidence : "low", used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: false, analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, sql_evidence_jobs: evidenceBundle.sql_evidence_jobs, evidence_sidecar_used: evidencePack !== null, evidence_gap_policy: multiEvidencePlan.missing_evidence_policy, legacy_sql_planner_used: true, column_requirements, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: verifier.status, insufficiency_reason: null, compiler_source: plan_source, stage: "verify" },
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch (error) {
       return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error", _fatal: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
