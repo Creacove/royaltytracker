@@ -73,6 +73,9 @@ type TrackAssistantTurnResponse = {
   claims?: Array<Record<string, unknown>>;
   citations?: Array<Record<string, unknown>>;
   answer_blocks?: Array<Record<string, unknown>>;
+  answer_sections?: Array<Record<string, unknown>>;
+  evidence_bundle?: Record<string, unknown>;
+  job_diagnostics?: Array<Record<string, unknown>>;
   render_hints?: Record<string, unknown>;
   evidence_map?: Record<string, unknown>;
   unknowns?: string[];
@@ -3754,6 +3757,9 @@ serve(async (req) => {
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
         citations: mergedCitations.length > 0 ? mergedCitations : undefined,
         answer_blocks: undefined,
+        answer_sections: Array.isArray(assistantPayload.answer_sections) ? assistantPayload.answer_sections : undefined,
+        evidence_bundle: assistantPayload.evidence_bundle ?? undefined,
+        job_diagnostics: Array.isArray(assistantPayload.job_diagnostics) ? assistantPayload.job_diagnostics : undefined,
         render_hints: assistantPayload.render_hints ?? undefined,
         evidence_map: assistantPayload.evidence_map ?? undefined,
         unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
@@ -3960,6 +3966,9 @@ serve(async (req) => {
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
         citations: Array.isArray(assistantPayload.citations) ? assistantPayload.citations : undefined,
         answer_blocks: undefined,
+        answer_sections: Array.isArray(assistantPayload.answer_sections) ? assistantPayload.answer_sections : undefined,
+        evidence_bundle: assistantPayload.evidence_bundle ?? undefined,
+        job_diagnostics: Array.isArray(assistantPayload.job_diagnostics) ? assistantPayload.job_diagnostics : undefined,
         render_hints: assistantPayload.render_hints ?? undefined,
         evidence_map: assistantPayload.evidence_map ?? undefined,
         unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
@@ -4213,6 +4222,9 @@ serve(async (req) => {
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
         citations: Array.isArray(assistantPayload.citations) ? assistantPayload.citations : undefined,
         answer_blocks: undefined,
+        answer_sections: Array.isArray(assistantPayload.answer_sections) ? assistantPayload.answer_sections : undefined,
+        evidence_bundle: assistantPayload.evidence_bundle ?? undefined,
+        job_diagnostics: Array.isArray(assistantPayload.job_diagnostics) ? assistantPayload.job_diagnostics : undefined,
         render_hints: assistantPayload.render_hints ?? undefined,
         evidence_map: assistantPayload.evidence_map ?? undefined,
         unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,

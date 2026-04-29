@@ -77,4 +77,36 @@ describe("planAnswerEvidence", () => {
     );
     expect(plan.missing_evidence_policy).toBe("degrade_with_caveat");
   });
+
+  it("emits an answer-grade plan with sub-questions, job graph, and synthesis sections", () => {
+    const plan = planAnswerEvidence({
+      question:
+        "For this track, compare June revenue to April, which platforms drove the higher month, why might it have happened, and what do the writers get?",
+      catalog: catalog(),
+      mode: "track",
+    });
+
+    expect(plan.answer_goal).toMatch(/compare/i);
+    expect(plan.audience_mode).toBe("rights_admin");
+    expect(plan.sub_questions.map((question) => question.id)).toEqual(
+      expect.arrayContaining(["period-comparison", "platform-drivers", "explanation", "entitlement"]),
+    );
+    expect(plan.evidence_jobs.map((job) => job.job_id)).toEqual(
+      expect.arrayContaining(["primary", "platform-context", "trend-context", "rights-splits"]),
+    );
+    expect(plan.evidence_jobs.find((job) => job.job_id === "rights-splits")).toMatchObject({
+      type: "rights_splits",
+      requirement: "supporting",
+    });
+    expect(plan.synthesis_requirements).toEqual(
+      expect.arrayContaining([
+        "answer every sub-question or attach a specific caveat",
+        "cite evidence job ids for each answer section",
+        "produce concrete next actions from the available evidence",
+      ]),
+    );
+    expect(plan.answer_sections.map((section) => section.id)).toEqual(
+      expect.arrayContaining(["direct_answer", "drivers", "entitlement", "caveats", "next_move"]),
+    );
+  });
 });

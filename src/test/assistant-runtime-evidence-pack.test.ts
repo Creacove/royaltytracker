@@ -19,6 +19,9 @@ describe("assistant runtime evidence pack path", () => {
     expect(runtime).not.toContain("legacy_sql_planner_used: false");
     expect(runtime).toContain("evidence_pack");
     expect(runtime).toContain("structured sidecar evidence");
+    expect(runtime).toContain("buildAnswerSections");
+    expect(runtime).toContain("answer_sections");
+    expect(runtime).toContain("job_diagnostics");
     expect(workspace).toContain("run_workspace_evidence_plan_v1");
     expect(workspace).toContain("buildEvidencePack");
     expect(workspace).toContain("runEvidencePlan: runWorkspaceEvidencePlan");

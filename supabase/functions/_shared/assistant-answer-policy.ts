@@ -247,7 +247,7 @@ export function inferAnswerObjective(question: string): AnswerObjective {
   if (/\bwhich tracks?\b|\btop tracks?\b|\bcarrying\b.*\brevenue\b|\bdriving\b.*\btracks?\b/.test(q)) {
     return "track_ranking";
   }
-  if (/\b(what should|what do we do next|what should i do next|next step|next move|prioriti[sz]e|focus on next|manager)\b/.test(q)) {
+  if (/\b(what should|what do we do next|what should i do next|next step|next move|prioriti[sz]e|focus on next|manager|deserve(?:s)? .*attention|need(?:s)? .*attention|immediate attention|where should .*spend|where to spend|where should .*invest|where to invest|intervene|watch this week)\b/.test(q)) {
     return "recommendation";
   }
   if (/\b(how is|how are)\b.*\bperforming overall\b|\boverall performance\b|\bperforming overall\b|\bhow are we performing overall\b/.test(q)) {
@@ -498,6 +498,8 @@ function buildRecommendationAnswer(input: BuildDecisionGradeAnswerInput): Decisi
   const subject = subjectLabel(input.mode, input.resolvedEntities);
   const driverKey = columns.includes("track_title")
     ? "track_title"
+    : columns.includes("artist_name")
+      ? "artist_name"
     : columns.includes("territory")
       ? "territory"
       : columns.includes("platform")
@@ -527,14 +529,20 @@ function buildRecommendationAnswer(input: BuildDecisionGradeAnswerInput): Decisi
     ? "prioritize"
     : driverKey === "platform"
       ? "double down on"
+      : driverKey === "artist_name"
+        ? "give immediate attention to"
       : "protect and scale";
+  const weakRows = moneyRows.filter((row) => (toNum(row[moneyKey]) ?? 0) <= 0);
+  const weakLabel = weakRows[0] && driverKey ? String(weakRows[0][driverKey] ?? "").trim() : "";
 
   return {
     objective: "recommendation",
     executive_answer: `The next move should be to ${focusVerb} ${leadLabel}, because it is the clearest current revenue driver for ${subject}.`,
-    why_this_matters: leadShare !== null && leadShare >= 0.55
-      ? `${leadLabel} is doing outsized work in the visible revenue mix, so the management risk is over-concentration. Defend the winner first, then fund one secondary test${runnerLabel ? ` behind ${runnerLabel}` : ""}.`
-      : `The current evidence points to ${leadLabel} as the first operating priority, while still leaving room to test secondary growth without spreading effort too thin.`,
+    why_this_matters: driverKey === "artist_name"
+      ? `${leadLabel} needs the first operating review because it is the strongest visible artist-level revenue driver${runnerLabel ? `, with ${runnerLabel} as the next comparison point` : ""}. ${weakLabel ? `${weakLabel} also needs a separate intervention review because non-positive revenue is a different problem from scaling the winners.` : "Do not mix the winner-scaling decision with low-earner intervention; they need different actions."}`
+      : leadShare !== null && leadShare >= 0.55
+        ? `${leadLabel} is doing outsized work in the visible revenue mix, so the management risk is over-concentration. Defend the winner first, then fund one secondary test${runnerLabel ? ` behind ${runnerLabel}` : ""}.`
+        : `The current evidence points to ${leadLabel} as the first operating priority, while still leaving room to test secondary growth without spreading effort too thin.`,
     quality_outcome: "pass",
     data_notes: [],
     missing_requirements: [],

@@ -100,6 +100,25 @@ function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBloc
   return blocks;
 }
 
+function toEvidenceJobBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBlock[] {
+  const jobs = Array.isArray(payload.evidence_bundle?.sql_evidence_jobs)
+    ? payload.evidence_bundle.sql_evidence_jobs
+    : [];
+  return jobs
+    .filter((job) => Array.isArray(job.columns) && Array.isArray(job.rows) && job.rows.length > 0)
+    .map((job, index) => ({
+      id: `evidence-job-${job.job_id}`,
+      type: "table" as const,
+      priority: 60 + index,
+      source: "workspace_data" as const,
+      title: job.purpose || toAssistantLabel(job.job_id),
+      payload: {
+        columns: job.columns ?? [],
+        rows: job.rows ?? [],
+      },
+    }));
+}
+
 function formatValue(value: unknown): string {
   if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
   if (value == null) return "-";
@@ -258,7 +277,7 @@ export function AiAnswerView({ payload, onUseQuestion }: AiAnswerViewProps) {
   const blocks = useMemo(() => {
     const explicit = Array.isArray(payload.answer_blocks) ? payload.answer_blocks : [];
     const fallback = explicit.length > 0 ? [] : toFallbackBlocks(payload);
-    return [...explicit, ...fallback].sort((a, b) => a.priority - b.priority);
+    return [...explicit, ...fallback, ...toEvidenceJobBlocks(payload)].sort((a, b) => a.priority - b.priority);
   }, [payload]);
 
   const visibleArtifactIds = Array.isArray((payload.render_hints as { visible_artifact_ids?: unknown } | undefined)?.visible_artifact_ids)

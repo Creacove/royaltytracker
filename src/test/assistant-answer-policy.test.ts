@@ -128,6 +128,99 @@ describe("assistant answer policy", () => {
     expect(result.why_this_matters).toMatch(/concentration|driver|secondary/i);
   });
 
+  it("makes artist attention answers explain the operating decision instead of generic marketing value", () => {
+    const result = buildDecisionGradeAnswer({
+      question: "Which artists deserve immediate attention?",
+      mode: "workspace-general",
+      resolvedEntities: {},
+      visual: {
+        type: "table",
+        columns: ["artist_name", "net_revenue"],
+        rows: [
+          { artist_name: "Summer Voltage", net_revenue: 940000 },
+          { artist_name: "Neon Machine", net_revenue: 710000 },
+          { artist_name: "Glass Harbor", net_revenue: -12000 },
+        ],
+      },
+      evidence: {
+        row_count: 3,
+        scanned_rows: 3,
+        from_date: "2026-01-01",
+        to_date: "2026-03-31",
+        provenance: ["run_workspace_chat_sql_v1"],
+        system_confidence: "high",
+      },
+    });
+
+    expect(result.objective).toBe("recommendation");
+    expect(result.executive_answer).toMatch(/Summer Voltage/);
+    expect(result.why_this_matters).toMatch(/Summer Voltage/);
+    expect(result.why_this_matters).toMatch(/Neon Machine|Glass Harbor|secondary|negative|attention/i);
+    expect(result.why_this_matters).not.toMatch(/high revenue potential can help focus marketing efforts/i);
+  });
+
+  it("answers marketing spend questions with a concrete allocation implication", () => {
+    const result = buildDecisionGradeAnswer({
+      question: "Where should marketing spend next?",
+      mode: "workspace-general",
+      resolvedEntities: {},
+      visual: {
+        type: "table",
+        columns: ["platform", "net_revenue"],
+        rows: [
+          { platform: "Spotify", net_revenue: 510000 },
+          { platform: "YouTube", net_revenue: 190000 },
+          { platform: "Radio", net_revenue: 80000 },
+        ],
+      },
+      assistantWhy: "Identifying high-performing platforms helps focus marketing resources.",
+      evidence: {
+        row_count: 3,
+        scanned_rows: 3,
+        from_date: "2026-01-01",
+        to_date: "2026-03-31",
+        provenance: ["run_workspace_chat_sql_v1"],
+        system_confidence: "high",
+      },
+    });
+
+    expect(result.objective).toBe("recommendation");
+    expect(result.executive_answer).toMatch(/Spotify/);
+    expect(result.why_this_matters).toMatch(/Spotify/);
+    expect(result.why_this_matters).toMatch(/secondary|YouTube|concentration|test/i);
+    expect(result.why_this_matters).not.toMatch(/helps focus marketing resources/i);
+  });
+
+  it("answers CFO watchlist questions as an intervention decision", () => {
+    const result = buildDecisionGradeAnswer({
+      question: "What should the CFO watch this week?",
+      mode: "workspace-general",
+      resolvedEntities: {},
+      visual: {
+        type: "table",
+        columns: ["artist_name", "net_revenue"],
+        rows: [
+          { artist_name: "Neon Machine", net_revenue: 720000 },
+          { artist_name: "Glass Harbor", net_revenue: -42000 },
+        ],
+      },
+      assistantWhy: "Monitoring performance allows for better financial decisions.",
+      evidence: {
+        row_count: 2,
+        scanned_rows: 2,
+        from_date: "2026-01-01",
+        to_date: "2026-03-31",
+        provenance: ["run_workspace_chat_sql_v1"],
+        system_confidence: "high",
+      },
+    });
+
+    expect(result.objective).toBe("recommendation");
+    expect(result.why_this_matters).toMatch(/Neon Machine/);
+    expect(result.why_this_matters).toMatch(/Glass Harbor|non-positive|intervention/i);
+    expect(result.why_this_matters).not.toMatch(/better financial decisions/i);
+  });
+
   it("keeps workspace-level overall answers anchored to the workspace rather than drifting to an entity", () => {
     const result = buildDecisionGradeAnswer({
       question: "How are we performing overall?",

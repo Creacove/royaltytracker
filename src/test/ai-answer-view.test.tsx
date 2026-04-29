@@ -84,4 +84,61 @@ describe("AiAnswerView", () => {
     expect(screen.getByText("Recommendations")).toBeInTheDocument();
     expect(screen.queryByText("Evidence Table")).not.toBeInTheDocument();
   });
+
+  it("keeps answer sections out of the main view and groups evidence rows by job", () => {
+    render(
+      <AiAnswerView
+        payload={samplePayload({
+          answer_sections: [
+            {
+              id: "drivers",
+              title: "Drivers",
+              content: "Spotify explains most of the lift, while Germany is the strongest territory.",
+              evidence_job_ids: ["platform-context", "territory-context"],
+              status: "supported",
+            },
+            {
+              id: "next_move",
+              title: "Next move",
+              content: "Move campaign budget toward Germany and audit failed rows before payout planning.",
+              evidence_job_ids: ["primary"],
+              status: "supported",
+            },
+          ],
+          evidence_bundle: {
+            sql_evidence_jobs: [
+              {
+                job_id: "platform-context",
+                purpose: "Platform drivers",
+                requirement: "supporting",
+                row_count: 2,
+                columns: ["platform", "net_revenue"],
+                rows: [{ platform: "Spotify", net_revenue: 1800 }],
+              },
+              {
+                job_id: "territory-context",
+                purpose: "Territory drivers",
+                requirement: "supporting",
+                row_count: 2,
+                columns: ["territory", "net_revenue"],
+                rows: [{ territory: "Germany", net_revenue: 1200 }],
+              },
+            ],
+          },
+        })}
+        onUseQuestion={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Revenue accelerated in Germany/)).toBeInTheDocument();
+    expect(screen.queryByText("Drivers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Next move")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /show evidence/i }));
+
+    expect(screen.getByText("Platform drivers")).toBeInTheDocument();
+    expect(screen.getByText("Territory drivers")).toBeInTheDocument();
+    expect(screen.getByText("Spotify")).toBeInTheDocument();
+    expect(screen.getByText("Germany")).toBeInTheDocument();
+  });
 });

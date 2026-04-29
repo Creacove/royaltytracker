@@ -5,6 +5,7 @@ import {
 } from "./assistant-query-engine.ts";
 
 export type EvidenceJobRequirement = "required" | "supporting" | "optional";
+export type AudienceMode = "executive" | "marketing" | "cfo" | "label_catalog" | "touring" | "rights_admin" | "general";
 
 export type SqlEvidenceJob = {
   job_id: string;
@@ -22,9 +23,33 @@ export type SidecarEvidenceJob = {
   required_for_answer: boolean;
 };
 
+export type AnswerSubQuestion = {
+  id: string;
+  question: string;
+  required: boolean;
+  evidence_job_ids: string[];
+};
+
+export type AnswerEvidenceJob =
+  | (Omit<SqlEvidenceJob, "analysis_plan"> & { type: "sql" })
+  | (Omit<SidecarEvidenceJob, "kind"> & { type: "rights_splits" | "documents" | "quality" | "external" });
+
+export type AnswerSectionPlan = {
+  id: "direct_answer" | "drivers" | "comparison" | "entitlement" | "caveats" | "next_move";
+  title: string;
+  required: boolean;
+  evidence_job_ids: string[];
+};
+
 export type MultiEvidencePlan = {
   intent: string;
+  answer_goal: string;
+  audience_mode: AudienceMode;
+  sub_questions: AnswerSubQuestion[];
   answer_requirements: string[];
+  evidence_jobs: AnswerEvidenceJob[];
+  synthesis_requirements: string[];
+  answer_sections: AnswerSectionPlan[];
   sql_jobs: SqlEvidenceJob[];
   sidecar_jobs: SidecarEvidenceJob[];
   external_context_policy: "forbidden" | "conditional";
@@ -66,6 +91,92 @@ function addRequirement(requirements: string[], value: string): void {
   if (!requirements.includes(value)) requirements.push(value);
 }
 
+function detectAudienceMode(q: string): AudienceMode {
+  if (includesAny(q, [/\bcfo\b/, /\bfinance\b/, /\bforecast\b/, /\bmargin\b/, /\bbudget\b/])) return "cfo";
+  if (includesAny(q, [/\bmarket/, /\bcampaign\b/, /\bplaylist\b/, /\baudience\b/, /\bpromotion\b/])) return "marketing";
+  if (includesAny(q, [/\btour/, /\bvenue\b/, /\bcity\b/, /\brouting\b/, /\bshow\b/])) return "touring";
+  if (includesAny(q, [/\bright/, /\bsplit/, /\bwriter/, /\bpublisher/, /\bowner/, /\bentitlement/, /\bpayou?t/])) return "rights_admin";
+  if (includesAny(q, [/\bcatalog\b/, /\blabel\b/, /\bportfolio\b/, /\bartist\b/, /\btrack\b/, /\bproject\b/])) return "label_catalog";
+  if (includesAny(q, [/\bstrategy\b/, /\bprioriti[sz]e\b/, /\battention\b/, /\bimmediate\b/])) return "executive";
+  return "general";
+}
+
+function addSubQuestion(subQuestions: AnswerSubQuestion[], subQuestion: AnswerSubQuestion): void {
+  const existing = subQuestions.find((item) => item.id === subQuestion.id);
+  if (existing) {
+    existing.evidence_job_ids = Array.from(new Set([...existing.evidence_job_ids, ...subQuestion.evidence_job_ids]));
+    existing.required = existing.required || subQuestion.required;
+    return;
+  }
+  subQuestions.push(subQuestion);
+}
+
+function sidecarType(kind: SidecarEvidenceJob["kind"]): AnswerEvidenceJob["type"] {
+  if (kind === "source_documents") return "documents";
+  if (kind === "data_quality") return "quality";
+  if (kind === "external_context") return "external";
+  return "rights_splits";
+}
+
+function buildAnswerSections(args: {
+  sqlJobs: SqlEvidenceJob[];
+  sidecarJobs: SidecarEvidenceJob[];
+  asksTrend: boolean;
+  asksRights: boolean;
+  asksQuality: boolean;
+}): AnswerSectionPlan[] {
+  const sections: AnswerSectionPlan[] = [
+    {
+      id: "direct_answer",
+      title: "Direct answer",
+      required: true,
+      evidence_job_ids: ["primary"],
+    },
+  ];
+  const driverJobIds = args.sqlJobs
+    .filter((job) => job.job_id !== "primary" && /territory|platform|quality/.test(job.job_id))
+    .map((job) => job.job_id);
+  if (driverJobIds.length > 0) {
+    sections.push({
+      id: "drivers",
+      title: "Drivers",
+      required: false,
+      evidence_job_ids: driverJobIds,
+    });
+  }
+  if (args.asksTrend) {
+    sections.push({
+      id: "comparison",
+      title: "Comparison",
+      required: false,
+      evidence_job_ids: args.sqlJobs.filter((job) => job.job_id === "trend-context").map((job) => job.job_id),
+    });
+  }
+  if (args.asksRights) {
+    sections.push({
+      id: "entitlement",
+      title: "Entitlement",
+      required: false,
+      evidence_job_ids: args.sidecarJobs.filter((job) => job.kind === "rights_splits").map((job) => job.job_id),
+    });
+  }
+  sections.push({
+    id: "caveats",
+    title: "Caveats",
+    required: false,
+    evidence_job_ids: args.asksQuality
+      ? args.sqlJobs.filter((job) => job.job_id === "quality-context").map((job) => job.job_id)
+      : args.sidecarJobs.map((job) => job.job_id),
+  });
+  sections.push({
+    id: "next_move",
+    title: "Next move",
+    required: true,
+    evidence_job_ids: ["primary", ...driverJobIds],
+  });
+  return sections;
+}
+
 export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidencePlan {
   const q = input.question.toLowerCase();
   const primaryPlan = input.primaryPlan ?? deriveAnalysisPlanFallback(input.question, input.catalog);
@@ -89,6 +200,9 @@ export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidenc
   const asksRights = includesAny(q, [/\bright/, /\bsplit/, /\bshare/, /\bwriter/, /\bpublisher/, /\bowner/, /\bowns\b/, /\bentitled/, /\bentitlement/, /\bgetting from/, /\bpayou?t/]);
   const asksDocuments = asksRights || includesAny(q, [/\bdocument/, /\bsource/, /\bcontract/, /\bprove/, /\bproof/]);
   const asksExternal = includesAny(q, [/\bexternal/, /\bbenchmark/, /\bindustry/, /\bmarket context/, /\bfestival/, /\btour/, /\bvenue/]);
+  const asksComparison = asksTrend || includesAny(q, [/\bcompare\b/, /\bcompared\b/, /\bvs\b/, /\bversus\b/]);
+  const asksExplanation = includesAny(q, [/\bwhy\b/, /\bexplain\b/, /\breason\b/, /\bbecause\b/, /\bwhat happened\b/]);
+  const asksRanking = includesAny(q, [/\btop\b/, /\brank/, /\bdeserve\b/, /\battention\b/, /\bprioriti[sz]e\b/, /\bimmediate\b/]);
 
   if (asksRevenue || asksProject) {
     addRequirement(answerRequirements, "rank revenue drivers");
@@ -113,7 +227,7 @@ export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidenc
       analysis_plan: focusedPlan(input.question, input.catalog, "by platform dsp service", ["platform"]),
     });
   }
-  if (asksTrend && hasColumn(input.catalog, "event_date")) {
+  if (asksComparison && hasColumn(input.catalog, "event_date")) {
     addRequirement(answerRequirements, "explain time movement");
     addJob(sqlJobs, {
       job_id: "trend-context",
@@ -173,9 +287,102 @@ export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidenc
     });
   }
 
+  const subQuestions: AnswerSubQuestion[] = [];
+  addSubQuestion(subQuestions, {
+    id: asksRanking ? "ranking" : "main-answer",
+    question: asksRanking ? "Which entities should be ranked or prioritized?" : "What is the direct answer to the user's question?",
+    required: true,
+    evidence_job_ids: ["primary"],
+  });
+  if (asksComparison) {
+    addSubQuestion(subQuestions, {
+      id: "period-comparison",
+      question: "How did the requested periods compare?",
+      required: true,
+      evidence_job_ids: ["primary", "trend-context"],
+    });
+  }
+  if (asksPlatform) {
+    addSubQuestion(subQuestions, {
+      id: "platform-drivers",
+      question: "Which platforms drove the result?",
+      required: false,
+      evidence_job_ids: ["platform-context"],
+    });
+  }
+  if (asksTerritory || asksExternal) {
+    addSubQuestion(subQuestions, {
+      id: asksExternal ? "touring-market-fit" : "territory-drivers",
+      question: asksExternal ? "Which territories or markets support the touring recommendation?" : "Which territories drove the result?",
+      required: asksExternal,
+      evidence_job_ids: ["territory-context"],
+    });
+  }
+  if (asksExplanation) {
+    addSubQuestion(subQuestions, {
+      id: "explanation",
+      question: "What evidence-backed explanation is available?",
+      required: false,
+      evidence_job_ids: ["primary", "platform-context", "territory-context", "trend-context"],
+    });
+  }
+  if (asksRights) {
+    addSubQuestion(subQuestions, {
+      id: "entitlement",
+      question: "What rights, split, or writer allocation context is available?",
+      required: false,
+      evidence_job_ids: ["rights-splits", "source-documents"],
+    });
+  }
+  if (asksQuality) {
+    addSubQuestion(subQuestions, {
+      id: "quality-limits",
+      question: "What data-quality facts limit confidence?",
+      required: false,
+      evidence_job_ids: ["quality-context", "data-quality"],
+    });
+  }
+
+  const evidenceJobs: AnswerEvidenceJob[] = [
+    ...sqlJobs.map((job) => ({
+      job_id: job.job_id,
+      type: "sql" as const,
+      purpose: job.purpose,
+      requirement: job.requirement,
+      required_for_answer: job.required_for_answer,
+    })),
+    ...sidecarJobs.map((job) => ({
+      job_id: job.job_id,
+      type: sidecarType(job.kind),
+      purpose: job.purpose,
+      requirement: job.requirement,
+      required_for_answer: job.required_for_answer,
+    })),
+  ];
+
+  const answerSections = buildAnswerSections({
+    sqlJobs,
+    sidecarJobs,
+    asksTrend: asksComparison,
+    asksRights,
+    asksQuality,
+  });
+
   return {
     intent: primaryPlan.intent,
+    answer_goal: input.question,
+    audience_mode: detectAudienceMode(q),
+    sub_questions: subQuestions,
     answer_requirements: answerRequirements,
+    evidence_jobs: evidenceJobs,
+    synthesis_requirements: [
+      "answer every sub-question or attach a specific caveat",
+      "cite evidence job ids for each answer section",
+      "make why-this-matters name a driver, gap, risk, or decision",
+      "produce concrete next actions from the available evidence",
+      "avoid external advice when internal required evidence is missing",
+    ],
+    answer_sections: answerSections,
     sql_jobs: sqlJobs,
     sidecar_jobs: sidecarJobs,
     external_context_policy: asksExternal ? "conditional" : "forbidden",

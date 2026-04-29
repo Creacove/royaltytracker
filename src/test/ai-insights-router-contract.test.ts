@@ -132,4 +132,44 @@ describe("ai insights response contract", () => {
 
     expect(isAiInsightsTurnResponse(proseFixture)).toBe(true);
   });
+
+  it("preserves answer-grade evidence contracts through the router boundary", () => {
+    const answerGradeFixture = {
+      ...base,
+      resolved_mode: "workspace-general",
+      answer_sections: [
+        {
+          id: "direct_answer",
+          title: "Direct answer",
+          content: "Prioritize Summer Voltage and Neon Machine.",
+          evidence_job_ids: ["primary"],
+          status: "supported",
+        },
+      ],
+      evidence_bundle: {
+        sql_evidence_jobs: [
+          {
+            job_id: "primary",
+            purpose: "rank artists needing attention",
+            requirement: "required",
+            row_count: 5,
+            columns: ["artist_name", "net_revenue"],
+            rows: [{ artist_name: "Summer Voltage", net_revenue: 1992.48 }],
+          },
+        ],
+        structured_sidecar_evidence: null,
+      },
+      job_diagnostics: [
+        {
+          job_id: "primary",
+          type: "sql",
+          status: "passed",
+          row_count: 5,
+          warnings: [],
+        },
+      ],
+    };
+
+    expect(isAiInsightsTurnResponse(answerGradeFixture)).toBe(true);
+  });
 });

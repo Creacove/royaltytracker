@@ -834,6 +834,85 @@ function buildEvidenceBundle(args: {
   };
 }
 
+function summarizeEvidenceJob(job: SqlEvidenceJobResult): string {
+  if (job.error) return `${job.purpose}: unavailable (${job.error}).`;
+  if (job.row_count <= 0) return `${job.purpose}: no matching rows.`;
+  const top = job.rows[0] ?? {};
+  const facts = job.columns.slice(0, 4).flatMap((column) => {
+    const value = top[column];
+    return value === null || value === undefined ? [] : [`${column}=${String(value)}`];
+  });
+  return facts.length > 0
+    ? `${job.purpose}: ${facts.join(", ")}.`
+    : `${job.purpose}: ${job.row_count} row(s) returned.`;
+}
+
+function buildJobDiagnostics(args: {
+  multiEvidencePlan: MultiEvidencePlan;
+  sqlJobs: SqlEvidenceJobResult[];
+  evidencePack: EvidencePack | null;
+}) {
+  const sqlDiagnostics = args.sqlJobs.map((job) => ({
+    job_id: job.job_id,
+    type: "sql",
+    status: job.error ? "failed" : job.verifier_status,
+    row_count: job.row_count,
+    warnings: job.warnings,
+    error: job.error,
+  }));
+  const sidecarDiagnostics = args.multiEvidencePlan.sidecar_jobs.map((job) => ({
+    job_id: job.job_id,
+    type: job.kind === "source_documents" ? "documents" : job.kind === "data_quality" ? "quality" : job.kind === "external_context" ? "external" : "rights_splits",
+    status: args.evidencePack ? "passed" : "missing",
+    row_count: args.evidencePack ? evidencePackRowCount(args.evidencePack) : 0,
+    warnings: args.evidencePack ? evidencePackCaveats(args.evidencePack) : ["Sidecar evidence was not available for this answer."],
+  }));
+  return [...sqlDiagnostics, ...sidecarDiagnostics];
+}
+
+function buildAnswerSections(args: {
+  multiEvidencePlan: MultiEvidencePlan;
+  sqlJobs: SqlEvidenceJobResult[];
+  answerText: string;
+  whyThisMatters: string;
+  unknowns: string[];
+}) {
+  const jobsById = new Map(args.sqlJobs.map((job) => [job.job_id, job]));
+  return args.multiEvidencePlan.answer_sections.map((section) => {
+    const supportedJobs = section.evidence_job_ids
+      .map((jobId) => jobsById.get(jobId))
+      .filter((job): job is SqlEvidenceJobResult => !!job);
+    const missingJobIds = section.evidence_job_ids.filter((jobId) => !jobsById.has(jobId));
+    const content = (() => {
+      if (section.id === "direct_answer") return args.answerText;
+      if (section.id === "next_move") return args.whyThisMatters || "Use the supported evidence jobs to choose the next action, and resolve listed caveats before making payout-sensitive decisions.";
+      if (section.id === "caveats") {
+        const caveats = unique([
+          ...args.unknowns,
+          ...missingJobIds.map((jobId) => `Evidence job ${jobId} was not available.`),
+        ]);
+        return caveats.length > 0 ? caveats.join(" ") : "No material caveats were detected from the executed evidence jobs.";
+      }
+      if (supportedJobs.length > 0) return supportedJobs.map(summarizeEvidenceJob).join(" ");
+      return missingJobIds.length > 0
+        ? `This section needs ${missingJobIds.join(", ")} evidence, which was not available.`
+        : "No supporting evidence was available for this section.";
+    })();
+    const status = supportedJobs.some((job) => job.row_count > 0 && !job.error)
+      ? "supported"
+      : missingJobIds.length > 0 || supportedJobs.some((job) => job.error)
+        ? "partial"
+        : "unsupported";
+    return {
+      id: section.id,
+      title: section.title,
+      content,
+      evidence_job_ids: section.evidence_job_ids,
+      status,
+    };
+  });
+}
+
 async function executeSupportingSqlEvidenceJobs(args: {
   jobs: SqlEvidenceJob[];
   catalog: ArtistCatalog;
@@ -1119,6 +1198,7 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
               "Use the SQL evidence jobs as the primary facts and the structured sidecar evidence only as supporting context.",
               "Do not let missing rights, splits, documents, or external context collapse an answer that is supported by SQL revenue evidence.",
               "If sidecar evidence is missing, add one short caveat and still answer from the available evidence.",
+              "Respect the answer plan: answer every sub-question, cite the evidence job purpose in the relevant section, and make why_this_matters concrete.",
               "Return JSON with answer_title, answer_text, why_this_matters, kpis, chart, follow_up_questions.",
             ].join(" "),
             userPrompt: JSON.stringify({
@@ -1143,6 +1223,8 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const kpis = sanitizeKpis(synthesized?.kpis);
       const claims = buildClaimsFromRows(columns, rows.slice(0, 25), config.sqlSourceRef);
       const unknowns = unique([...quality.unknowns, ...sidecarCaveats]);
+      const answerSections = buildAnswerSections({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, answerText, whyThisMatters, unknowns });
+      const jobDiagnostics = buildJobDiagnostics({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack });
       const answerBlocks = buildAnswerBlocks({ title: answerTitle, text: answerText, why: whyThisMatters, kpis, columns, rows: rows.slice(0, 25), claims, unknowns, clarification: quality.clarification, quality_outcome: quality.quality_outcome });
       const evidenceMap = Object.fromEntries(answerBlocks.filter((b) => typeof b.id === "string").map((b) => [String(b.id), "workspace_data"]));
       const chart = (() => {
@@ -1193,6 +1275,8 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         evidence,
         evidence_pack: evidencePack ?? undefined,
         evidence_bundle: evidenceBundle,
+        answer_sections: answerSections,
+        job_diagnostics: jobDiagnostics,
         follow_up_questions: asArrayOfStrings(synthesized?.follow_up_questions).slice(0, 3),
         quality_outcome: quality.quality_outcome,
         clarification: quality.clarification,

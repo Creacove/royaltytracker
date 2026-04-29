@@ -402,6 +402,43 @@ export type AiInsightsAnswerDesign = {
   evidence_visibility: "collapsed" | "expanded";
 };
 
+export type AiAnswerSection = {
+  id: string;
+  title: string;
+  content: string;
+  evidence_job_ids?: string[];
+  status?: "supported" | "partial" | "unsupported";
+};
+
+export type AiEvidenceBundleSqlJob = {
+  job_id: string;
+  purpose: string;
+  requirement?: "required" | "supporting" | "optional" | string;
+  required_for_answer?: boolean;
+  row_count?: number;
+  columns?: string[];
+  rows?: Array<Record<string, string | number | null>>;
+  chosen_columns?: string[];
+  verifier_status?: "passed" | "failed" | string;
+  warnings?: string[];
+  error?: string;
+};
+
+export type AiEvidenceBundle = {
+  multi_evidence_plan?: Record<string, unknown>;
+  sql_evidence_jobs?: AiEvidenceBundleSqlJob[];
+  structured_sidecar_evidence?: Record<string, unknown> | null;
+};
+
+export type AiJobDiagnostic = {
+  job_id: string;
+  type: "sql" | "rights_splits" | "documents" | "quality" | "external" | string;
+  status: "passed" | "failed" | "missing" | "partial" | string;
+  row_count?: number;
+  warnings?: string[];
+  error?: string;
+};
+
 export type AiInsightsTurnRequest = {
   question: string;
   from_date: string;
@@ -463,4 +500,7 @@ export type AiInsightsTurnResponse = {
   citations?: AiInsightsCitation[];
   unknowns?: string[];
   answer_design?: AiInsightsAnswerDesign;
+  answer_sections?: AiAnswerSection[];
+  evidence_bundle?: AiEvidenceBundle;
+  job_diagnostics?: AiJobDiagnostic[];
 };
