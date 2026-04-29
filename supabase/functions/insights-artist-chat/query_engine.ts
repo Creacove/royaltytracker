@@ -166,6 +166,7 @@ function inferTopN(question: string): number {
 
 type ComparisonUnit = "day" | "week" | "month" | "quarter" | "year";
 type ComparisonWindow = { amount: number; unit: ComparisonUnit };
+type ExplicitYearComparison = { years: number[] };
 
 function unitAliasToCanonical(value: string | null | undefined): ComparisonUnit | null {
   if (!value) return null;
@@ -235,6 +236,15 @@ function parseComparisonWindow(question: string): ComparisonWindow | null {
   return null;
 }
 
+function parseExplicitYearComparison(question: string): ExplicitYearComparison | null {
+  if (!/\b(compare|comparison|vs|versus|to|against)\b/i.test(question)) return null;
+  const years = Array.from(question.matchAll(/\b(20\d{2}|19\d{2})\b/g))
+    .map((match) => Number(match[1]))
+    .filter((year) => year >= 1900 && year <= 2100);
+  const uniqueYears = Array.from(new Set(years)).sort((a, b) => a - b);
+  return uniqueYears.length >= 2 ? { years: uniqueYears.slice(0, 4) } : null;
+}
+
 function detectTrendGrain(question: string): AnalysisPlan["grain"] {
   const q = question.toLowerCase();
   if (/\b(day by day|daily|per day)\b/.test(q)) return "day";
@@ -278,13 +288,17 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   const firstAvailable = (...names: string[]): string | null =>
     names.find((name) => hasField(name)) ?? null;
 
-  const asksRevenue = /\b(revenue|money|earning|royalt|gross|net)\b/i.test(q);
+  const asksAttention = /\b(deserve|attention|immediate|prioriti[sz]e|priority|watchlist|focus)\b/i.test(q);
+  const asksArtistRanking = /\bartists?\b|\bartistes?\b/i.test(q) && asksAttention;
+  const asksTouring = /\b(tour|touring|show|venue|city|route|routing)\b/i.test(q);
+  const asksRevenue = /\b(revenu\w*|money|earning|royalt|gross|net)\b/i.test(q) || asksAttention || asksTouring;
   const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q);
-  const asksTerritory = /\b(territory|country|market|region|geo|geography)\b/i.test(q);
+  const asksTerritory = /\b(territory|country|market|region|geo|geography)\b/i.test(q) || asksTouring;
   const asksTrend = /\b(trend|over time|qoq|yoy|mom|growth rate|month over month|quarter over quarter|week over week|month by month|week by week|day by day|quarter by quarter|last\s+\d+\s+(?:days?|weeks?|months?|quarters?)|prior\s+\d+\s+(?:days?|weeks?|months?|quarters?)|vs\s+prior|compared\s+to\s+prior)\b/i.test(q);
+  const explicitYearComparison = parseExplicitYearComparison(question);
   const comparisonWindow = parseComparisonWindow(question);
   const relativeWindow = parseRelativeWindow(question);
-  const asksPeriodComparison = comparisonWindow !== null || /\b(compare|comparison|vs\s+prior|versus\s+prior|compared\s+to\s+prior)\b/i.test(q);
+  const asksPeriodComparison = explicitYearComparison !== null || comparisonWindow !== null || /\b(compare|comparison|vs\s+prior|versus\s+prior|compared\s+to\s+prior)\b/i.test(q);
   const asksOpportunityRisk = /\b(opportunity|potential)\b.*\b(risk|data risk|quality risk)\b|\b(highest opportunity)\b.*\b(highest data risk)\b/i.test(q);
   const asksHighestOpportunity = /\b(highest opportunity|top opportunity|best opportunity|tracks? with highest opportunity)\b/i.test(q);
   const asksGrossNetGap = /\b(gross[\s-]*to[\s-]*net|gross\s*-\s*net|gap)\b/i.test(q) &&
@@ -305,6 +319,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   const rightsStreamField = firstAvailable("rights_stream", "rights_type", "rights_family");
 
   const dimensions: string[] = [];
+  if (asksArtistRanking && hasField("artist_name")) dimensions.push("artist_name");
   if (asksPlatform) dimensions.push("platform");
   if (asksTerritory) dimensions.push("territory");
   if (asksRightsLeakage) dimensions.push("rights_type");
@@ -363,7 +378,13 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     ...(asksEntitlement && rightsDimensionField ? [rightsDimensionField] : []),
   ]);
   const planFilters: AnalysisPlan["filters"] = [];
-  if (comparisonWindow) {
+  if (explicitYearComparison) {
+    planFilters.push({
+      column: "__year_compare__",
+      op: "=",
+      value: explicitYearComparison.years.join(","),
+    });
+  } else if (comparisonWindow) {
     planFilters.push({
       column: "__period_compare__",
       op: "=",
@@ -483,7 +504,8 @@ function resolveCatalogColumns(names: string[], catalog: ArtistCatalog, byKey: M
   return result;
 }
 
-function sourceKindFilterSql(intent: AnalysisPlan["intent"]): string | null {
+function sourceKindFilterSql(intent: AnalysisPlan["intent"], byKey: Map<string, CatalogColumn>): string | null {
+  if (!byKey.has("source_kind")) return null;
   if ([
     "revenue_analysis",
     "platform_analysis",
@@ -525,7 +547,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n      ");
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
@@ -560,7 +582,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimSelect = dims.map((d) => `r.${d.field_key} AS ${d.field_key}`).join(",\n        ");
     const dimProjection = dimSelect.length > 0 ? `${dimSelect},\n        ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte},
@@ -604,7 +626,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
@@ -638,7 +660,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
@@ -665,6 +687,10 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
       .filter((c) => isSafeSqlIdentifier(c.field_key))
       .slice(0, 2);
     const rowEnrichedCte = buildRowEnrichedCte(periodDims.filter((d) => d.source === "custom").map((d) => d.field_key));
+    const yearEncoded = plan.filters.find((f) => f.column === "__year_compare__" && f.op === "=" && typeof f.value === "string");
+    const explicitYears = typeof yearEncoded?.value === "string"
+      ? yearEncoded.value.split(",").map((value) => Number(value)).filter((year) => Number.isInteger(year) && year >= 1900 && year <= 2100).slice(0, 4)
+      : [];
     const encoded = plan.filters.find((f) => f.column === "__period_compare__" && f.op === "=" && typeof f.value === "string");
     const [rawAmount, rawUnit] = typeof encoded?.value === "string" ? encoded.value.split(":") : [];
     const parsedAmount = parseAmountToken(rawAmount);
@@ -681,14 +707,46 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimFinalWithComma = dimCols.length > 0 ? `${dimCols.join(",\n      ")},\n      ` : "";
     const dimOrderBy = dimCols.length > 0 ? `${dimCols.join(", ")}, ` : "";
     const dimRowSelectWithComma = dimCols.length > 0 ? `${dimCols.join(",\n        ")},\n        ` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const sourceWhere = sourceFilter ? `AND ${sourceFilter.replaceAll("r.", "c.")}` : "";
+
+    if (explicitYears.length >= 2) {
+      const yearList = explicitYears.join(", ");
+      const dimGroupWithYear = dimCols.length > 0 ? `GROUP BY 1, ${dimCols.map((_, index) => String(index + 2)).join(", ")}` : "GROUP BY 1";
+      const dimFinalWithCommaForYears = dimCols.length > 0 ? `${dimCols.join(",\n      ")},\n      ` : "";
+      const dimOrderForYears = dimCols.length > 0 ? `${dimCols.join(", ")}, ` : "";
+      const sql = `${rowEnrichedCte}
+    SELECT
+      EXTRACT(YEAR FROM c.event_date)::int::text AS period_bucket,
+      make_date(EXTRACT(YEAR FROM c.event_date)::int, 1, 1) AS period_start,
+      make_date(EXTRACT(YEAR FROM c.event_date)::int, 12, 31) AS period_end,
+      ${dimFinalWithCommaForYears}SUM(COALESCE(c.net_revenue, 0))::numeric AS net_revenue,
+      SUM(COALESCE(c.gross_revenue, 0))::numeric AS gross_revenue,
+      SUM(COALESCE(c.quantity, 0))::numeric AS quantity
+    FROM row_enriched c
+    WHERE EXTRACT(YEAR FROM c.event_date)::int IN (${yearList})
+      ${sourceWhere}
+    ${dimGroupWithYear}
+    ORDER BY ${dimOrderForYears}period_bucket ASC`;
+      return {
+        sql,
+        chosen_columns: [
+          "period_bucket",
+          "period_start",
+          "period_end",
+          ...periodDims.map((d) => d.field_key),
+          "net_revenue",
+          "gross_revenue",
+          "quantity",
+        ],
+      };
+    }
 
     const sql = `${rowEnrichedCte},
     bounds AS (
       SELECT MAX(c.event_date)::date AS max_date
       FROM scoped_core c
-      WHERE ${sourceKindFilterSql(plan.intent)?.replaceAll("r.", "c.") ?? "TRUE"}
+      WHERE ${sourceKindFilterSql(plan.intent, byKey)?.replaceAll("r.", "c.") ?? "TRUE"}
     ),
     last_period AS (
       SELECT
@@ -776,7 +834,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
 
   if (plan.intent === "opportunity_risk_tracks") {
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 5)));
-    const incomeFilter = sourceKindFilterSql(plan.intent)?.replaceAll("r.", "c.") ?? "TRUE";
+    const incomeFilter = sourceKindFilterSql(plan.intent, byKey)?.replaceAll("r.", "c.") ?? "TRUE";
     const sql = `WITH track_rollup AS (
       SELECT
         c.track_title,
@@ -831,7 +889,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimAliases = dims.map((d) => d.field_key);
     const dimWithComma = dimSelect.length > 0 ? `${dimSelect},\n      ` : "";
     const groupBy = dimAliases.length > 0 ? `GROUP BY ${dimAliases.map((_, i) => String(i + 1)).join(", ")}` : "";
-    const sourceFilter = sourceKindFilterSql(plan.intent);
+    const sourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = sourceFilter ? `WHERE ${sourceFilter}` : "";
     const limit = Math.min(50, Math.max(1, Number(plan.top_n || 10)));
     const sql = `${rowEnrichedCte}
@@ -890,7 +948,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
     const dimExprs = dimensionCols.map((col) => buildDimensionExpr(col, plan.grain));
     const aliases = dimExprs.map((expr) => expr.split(/\s+AS\s+/i)[1]).filter(Boolean);
     const selectList = [...dimExprs, "COUNT(*) AS row_count"].join(",\n      ");
-    const baseSourceFilter = sourceKindFilterSql(plan.intent);
+    const baseSourceFilter = sourceKindFilterSql(plan.intent, byKey);
     const whereSql = baseSourceFilter ? `WHERE ${baseSourceFilter}` : "";
     const groupBySql = aliases.length > 0 ? `GROUP BY ${aliases.map((_, i) => String(i + 1)).join(", ")}` : "";
     const orderBySql = `ORDER BY row_count DESC NULLS LAST`;
@@ -931,7 +989,7 @@ export function compileSqlFromPlan(plan: AnalysisPlan, catalog: ArtistCatalog): 
   const metricAliases = finalMetrics.map((m) => m.field_key);
 
   const whereClauses: string[] = [];
-  const baseSourceFilter = sourceKindFilterSql(plan.intent);
+  const baseSourceFilter = sourceKindFilterSql(plan.intent, byKey);
   if (baseSourceFilter) whereClauses.push(baseSourceFilter);
   for (const filter of plan.filters.slice(0, 4)) {
     if (filter.column.startsWith("__")) continue;

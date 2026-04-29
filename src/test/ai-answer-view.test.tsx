@@ -141,4 +141,65 @@ describe("AiAnswerView", () => {
     expect(screen.getByText("Spotify")).toBeInTheDocument();
     expect(screen.getByText("Germany")).toBeInTheDocument();
   });
+
+  it("shows a copyable debug drawer with SQL job errors and diagnostics", () => {
+    const writeText = vi.fn();
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    });
+
+    render(
+      <AiAnswerView
+        payload={samplePayload({
+          evidence_bundle: {
+            sql_evidence_jobs: [
+              {
+                job_id: "primary",
+                purpose: "answer the main revenue question",
+                requirement: "required",
+                row_count: 0,
+                columns: [],
+                rows: [],
+                verifier_status: "failed",
+                error: "SQL execution failed: column r.source_kind does not exist",
+                warnings: ["Generated SQL referenced a missing catalog column."],
+              },
+            ],
+          },
+          job_diagnostics: [
+            {
+              job_id: "primary",
+              type: "sql",
+              status: "failed",
+              row_count: 0,
+              error: "SQL execution failed: column r.source_kind does not exist",
+              warnings: ["Generated SQL referenced a missing catalog column."],
+            },
+          ],
+          diagnostics: {
+            intent: "revenue_analysis",
+            confidence: "low",
+            used_fields: ["net_revenue"],
+            missing_fields: ["source_kind"],
+            strict_mode: false,
+            sql_evidence_jobs: [{ job_id: "primary", error: "SQL execution failed" }],
+          } as any,
+        })}
+        onUseQuestion={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /debug/i })).toBeInTheDocument();
+    expect(screen.queryByText(/column r.source_kind does not exist/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /debug/i }));
+
+    expect(screen.getByText("SQL / Answer Debug")).toBeInTheDocument();
+    expect(screen.getAllByText(/column r.source_kind does not exist/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("primary").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /copy debug json/i }));
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("source_kind"));
+  });
 });

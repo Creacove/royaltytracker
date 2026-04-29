@@ -29,6 +29,7 @@ function sampleWorkspaceCatalog() {
       { field_key: "net_revenue", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "gross_revenue", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "quantity", inferred_type: "number", coverage_pct: 100, source: "canonical", sample_values: [] },
+      { field_key: "source_kind", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "open_task_count", inferred_type: "number", coverage_pct: 44, source: "canonical", sample_values: [] },
       { field_key: "open_critical_task_count", inferred_type: "number", coverage_pct: 36, source: "canonical", sample_values: [] },
     ],

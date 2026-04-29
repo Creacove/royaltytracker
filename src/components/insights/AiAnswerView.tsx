@@ -274,6 +274,7 @@ type AiAnswerViewProps = {
 
 export function AiAnswerView({ payload, onUseQuestion }: AiAnswerViewProps) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const blocks = useMemo(() => {
     const explicit = Array.isArray(payload.answer_blocks) ? payload.answer_blocks : [];
     const fallback = explicit.length > 0 ? [] : toFallbackBlocks(payload);
@@ -286,6 +287,30 @@ export function AiAnswerView({ payload, onUseQuestion }: AiAnswerViewProps) {
 
   const supportBlocks = blocks.filter((block) => visibleArtifactIds.includes(block.id));
   const evidenceBlocks = blocks.filter((block) => !visibleArtifactIds.includes(block.id) && (block.type === "table" || block.type === "citations"));
+  const debugPayload = useMemo(() => ({
+    answer_title: payload.answer_title,
+    evidence: payload.evidence,
+    diagnostics: payload.diagnostics,
+    plan_trace: payload.plan_trace,
+    evidence_bundle: payload.evidence_bundle,
+    job_diagnostics: payload.job_diagnostics,
+    unknowns: payload.unknowns,
+    quality_outcome: payload.quality_outcome,
+  }), [payload]);
+  const hasDebugInfo = Boolean(
+    payload.diagnostics ||
+      payload.plan_trace ||
+      payload.evidence_bundle ||
+      (Array.isArray(payload.job_diagnostics) && payload.job_diagnostics.length > 0) ||
+      (Array.isArray(payload.unknowns) && payload.unknowns.length > 0),
+  );
+  const debugJson = useMemo(() => JSON.stringify(debugPayload, null, 2), [debugPayload]);
+  const failedJobs = Array.isArray(payload.job_diagnostics)
+    ? payload.job_diagnostics.filter((job) => /fail|missing|partial/i.test(String(job.status ?? "")) || job.error)
+    : [];
+  const sqlJobs = Array.isArray(payload.evidence_bundle?.sql_evidence_jobs)
+    ? payload.evidence_bundle.sql_evidence_jobs
+    : [];
 
   return (
     <div className="space-y-5">
@@ -312,13 +337,74 @@ export function AiAnswerView({ payload, onUseQuestion }: AiAnswerViewProps) {
 
       {supportBlocks.map((block) => renderSupportBlock(block))}
 
-      {evidenceBlocks.length > 0 ? (
-        <div className="space-y-3">
+      {evidenceBlocks.length > 0 || hasDebugInfo ? (
+        <div className="flex flex-wrap gap-2">
+          {evidenceBlocks.length > 0 ? (
           <Button variant="outline" onClick={() => setShowEvidence((current) => !current)}>
             {showEvidence ? "Hide evidence" : "Show evidence"}
           </Button>
-          {showEvidence ? <div className="space-y-4">{evidenceBlocks.map((block) => renderEvidenceBlock(block))}</div> : null}
+          ) : null}
+          {hasDebugInfo ? (
+            <Button variant="outline" onClick={() => setShowDebug((current) => !current)}>
+              {showDebug ? "Hide debug" : "Debug"}
+            </Button>
+          ) : null}
         </div>
+      ) : null}
+
+      {showEvidence && evidenceBlocks.length > 0 ? (
+        <div className="space-y-4">{evidenceBlocks.map((block) => renderEvidenceBlock(block))}</div>
+      ) : null}
+
+      {showDebug && hasDebugInfo ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>SQL / Answer Debug</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {failedJobs.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">Failed jobs</p>
+                {failedJobs.map((job) => (
+                  <div key={job.job_id} className="rounded border border-destructive/20 bg-destructive/5 p-3">
+                    <p className="text-sm font-semibold">{job.job_id}</p>
+                    {job.error ? <p className="text-sm text-destructive">{job.error}</p> : null}
+                    {(job.warnings ?? []).map((warning) => (
+                      <p key={warning} className="text-xs text-muted-foreground">{warning}</p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {sqlJobs.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">SQL jobs</p>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {sqlJobs.map((job) => (
+                    <div key={job.job_id} className="rounded border border-border/60 p-3">
+                      <p className="text-sm font-semibold">{job.job_id}</p>
+                      <p className="text-xs text-muted-foreground">{job.purpose}</p>
+                      <p className="text-xs text-muted-foreground">Rows: {job.row_count ?? 0}</p>
+                      {job.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void navigator.clipboard?.writeText(debugJson);
+              }}
+            >
+              Copy debug JSON
+            </Button>
+            <pre className="max-h-[360px] overflow-auto rounded border border-border/60 bg-muted/30 p-3 text-xs leading-5">
+              {debugJson}
+            </pre>
+          </CardContent>
+        </Card>
       ) : null}
     </div>
   );

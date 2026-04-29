@@ -18,6 +18,13 @@ import {
   type MultiEvidencePlan,
   type SqlEvidenceJob,
 } from "./answer-planner.ts";
+import {
+  buildAiNativeSchemaMap,
+  executeSqlEvidenceJobWithRepair,
+  planAiNativeEvidence,
+  type AiNativeEvidencePlan,
+  type AiNativeSqlJobResult,
+} from "./assistant-ai-native-planner.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -775,20 +782,7 @@ function evidencePackBlocks(pack: EvidencePack, title: string, text: string, tab
   return blocks;
 }
 
-type SqlEvidenceJobResult = {
-  job_id: string;
-  purpose: string;
-  requirement: "required" | "supporting" | "optional";
-  required_for_answer: boolean;
-  analysis_plan: AnalysisPlan;
-  columns: string[];
-  rows: Array<Record<string, string | number | null>>;
-  row_count: number;
-  chosen_columns: string[];
-  verifier_status: "passed" | "failed";
-  warnings: string[];
-  error?: string;
-};
+type SqlEvidenceJobResult = AiNativeSqlJobResult;
 
 function evidencePackCaveats(pack: EvidencePack | null): string[] {
   if (!pack) return [];
@@ -800,7 +794,7 @@ function evidencePackCaveats(pack: EvidencePack | null): string[] {
 }
 
 function buildEvidenceBundle(args: {
-  multiEvidencePlan: MultiEvidencePlan;
+  multiEvidencePlan: MultiEvidencePlan | AiNativeEvidencePlan;
   sqlJobs: SqlEvidenceJobResult[];
   evidencePack: EvidencePack | null;
 }) {
@@ -818,6 +812,13 @@ function buildEvidenceBundle(args: {
       verifier_status: job.verifier_status,
       warnings: job.warnings,
       error: job.error,
+      original_question: job.original_question,
+      sub_question: job.sub_question,
+      expected_contribution: job.expected_contribution,
+      sql_preview: job.sql_preview,
+      sql_hash: job.sql_hash,
+      sql_source: job.sql_source,
+      repair_status: job.repair_status,
     })),
     structured_sidecar_evidence: args.evidencePack
       ? {
@@ -848,7 +849,7 @@ function summarizeEvidenceJob(job: SqlEvidenceJobResult): string {
 }
 
 function buildJobDiagnostics(args: {
-  multiEvidencePlan: MultiEvidencePlan;
+  multiEvidencePlan: MultiEvidencePlan | AiNativeEvidencePlan;
   sqlJobs: SqlEvidenceJobResult[];
   evidencePack: EvidencePack | null;
 }) {
@@ -859,6 +860,12 @@ function buildJobDiagnostics(args: {
     row_count: job.row_count,
     warnings: job.warnings,
     error: job.error,
+    sub_question: job.sub_question,
+    expected_contribution: job.expected_contribution,
+    sql_preview: job.sql_preview,
+    sql_hash: job.sql_hash,
+    sql_source: job.sql_source,
+    repair_status: job.repair_status,
   }));
   const sidecarDiagnostics = args.multiEvidencePlan.sidecar_jobs.map((job) => ({
     job_id: job.job_id,
@@ -871,7 +878,7 @@ function buildJobDiagnostics(args: {
 }
 
 function buildAnswerSections(args: {
-  multiEvidencePlan: MultiEvidencePlan;
+  multiEvidencePlan: MultiEvidencePlan | AiNativeEvidencePlan;
   sqlJobs: SqlEvidenceJobResult[];
   answerText: string;
   whyThisMatters: string;
@@ -942,6 +949,9 @@ async function executeSupportingSqlEvidenceJobs(args: {
         purpose: job.purpose,
         requirement: job.requirement,
         required_for_answer: job.required_for_answer,
+        original_question: args.question,
+        sub_question: job.purpose,
+        expected_contribution: job.purpose,
         analysis_plan: job.analysis_plan,
         columns,
         rows: rows.slice(0, 25),
@@ -949,6 +959,10 @@ async function executeSupportingSqlEvidenceJobs(args: {
         chosen_columns: compiled.chosen_columns,
         verifier_status: verifier.status,
         warnings: verifier.warnings ?? [],
+        sql_preview: cleanedSql.replace(/\s+/g, " ").slice(0, 1200),
+        sql_hash: stableHash(cleanedSql),
+        sql_source: "fallback",
+        repair_status: "not_needed",
       });
     } catch (error) {
       results.push({
@@ -956,6 +970,9 @@ async function executeSupportingSqlEvidenceJobs(args: {
         purpose: job.purpose,
         requirement: job.requirement,
         required_for_answer: job.required_for_answer,
+        original_question: args.question,
+        sub_question: job.purpose,
+        expected_contribution: job.purpose,
         analysis_plan: job.analysis_plan,
         columns: [],
         rows: [],
@@ -963,6 +980,10 @@ async function executeSupportingSqlEvidenceJobs(args: {
         chosen_columns: [],
         verifier_status: "failed",
         warnings: [],
+        sql_preview: "",
+        sql_hash: "",
+        sql_source: "fallback",
+        repair_status: "not_attempted",
         error: error instanceof Error ? error.message : "SQL evidence job failed.",
       });
     }
@@ -1068,12 +1089,37 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const requiredColumns = unique(column_requirements.required);
       const catalogFields = new Set(catalog.columns.map((c) => c.field_key.toLowerCase()));
       const missingFields = unique([...column_requirements.missing_requested, ...requiredColumns.filter((field) => !catalogFields.has(field.toLowerCase()))]);
-      const multiEvidencePlan = planAnswerEvidence({
+      const fallbackEvidencePlan = planAnswerEvidence({
         question: question!,
         catalog,
         mode: config.mode,
         primaryPlan: plan,
       });
+      const schemaMap = buildAiNativeSchemaMap({
+        catalog,
+        mode: config.mode,
+        question: question!,
+        fromDate,
+        toDate,
+      });
+      const llmJson = openAiKey
+        ? (input: { systemPrompt: string; userPrompt: string }) =>
+          callOpenAiJson({
+            apiKey: openAiKey,
+            model,
+            systemPrompt: input.systemPrompt,
+            userPrompt: input.userPrompt,
+          })
+        : undefined;
+      const aiNativePlanning = await planAiNativeEvidence({
+        question: question!,
+        catalog,
+        mode: config.mode,
+        schemaMap,
+        fallback: fallbackEvidencePlan,
+        callJson: llmJson,
+      });
+      const multiEvidencePlan = aiNativePlanning.plan;
 
       if (catalog.total_rows <= 0) {
         return new Response(JSON.stringify({
@@ -1099,8 +1145,12 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
 
       if (action === "plan_query") {
         if (!signingSecret) throw new Error("INSIGHTS_SIGNING_SECRET is required for plan_query.");
-        const compiled = compileSqlFromPlan(plan, catalog);
-        const sqlPreview = validatePlannedSql(compiled.sql);
+        const primaryPlanJob = multiEvidencePlan.sql_jobs[0];
+        const compiled = compileSqlFromPlan(primaryPlanJob?.analysis_plan ?? plan, catalog);
+        const sqlPreview = validatePlannedSql(primaryPlanJob?.sql ?? compiled.sql);
+        const chosenColumns = primaryPlanJob
+          ? unique([...primaryPlanJob.analysis_plan.dimensions, ...primaryPlanJob.analysis_plan.metrics])
+          : compiled.chosen_columns;
         const expiresAt = new Date(Date.now() + PLAN_TOKEN_TTL_MINUTES * 60 * 1000).toISOString();
         const planId = crypto.randomUUID();
         const executionToken = await signExecutionToken(signingSecret, { plan_id: planId, user_id: requesterId, scope_mode: config.mode, scope_value: scope.scopeValue, from_date: fromDate, to_date: toDate, sql_preview: sqlPreview, question: question!, expires_at: expiresAt });
@@ -1115,59 +1165,59 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
             purpose: job.purpose,
             requirement: job.requirement,
             required_for_answer: job.required_for_answer,
+            original_question: job.original_question,
+            sub_question: job.sub_question,
+            expected_contribution: job.expected_contribution,
             expected_columns: unique([...job.analysis_plan.dimensions, ...job.analysis_plan.metrics]),
+            sql_preview: job.sql ? job.sql.replace(/\s+/g, " ").slice(0, 1200) : undefined,
           })),
           execution_token: executionToken,
           expires_at: expiresAt,
-          diagnostics: { analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, column_requirements, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "pending", insufficiency_reason: null, strict_mode: true, compiler_source: plan_source, stage: "compile", legacy_sql_planner_used: true },
+          diagnostics: { analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, schema_map: schemaMap, required_columns: requiredColumns, chosen_columns: chosenColumns, column_requirements, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "pending", insufficiency_reason: null, strict_mode: true, compiler_source: aiNativePlanning.source === "llm" ? "ai_native" : plan_source, stage: "compile", ai_native_planner_used: aiNativePlanning.source === "llm", legacy_sql_planner_used: aiNativePlanning.source !== "llm" },
           safety: { read_only: true, row_limit: SQL_ROW_LIMIT, timeout_ms: SQL_TIMEOUT_MS, [config.safetyFlag]: true },
         }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      const compiled = compileSqlFromPlan(plan, catalog);
-      const cleanedSql = validatePlannedSql(compiled.sql);
-      const sqlResult = await config.runSql(userClient, scope, fromDate, toDate, cleanedSql);
-      const columns = asArrayOfStrings(sqlResult.columns);
-      const rows = sanitizeRows(sqlResult.rows);
-      const evidence = toEvidence(sqlResult, fromDate, toDate, config.sqlSourceRef);
-      const verifier = verifyQueryResult({ question: question!, plan, columns, rows: rows as Array<Record<string, unknown>> });
-      if (verifier.status === "failed" && rows.length === 0) {
-        return new Response(JSON.stringify({
-          conversation_id: conversationId,
-          answer_title: "Insufficient Data",
-          answer_text: "",
-          why_this_matters: "",
-          kpis: [],
-          chart: { type: "none", x: "", y: [] },
-          evidence: { row_count: 0, duration_ms: 0, from_date: fromDate, to_date: toDate, provenance: [config.catalogProvenance] },
-          follow_up_questions: [],
-          diagnostics: { intent: plan.intent, confidence: plan.confidence, used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: true, analysis_plan: plan, required_columns: requiredColumns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "failed", insufficiency_reason: verifier.reason ?? "no_rows_returned", stage: "verify" },
-        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-
-      const primarySqlJob: SqlEvidenceJobResult = {
-        job_id: "primary",
-        purpose: "answer the main revenue question",
-        requirement: "required",
-        required_for_answer: true,
-        analysis_plan: plan,
-        columns,
-        rows: rows.slice(0, 25),
-        row_count: evidence.row_count,
-        chosen_columns: compiled.chosen_columns,
-        verifier_status: verifier.status,
-        warnings: verifier.warnings ?? [],
-      };
-      const supportingSqlJobs = await executeSupportingSqlEvidenceJobs({
-        jobs: multiEvidencePlan.sql_jobs.filter((job) => job.job_id !== "primary"),
-        catalog,
-        config,
-        userClient,
-        scope,
-        fromDate,
-        toDate,
-        question: question!,
-      });
+      const sqlEvidenceJobs = await Promise.all(
+        multiEvidencePlan.sql_jobs.slice(0, 6).map((job) =>
+          executeSqlEvidenceJobWithRepair({
+            job,
+            schemaMap,
+            catalog,
+            runSql: (sql) => config.runSql(userClient, scope, fromDate, toDate, sql),
+            writeSql: llmJson
+              ? async ({ job: sqlJob, schema_map }) => {
+                const written = await llmJson({
+                  systemPrompt: [
+                    "You are a PostgreSQL SQL writer for a music royalties assistant.",
+                    "Write exactly one safe SELECT/WITH query for the provided evidence job.",
+                    "Use only approved relations from the schema map.",
+                    "Use exact field_key names from the schema map; map natural language through domain_mappings.",
+                    "Ground the SQL in the original_question and sub_question.",
+                    "Return JSON with key sql only.",
+                  ].join(" "),
+                  userPrompt: JSON.stringify({ original_question: question, job: sqlJob, schema_map }),
+                }) as Record<string, unknown>;
+                return { sql: asString(written.sql) ?? undefined };
+              }
+              : undefined,
+            repairSql: llmJson
+              ? async (repairInput) => {
+                const repaired = await llmJson({
+                  systemPrompt: [
+                    "You repair PostgreSQL SQL for a music royalties assistant.",
+                    "Use the exact database error and schema map.",
+                    "Return JSON with key sql only.",
+                    "Do not change the job purpose; fix only the SQL.",
+                  ].join(" "),
+                  userPrompt: JSON.stringify(repairInput),
+                }) as Record<string, unknown>;
+                return { sql: asString(repaired.sql) ?? undefined };
+              }
+              : undefined,
+          })
+        ),
+      );
       let evidencePack: EvidencePack | null = null;
       if (config.runEvidencePlan && multiEvidencePlan.sidecar_jobs.length > 0) {
         try {
@@ -1183,7 +1233,33 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
           evidencePack = null;
         }
       }
-      const sqlEvidenceJobs = [primarySqlJob, ...supportingSqlJobs];
+      const successfulSqlJobs = sqlEvidenceJobs.filter((job) => !job.error && job.row_count > 0);
+      if (successfulSqlJobs.length === 0 && !evidencePack) {
+        return new Response(JSON.stringify({
+          conversation_id: conversationId,
+          answer_title: "Insufficient Data",
+          answer_text: "",
+          why_this_matters: "",
+          kpis: [],
+          chart: { type: "none", x: "", y: [] },
+          evidence: { row_count: 0, duration_ms: 0, from_date: fromDate, to_date: toDate, provenance: [config.catalogProvenance] },
+          evidence_bundle: buildEvidenceBundle({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack }),
+          job_diagnostics: buildJobDiagnostics({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack }),
+          follow_up_questions: [],
+          diagnostics: { intent: plan.intent, confidence: plan.confidence, used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: false, analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, required_columns: requiredColumns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: "failed", insufficiency_reason: "no_successful_evidence_jobs", stage: "verify", ai_native_planner_used: aiNativePlanning.source === "llm", schema_map: schemaMap },
+        }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const representativeJob = successfulSqlJobs[0] ?? sqlEvidenceJobs[0];
+      const columns = representativeJob?.columns ?? [];
+      const rows = representativeJob?.rows ?? [];
+      const evidence = {
+        row_count: sqlEvidenceJobs.reduce((sum, job) => sum + Math.max(0, Number(job.row_count ?? 0)), 0),
+        duration_ms: 0,
+        from_date: fromDate,
+        to_date: toDate,
+        provenance: [config.sqlSourceRef],
+      };
+      const verifier = representativeJob?.verifier_status ?? "failed";
       const evidenceBundle = buildEvidenceBundle({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack });
       const sidecarCaveats = evidencePackCaveats(evidencePack);
 
@@ -1227,6 +1303,8 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
       const jobDiagnostics = buildJobDiagnostics({ multiEvidencePlan, sqlJobs: sqlEvidenceJobs, evidencePack });
       const answerBlocks = buildAnswerBlocks({ title: answerTitle, text: answerText, why: whyThisMatters, kpis, columns, rows: rows.slice(0, 25), claims, unknowns, clarification: quality.clarification, quality_outcome: quality.quality_outcome });
       const evidenceMap = Object.fromEntries(answerBlocks.filter((b) => typeof b.id === "string").map((b) => [String(b.id), "workspace_data"]));
+      const selectedColumns = unique(sqlEvidenceJobs.flatMap((job) => job.chosen_columns));
+      const representativeSql = representativeJob?.sql_preview ?? "";
       const chart = (() => {
         const proposed = synthesized?.chart;
         const chartType = proposed?.type === "bar" || proposed?.type === "line" || proposed?.type === "none" ? proposed.type : "none";
@@ -1244,7 +1322,7 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         scope_epoch: scopeEpoch,
         intent: sql_intent,
         constraints: { platform: constraints.platform, territory: constraints.territory, requested_granularity: constraints.requested_granularity },
-        selected_columns: compiled.chosen_columns,
+        selected_columns: selectedColumns,
         missing_columns: missingFields,
         clarification: quality.clarification ? { pending: true, reason: quality.clarification.reason, question: quality.clarification.question, options: quality.clarification.options } : { pending: false },
       });
@@ -1254,11 +1332,11 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         question,
         analysis_plan: plan,
         required_columns: requiredColumns,
-        chosen_columns: compiled.chosen_columns,
-        sql_text: cleanedSql,
-        sql_hash: stableHash(cleanedSql),
+        chosen_columns: selectedColumns,
+        sql_text: representativeSql,
+        sql_hash: stableHash(representativeSql),
         row_count: evidence.row_count,
-        verifier_status: verifier.status,
+        verifier_status: verifier,
         insufficiency_reason: null,
         final_answer_meta: { conversation_id: conversationId, answer_title: answerTitle, kpi_count: kpis.length, row_count: evidence.row_count, top_row: rows[0] ?? null },
       });
@@ -1281,13 +1359,13 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         quality_outcome: quality.quality_outcome,
         clarification: quality.clarification,
         resolved_scope: resolvedScope,
-        plan_trace: { intent: sql_intent, selected_columns: compiled.chosen_columns, missing_columns: missingFields, column_requirements, constraints, multi_evidence_plan: multiEvidencePlan, evidence_pack_missing: evidencePack?.missing_evidence ?? [] },
+        plan_trace: { intent: sql_intent, selected_columns: selectedColumns, missing_columns: missingFields, column_requirements, constraints, schema_map: schemaMap, multi_evidence_plan: multiEvidencePlan, evidence_pack_missing: evidencePack?.missing_evidence ?? [] },
         claims,
         answer_blocks: answerBlocks,
         render_hints: { layout: "adaptive_card_stack", density: quality.quality_outcome === "pass" ? "expanded" : "compact", visual_preference: chart.type === "none" ? "table" : "chart", show_confidence_badges: true },
         evidence_map: evidenceMap,
         unknowns,
-        diagnostics: { intent: plan.intent, confidence: verifier.status === "passed" ? plan.confidence : "low", used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: false, analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, sql_evidence_jobs: evidenceBundle.sql_evidence_jobs, evidence_sidecar_used: evidencePack !== null, evidence_gap_policy: multiEvidencePlan.missing_evidence_policy, legacy_sql_planner_used: true, column_requirements, required_columns: requiredColumns, chosen_columns: compiled.chosen_columns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: verifier.status, insufficiency_reason: null, compiler_source: plan_source, stage: "verify" },
+        diagnostics: { intent: plan.intent, confidence: verifier === "passed" ? plan.confidence : "low", used_fields: unique([...plan.dimensions, ...plan.metrics, ...plan.filters.map((f) => f.column)]), missing_fields: missingFields, strict_mode: false, analysis_plan: plan, multi_evidence_plan: multiEvidencePlan, sql_evidence_jobs: evidenceBundle.sql_evidence_jobs, evidence_sidecar_used: evidencePack !== null, evidence_gap_policy: multiEvidencePlan.missing_evidence_policy, ai_native_planner_used: aiNativePlanning.source === "llm", legacy_sql_planner_used: aiNativePlanning.source !== "llm", schema_map: schemaMap, column_requirements, required_columns: requiredColumns, chosen_columns: selectedColumns, top_n: plan.top_n, sort_by: plan.sort_by, sort_dir: plan.sort_dir, verifier_status: verifier, insufficiency_reason: null, compiler_source: aiNativePlanning.source === "llm" ? "ai_native" : plan_source, stage: "verify" },
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch (error) {
       return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error", _fatal: true }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });

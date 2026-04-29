@@ -12,6 +12,7 @@ function sampleCatalog() {
     total_rows: 100,
     columns: [
       { field_key: "event_date", inferred_type: "date", coverage_pct: 100, source: "canonical", sample_values: [] },
+      { field_key: "artist_name", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "platform", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "territory", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
       { field_key: "track_title", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
@@ -56,6 +57,38 @@ describe("artist query engine", () => {
     expect(plan.dimensions).toContain("track_title");
   });
 
+  it("derives artist ranking for attention questions instead of a catalog-wide total", () => {
+    const catalog = sampleCatalog();
+    const plan = deriveAnalysisPlanFallback("Which artists deserve immediate attention?", catalog);
+    expect(plan.dimensions).toContain("artist_name");
+    expect(plan.metrics).toContain("net_revenue");
+    const compiled = compileSqlFromPlan(plan, catalog);
+    expect(compiled.sql.toLowerCase()).toContain("r.artist_name as artist_name");
+    expect(compiled.sql.toLowerCase()).toContain("group by 1");
+  });
+
+  it("derives territory evidence for touring questions", () => {
+    const catalog = sampleCatalog();
+    const plan = deriveAnalysisPlanFallback("Where should this artiste tour next quarter?", catalog);
+    expect(plan.dimensions).toContain("territory");
+    expect(plan.metrics).toContain("net_revenue");
+    const compiled = compileSqlFromPlan(plan, catalog);
+    expect(compiled.sql.toLowerCase()).toContain("r.territory as territory");
+  });
+
+  it("compiles explicit calendar-year comparisons instead of last/prior relative windows", () => {
+    const catalog = sampleCatalog();
+    const plan = deriveAnalysisPlanFallback("compare 2024 revenuee to 2025 revenue", catalog);
+    expect(plan.intent).toBe("period_comparison");
+    const compiled = compileSqlFromPlan(plan, catalog);
+    const sql = compiled.sql.toLowerCase();
+    expect(sql).toContain("extract(year from c.event_date)");
+    expect(sql).toContain("2024");
+    expect(sql).toContain("2025");
+    expect(sql).not.toContain("last_90_days");
+    expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
+  });
+
   // ─── SQL compilation ───────────────────────────────────────────────────────
 
   it("compiles guarded SQL from plan", () => {
@@ -65,6 +98,32 @@ describe("artist query engine", () => {
     expect(compiled.sql.toLowerCase()).toContain("with row_enriched");
     expect(compiled.sql.toLowerCase()).toContain("limit");
     expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
+  });
+
+  it("does not compile source_kind filters when the catalog does not expose source_kind", () => {
+    const catalog = sampleCatalog();
+
+    const revenuePlan = deriveAnalysisPlanFallback("How much revenue did this artist make?", catalog);
+    const revenueSql = compileSqlFromPlan(revenuePlan, catalog).sql.toLowerCase();
+    expect(revenueSql).not.toContain("source_kind");
+
+    const comparisonPlan = deriveAnalysisPlanFallback("Compare last 90 days revenue versus prior period", catalog);
+    const comparisonSql = compileSqlFromPlan(comparisonPlan, catalog).sql.toLowerCase();
+    expect(comparisonSql).not.toContain("source_kind");
+    expect(() => validatePlannedSql(comparisonSql)).not.toThrow();
+  });
+
+  it("keeps source_kind filters when source_kind is available in the catalog", () => {
+    const catalog = buildCatalog({
+      ...sampleCatalog(),
+      columns: [
+        ...sampleCatalog().columns,
+        { field_key: "source_kind", inferred_type: "text", coverage_pct: 100, source: "canonical", sample_values: [] },
+      ],
+    });
+    const plan = deriveAnalysisPlanFallback("How much revenue did this artist make?", catalog);
+    const sql = compileSqlFromPlan(plan, catalog).sql.toLowerCase();
+    expect(sql).toContain("source_kind");
   });
 
   it("rejects dangerous SQL constructs", () => {
