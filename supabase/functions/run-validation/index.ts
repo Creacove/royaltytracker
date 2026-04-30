@@ -59,7 +59,7 @@ serve(async (req) => {
 
     const { data: report, error: reportErr } = await supabase
       .from("cmo_reports")
-      .select("id,user_id,ingestion_file_id")
+      .select("id,user_id,ingestion_file_id,parser_lane")
       .eq("id", reportId)
       .single();
     if (reportErr || !report) throw new Error(`Report not found: ${reportErr?.message ?? "missing"}`);
@@ -71,7 +71,7 @@ serve(async (req) => {
       });
     }
 
-    const [txCountRes, failedTxRes, openTasksRes, openCriticalTasksRes, validationErrorsRes] =
+    const [txCountRes, failedTxRes, openTasksRes, openCriticalTasksRes, validationErrorsRes, splitClaimsRes, pendingSplitClaimsRes] =
       await Promise.all([
         supabase
           .from("royalty_transactions")
@@ -97,6 +97,15 @@ serve(async (req) => {
           .from("validation_errors")
           .select("*", { count: "exact", head: true })
           .eq("report_id", reportId),
+        supabase
+          .from("catalog_split_claims")
+          .select("*", { count: "exact", head: true })
+          .eq("source_report_id", reportId),
+        supabase
+          .from("catalog_split_claims")
+          .select("*", { count: "exact", head: true })
+          .eq("source_report_id", reportId)
+          .eq("review_status", "pending"),
       ]);
 
     if (txCountRes.error) throw new Error(`Failed to count transactions: ${txCountRes.error.message}`);
@@ -108,18 +117,29 @@ serve(async (req) => {
     if (validationErrorsRes.error) {
       throw new Error(`Failed to count validation errors: ${validationErrorsRes.error.message}`);
     }
+    if (splitClaimsRes.error) throw new Error(`Failed to count split claims: ${splitClaimsRes.error.message}`);
+    if (pendingSplitClaimsRes.error) {
+      throw new Error(`Failed to count pending split claims: ${pendingSplitClaimsRes.error.message}`);
+    }
 
     const txCount = txCountRes.count ?? 0;
     const failedTxCount = failedTxRes.count ?? 0;
     const openTaskCount = openTasksRes.count ?? 0;
     const openCriticalTaskCount = openCriticalTasksRes.count ?? 0;
     const validationErrorCount = validationErrorsRes.count ?? 0;
+    const splitClaimCount = splitClaimsRes.count ?? 0;
+    const pendingSplitClaimCount = pendingSplitClaimsRes.count ?? 0;
+    const parser_lane = report.parser_lane ?? null;
 
     let qualityGateStatus: "passed" | "needs_review" | "failed" = "passed";
     let reportStatus: "completed_passed" | "completed_with_warnings" | "needs_review" = "completed_passed";
     let ingestionStatus: "validated" | "needs_review" = "validated";
 
-    if (txCount === 0) {
+    if (parser_lane === "rights" && splitClaimCount > 0) {
+      qualityGateStatus = pendingSplitClaimCount > 0 ? "needs_review" : "passed";
+      reportStatus = pendingSplitClaimCount > 0 ? "needs_review" : "completed_passed";
+      ingestionStatus = pendingSplitClaimCount > 0 ? "needs_review" : "validated";
+    } else if (txCount === 0) {
       qualityGateStatus = "failed";
       reportStatus = "needs_review";
       ingestionStatus = "needs_review";
@@ -182,6 +202,8 @@ serve(async (req) => {
           open_review_tasks: openTaskCount,
           open_critical_review_tasks: openCriticalTaskCount,
           validation_errors: validationErrorCount,
+          split_claims: splitClaimCount,
+          pending_split_claims: pendingSplitClaimCount,
         },
       }),
       {

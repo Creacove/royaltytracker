@@ -104,6 +104,44 @@ serve(async (req) => {
       });
     }
 
+    const extractionData = extraction.text ? JSON.parse(extraction.text) : null;
+    const { data: reportAfterExtraction, error: reportAfterExtractionErr } = await admin
+      .from("cmo_reports")
+      .select("document_kind,business_side,parser_lane")
+      .eq("id", reportId)
+      .single();
+    if (reportAfterExtractionErr) {
+      throw new Error(`Failed to load extracted document metadata: ${reportAfterExtractionErr.message}`);
+    }
+
+    const parser_lane = reportAfterExtraction?.parser_lane ?? extractionData?.parser_lane ?? null;
+    if (parser_lane === "rights") {
+      const { count: splitClaimCount, error: splitClaimCountErr } = await admin
+        .from("catalog_split_claims")
+        .select("*", { count: "exact", head: true })
+        .eq("source_report_id", reportId);
+      if (splitClaimCountErr) {
+        throw new Error(`Failed to count split claims: ${splitClaimCountErr.message}`);
+      }
+
+      return new Response(
+        JSON.stringify({
+          status: "rights_review_ready",
+          report_id: reportId,
+          ingestion: ingestion.text ? JSON.parse(ingestion.text) : null,
+          extraction: extractionData,
+          document_kind: reportAfterExtraction?.document_kind ?? extractionData?.document_kind ?? null,
+          business_side: reportAfterExtraction?.business_side ?? extractionData?.business_side ?? null,
+          parser_lane,
+          split_claims: splitClaimCount ?? extractionData?.split_claims ?? 0,
+        }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const normalization = await invokeStage("run-normalization");
     if (!normalization.ok) {
       return new Response(normalization.text, {
@@ -148,10 +186,10 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        status: "reprocessed",
+        status: parser_lane === "mixed" ? "mixed_review_ready" : "revenue_processed",
         report_id: reportId,
         ingestion: ingestion.text ? JSON.parse(ingestion.text) : null,
-        extraction: extraction.text ? JSON.parse(extraction.text) : null,
+        extraction: extractionData,
         normalization: normalization.text ? JSON.parse(normalization.text) : null,
         track_matching: trackMatchingData,
         validation: validation.text ? JSON.parse(validation.text) : null,

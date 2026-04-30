@@ -47,4 +47,15 @@ describe("rights and splits product surface", () => {
     expect(reports).toContain("selectedReportMetadataIsRightsDocument || reportSplitClaims.length > 0");
     expect(reports).not.toContain("enabled: !!selectedReport?.id && selectedReportIsRightsDocument");
   });
+
+  it("lets operators approve or reject pending split claims from the rights review surface", () => {
+    const page = read("src/pages/RightsSplits.tsx");
+
+    expect(page).toContain('supabase.functions.invoke("submit-split-claim-decisions"');
+    expect(page).toContain('action: "approve"');
+    expect(page).toContain('action: "reject"');
+    expect(page).toContain("Approve");
+    expect(page).toContain("Reject");
+    expect(page).toContain("queryClient.invalidateQueries({ queryKey: [\"rights-splits-claims\"] })");
+  });
 });

@@ -70,7 +70,7 @@ export function StatementWorkflowCard(props: StatementWorkflowCardProps) {
   return (
     <Card surface="hero">
       <CardContent className="space-y-4 p-4 md:p-5">
-        <CardTitle className="text-[1.05rem]">Upload statement</CardTitle>
+        <CardTitle className="text-[1.05rem]">Upload document</CardTitle>
 
         {isIdle ? (
           <div
@@ -81,10 +81,10 @@ export function StatementWorkflowCard(props: StatementWorkflowCardProps) {
           >
             <div className="mx-auto flex max-w-2xl flex-col items-center gap-4 text-center">
               <p className="type-display-section text-[1.6rem] text-foreground">
-                Ready to upload a statement?
+                Ready to upload a document?
               </p>
               <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-                Drop a file here or choose one to begin processing.
+                Drop a revenue, split, rights, or contract file here to begin processing.
               </p>
               <Button type="button" variant="secondary" onClick={props.onFilePick}>
                 <Upload className="mr-2 h-4 w-4" />
@@ -112,7 +112,7 @@ export function StatementWorkflowCard(props: StatementWorkflowCardProps) {
                 </div>
                 <div className="min-w-0 space-y-1">
                   <p className="truncate text-base font-semibold text-foreground">{props.file?.name ?? "Selected file"}</p>
-                  <p className="text-sm text-muted-foreground">Add the statement details, then upload to begin processing.</p>
+                  <p className="text-sm text-muted-foreground">Add the document details, then upload to begin processing.</p>
                 </div>
               </div>
 
@@ -161,8 +161,8 @@ export function StatementWorkflowCard(props: StatementWorkflowCardProps) {
         {isProcessing ? (
           <WorkflowStatePanel
             eyebrow="In progress"
-            title="Processing your statement"
-            description="Extraction, normalization, and validation are running. This statement will appear in the table when processing is complete."
+            title="Processing your document"
+            description="Extraction, classification, and the matching review path are running. The document will appear in the table when processing is complete."
             meta={
               <div className="space-y-1">
                 <p className="text-sm font-medium text-foreground">{props.workflowFileName ?? "Statement file"}</p>

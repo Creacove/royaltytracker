@@ -392,6 +392,17 @@ type DocumentAiReportItem = {
 
 const DOCUMENT_AI_ITEM_FIELD_SET = new Set<string>(DOCUMENT_AI_ITEM_FIELDS);
 
+type EntityPoint = {
+  field: string;
+  value: string;
+  page: number | null;
+  y: number;
+  x: number;
+  bbox?: BBox | null;
+  conf: number;
+  idx: number;
+};
+
 // Custom Extractor labels should map to document_ai_report_items fields directly.
 // We keep this mapper separate from generic column mapping to avoid remapping
 // labels like `country` -> `territory` and dropping them from extracted rows.
@@ -688,8 +699,8 @@ function extractDocumentAiReportItems(document: any): DocumentAiReportItem[] {
         idx,
       };
     })
-    .filter((v): v is NonNullable<typeof v> => v !== null)
-    .sort((a, b) => {
+    .filter((v: EntityPoint | null): v is EntityPoint => v !== null)
+    .sort((a: EntityPoint, b: EntityPoint) => {
       if ((a.page ?? 0) !== (b.page ?? 0)) return (a.page ?? 0) - (b.page ?? 0);
       if (a.y !== b.y) return a.y - b.y;
       if (a.x !== b.x) return a.x - b.x;
@@ -768,7 +779,7 @@ function reconstructEntities(document: any): TransactionRow[] {
 
   // Pattern B: flat entities (no nested properties). Group by page + y-position.
   const fieldPoints = entities
-    .map((entity, idx) => {
+    .map((entity: any, idx: number) => {
       const field = mapColumnName(String(entity?.type ?? ""));
       const value = getEntityText(entity);
       const bbox = getEntityBBox(entity);
@@ -784,8 +795,8 @@ function reconstructEntities(document: any): TransactionRow[] {
         idx,
       };
     })
-    .filter((v): v is NonNullable<typeof v> => v !== null)
-    .sort((a, b) => {
+    .filter((v: EntityPoint | null): v is EntityPoint => v !== null)
+    .sort((a: EntityPoint, b: EntityPoint) => {
       if ((a.page ?? 0) !== (b.page ?? 0)) return (a.page ?? 0) - (b.page ?? 0);
       if (a.y !== b.y) return a.y - b.y;
       if (a.x !== b.x) return a.x - b.x;
@@ -1580,6 +1591,14 @@ serve(async (req) => {
       if (error) throw new Error(`Failed to clear royalty_transactions: ${error.message}`);
     }
     {
+      const { error } = await supabase.from("catalog_split_claims").delete().eq("source_report_id", report_id);
+      if (error) throw new Error(`Failed to clear catalog_split_claims: ${error.message}`);
+    }
+    {
+      const { error } = await supabase.from("catalog_claims").delete().eq("source_report_id", report_id);
+      if (error) throw new Error(`Failed to clear catalog_claims: ${error.message}`);
+    }
+    {
       const { error } = await supabase.from("source_rows").delete().eq("report_id", report_id);
       if (error) throw new Error(`Failed to clear source_rows: ${error.message}`);
     }
@@ -2139,6 +2158,8 @@ serve(async (req) => {
 
     console.log(`[process-report] Inserted ${transactions.length} transactions`);
 
+    let typedSplitClaimCount = 0;
+
     if (!shouldInsertTransactions) {
       const catalogClaims = normalizedRows.map((r, i) => ({
         company_id: workspaceCompanyId,
@@ -2196,6 +2217,7 @@ serve(async (req) => {
         managed_party_match: claim.managed_party_match,
         raw_payload: claim.raw_payload,
       }));
+      typedSplitClaimCount = typedSplitClaims.length;
 
       for (let start = 0; start < typedSplitClaims.length; start += BATCH_SIZE) {
         const batch = typedSplitClaims.slice(start, start + BATCH_SIZE);
@@ -2382,7 +2404,11 @@ serve(async (req) => {
       JSON.stringify({
         status: reportFinalStatus,
         quality_gate: qualityGateStatus,
+        document_kind: documentFamily.document_kind,
+        business_side: documentFamily.business_side,
+        parser_lane: documentFamily.parser_lane,
         transactions: transactions.length,
+        split_claims: typedSplitClaimCount,
         errors: validationErrors.length,
         accuracy: Math.round(accuracy * 100) / 100,
         pages: pageCount,

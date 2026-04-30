@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, isValid } from "date-fns";
 import { FileCheck2, FileText, Search, ShieldCheck, Split, Users } from "lucide-react";
 
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyStateBlock, KpiStrip, PageHeader } from "@/components/layout";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type SplitClaim = {
@@ -131,9 +132,12 @@ const statusTone = (status: string | null | undefined) => {
 };
 
 export default function RightsSplits() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [streamFilter, setStreamFilter] = useState("all");
+  const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
 
   const { data: claims = [], isLoading: claimsLoading } = useQuery({
     queryKey: ["rights-splits-claims"],
@@ -213,6 +217,38 @@ export default function RightsSplits() {
   const partyCount = useMemo(() => new Set(claims.map((claim) => claim.party_id ?? claim.party_name).filter(Boolean)).size, [claims]);
   const pendingCount = claims.filter((claim) => (claim.review_status ?? "pending") === "pending").length;
   const approvedCount = claims.filter((claim) => claim.review_status === "approved").length;
+
+  const decideClaimMutation = useMutation({
+    mutationFn: async ({ claimId, action }: { claimId: string; action: "approve" | "reject" }) => {
+      setActiveClaimId(claimId);
+      const { data, error } = await supabase.functions.invoke("submit-split-claim-decisions", {
+        body: {
+          claim_ids: [claimId],
+          action,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["rights-splits-claims"] }),
+        queryClient.invalidateQueries({ queryKey: ["rights-splits-documents"] }),
+        queryClient.invalidateQueries({ queryKey: ["reports"] }),
+      ]);
+      toast({
+        title: variables.action === "approve" ? "Split claim approved" : "Split claim rejected",
+        description:
+          variables.action === "approve"
+            ? "The claim was promoted into canonical rights positions."
+            : "The claim will stay out of canonical rights positions.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Split review failed", description: error.message, variant: "destructive" });
+    },
+    onSettled: () => setActiveClaimId(null),
+  });
 
   return (
     <div className="space-y-6">
@@ -316,6 +352,7 @@ export default function RightsSplits() {
                       <TableHead className="text-right">SHARE</TableHead>
                       <TableHead>REVIEW</TableHead>
                       <TableHead>PROVENANCE</TableHead>
+                      <TableHead className="text-right">ACTION</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -359,6 +396,31 @@ export default function RightsSplits() {
                             <div className="mt-1 text-[11px] text-muted-foreground">
                               Row {claim.source_row_id ? claim.source_row_id.slice(0, 8) : "-"} - {formatDate(claim.created_at)}
                             </div>
+                          </TableCell>
+                          <TableCell className="min-w-[170px] text-right">
+                            {(claim.review_status ?? "pending") === "pending" ? (
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="quiet"
+                                  size="sm"
+                                  disabled={decideClaimMutation.isPending && activeClaimId === claim.id}
+                                  onClick={() => decideClaimMutation.mutate({ claimId: claim.id, action: "reject" })}
+                                >
+                                  Reject
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={decideClaimMutation.isPending && activeClaimId === claim.id}
+                                  onClick={() => decideClaimMutation.mutate({ claimId: claim.id, action: "approve" })}
+                                >
+                                  Approve
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Reviewed</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       );

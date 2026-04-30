@@ -32,7 +32,7 @@ describe("StatementWorkflowCard", () => {
       />,
     );
 
-    expect(screen.getByText("Ready to upload a statement?")).toBeInTheDocument();
+    expect(screen.getByText("Ready to upload a document?")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Statement name")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Period")).not.toBeInTheDocument();
   });

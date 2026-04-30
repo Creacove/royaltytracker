@@ -24,4 +24,11 @@ describe("process-report split ingestion", () => {
       source.indexOf("extractedItems.length > 0"),
     );
   });
+
+  it("clears prior rights claims before forced reprocessing to prevent duplicate split evidence", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain('.from("catalog_split_claims").delete().eq("source_report_id", report_id)');
+    expect(source).toContain('.from("catalog_claims").delete().eq("source_report_id", report_id)');
+  });
 });

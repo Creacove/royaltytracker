@@ -536,6 +536,8 @@ export default function Reports() {
       queryClient.invalidateQueries({ queryKey: ["review-tasks"] }),
       queryClient.invalidateQueries({ queryKey: ["report-track-match-tasks"] }),
       queryClient.invalidateQueries({ queryKey: ["report-transactions"] }),
+      queryClient.invalidateQueries({ queryKey: ["report-split-claims"] }),
+      queryClient.invalidateQueries({ queryKey: ["rights-splits-claims"] }),
     ]);
   }, [queryClient]);
 
@@ -564,12 +566,13 @@ export default function Reports() {
       if (insertError) throw insertError;
 
       const reportId = inserted.id;
-      const data = await invokeFunction<{ status?: string; report_id?: string }>("reprocess-file", {
+      const data = await invokeFunction<{ status?: string; report_id?: string; split_claims?: number }>("reprocess-file", {
         report_id: reportId,
       });
       return {
         reportId,
-        status: typeof data?.status === "string" ? data.status : "reprocessed",
+        splitClaims: typeof data?.split_claims === "number" ? data.split_claims : 0,
+        status: typeof data?.status === "string" ? data.status : "revenue_processed",
       };
     },
     onSuccess: async (result) => {
@@ -584,14 +587,27 @@ export default function Reports() {
               title: "Track matching needed",
               description: "Processing paused so you can confirm similar tracks before this statement moves to the table.",
             }
+          : result.status === "rights_review_ready"
+          ? {
+              title: "Split document ready for review",
+              description: `${result.splitClaims.toLocaleString()} extracted split claim${result.splitClaims === 1 ? "" : "s"} are waiting in Rights & Splits.`,
+            }
+          : result.status === "mixed_review_ready"
+          ? {
+              title: "Mixed document processed",
+              description: "Revenue rows and split evidence were extracted. Review the pending rights claims before treating them as canonical.",
+            }
           : {
-              title: "Report processed",
-              description: "Processing finished and the statement is now available in the table.",
+              title: "Revenue statement processed",
+              description: "Processing finished and the document is now available in the table.",
             },
       );
     },
     onError: (e: Error) => {
-      toast({ title: "Upload failed", description: e.message, variant: "destructive" });
+      const description = /failed to fetch|name_not_resolved|network/i.test(e.message)
+        ? "Cannot reach Supabase. Check your connection or DNS, then retry the upload."
+        : e.message;
+      toast({ title: "Upload failed", description, variant: "destructive" });
     },
   });
 

@@ -22,4 +22,15 @@ describe("reports upload workflow stability", () => {
     expect(reportsPage).not.toContain("data: activeTrackMatchReviewTasks = []");
     expect(reportsPage).toContain("data: activeTrackMatchReviewTasks = EMPTY_REVIEW_TASKS");
   });
+
+  it("uses document-first upload language and handles rights-review upload results", () => {
+    const reportsPage = read("src/pages/Reports.tsx");
+    const workflowCard = read("src/components/reports/StatementWorkflowCard.tsx");
+
+    expect(workflowCard).toContain("Upload document");
+    expect(reportsPage).toContain('result.status === "rights_review_ready"');
+    expect(reportsPage).toContain('title: "Split document ready for review"');
+    expect(reportsPage).toContain('queryKey: ["rights-splits-claims"]');
+    expect(reportsPage).toContain("Cannot reach Supabase");
+  });
 });
