@@ -191,12 +191,16 @@ export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidenc
     },
   ];
 
-  const asksRevenue = includesAny(q, [/\brevenue\b/, /\broyalt/, /\bearn/, /\bgross\b/, /\bnet\b/, /\bincome\b/, /\bpayou?t\b/]);
-  const asksTerritory = includesAny(q, [/\bterritor/, /\bmarket/, /\bcountr/, /\bregion/, /\bgeo/]);
-  const asksPlatform = includesAny(q, [/\bplatform/, /\bdsp\b/, /\bspotify\b/, /\byoutube\b/, /\bapple music\b/, /\bchannel/]);
-  const asksTrend = includesAny(q, [/\btrend/, /\bover time\b/, /\bgrowth\b/, /\bchanged?\b/, /\bmonth by month\b/, /\bquarter by quarter\b/, /\bweek by week\b/, /\bmonth over month\b/, /\bquarter over quarter\b/, /\bweek over week\b/, /\bvs\b/, /\bversus\b/]);
-  const asksProject = includesAny(q, [/\bproject/, /\balbum/, /\brelease/, /\btrack/, /\bsong/]);
-  const asksQuality = includesAny(q, [/\bquality\b/, /\bmissing\b/, /\bconflict/, /\bvalidation\b/, /\bmapping\b/, /\bconfidence\b/, /\bleak/]);
+  const asksTouring = includesAny(q, [/\btour/, /\bvenue\b/, /\bcity\b/, /\brouting\b/, /\bshow\b/]);
+  const asksMarketing = includesAny(q, [/\bmarketing\b/, /\bcampaign\b/, /\bplaylist\b/, /\bpitch(?:ing)?\b/, /\bpromotion\b/, /\bbudget\b/]);
+  const asksMomentum = includesAny(q, [/\bcoming up\b/, /\bright now\b/, /\bgrow(?:ing|th)?\b/, /\bfastest\b/, /\bmoving\b/, /\brising\b/, /\bmomentum\b/]);
+  const asksDrivers = includesAny(q, [/\bfactors?\b/, /\bdrivers?\b/, /\bresponsible\b/, /\bwhy\b/]);
+  const asksRevenue = includesAny(q, [/\brevenue\b/, /\broyalt/, /\bearn/, /\bgross\b/, /\bnet\b/, /\bincome\b/, /\bpayou?t\b/]) || asksTouring || asksMarketing || asksMomentum;
+  const asksTerritory = includesAny(q, [/\bterritor/, /\bmarket/, /\bcountr/, /\blocation/, /\bregion/, /\bgeo/]) || asksTouring || asksMarketing || asksDrivers;
+  const asksPlatform = includesAny(q, [/\bplatform/, /\bdsp\b/, /\bservice\b/, /\bstreaming\b/, /\bspotify\b/, /\byoutube\b/, /\bapple music\b/, /\bchannel/, /\bplaylist\b/, /\bpitch(?:ing)?\b/]) || asksTouring || asksMarketing || asksDrivers;
+  const asksTrend = includesAny(q, [/\btrend/, /\bover time\b/, /\bgrowth\b/, /\bgrow(?:ing)?\b/, /\bcoming up\b/, /\bright now\b/, /\bfastest\b/, /\bmoving\b/, /\brising\b/, /\bnext\s+(?:week|month|quarter)\b/, /\bchanged?\b/, /\bmonth by month\b/, /\bquarter by quarter\b/, /\bweek by week\b/, /\bmonth over month\b/, /\bquarter over quarter\b/, /\bweek over week\b/, /\bvs\b/, /\bversus\b/, /\bcompared?\b/]) || asksTouring;
+  const asksProject = includesAny(q, [/\bproject/, /\balbum/, /\breleases?/, /\btrack/, /\bsong/, /\bcatalog\b/]);
+  const asksQuality = includesAny(q, [/\bquality\b/, /\bmissing\b/, /\bconflict/, /\bvalidation\b/, /\bmapping\b/, /\bconfidence\b/, /\bleak/, /\bunderperform/, /\bpotential\b/]);
   const asksRights = includesAny(q, [/\bright/, /\bsplit/, /\bshare/, /\bwriter/, /\bpublisher/, /\bowner/, /\bowns\b/, /\bentitled/, /\bentitlement/, /\bgetting from/, /\bpayou?t/]);
   const asksDocuments = asksRights || includesAny(q, [/\bdocument/, /\bsource/, /\bcontract/, /\bprove/, /\bproof/]);
   const asksExternal = includesAny(q, [/\bexternal/, /\bbenchmark/, /\bindustry/, /\bmarket context/, /\bfestival/, /\btour/, /\bvenue/]);
@@ -206,6 +210,15 @@ export function planAnswerEvidence(input: PlanAnswerEvidenceInput): MultiEvidenc
 
   if (asksRevenue || asksProject) {
     addRequirement(answerRequirements, "rank revenue drivers");
+  }
+  if ((asksRevenue || asksRights) && (asksRights || asksQuality) && hasColumn(input.catalog, "net_revenue")) {
+    addJob(sqlJobs, {
+      job_id: "revenue-context",
+      purpose: "keep revenue evidence available even when supporting evidence is partial",
+      requirement: "supporting",
+      required_for_answer: false,
+      analysis_plan: focusedPlan("What revenue did this catalog earn?", input.catalog, "revenue earnings income", ["net_revenue"]),
+    });
   }
   if (asksTerritory && hasColumn(input.catalog, "territory")) {
     addRequirement(answerRequirements, "explain territory contribution");

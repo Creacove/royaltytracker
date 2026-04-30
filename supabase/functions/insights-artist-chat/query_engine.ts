@@ -291,10 +291,12 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   const asksAttention = /\b(deserve|attention|immediate|prioriti[sz]e|priority|watchlist|focus)\b/i.test(q);
   const asksArtistRanking = /\bartists?\b|\bartistes?\b/i.test(q) && asksAttention;
   const asksTouring = /\b(tour|touring|show|venue|city|route|routing)\b/i.test(q);
-  const asksRevenue = /\b(revenu\w*|money|earning|royalt|gross|net)\b/i.test(q) || asksAttention || asksTouring;
-  const asksPlatform = /\b(platform|dsp|service|spotify|apple|youtube|amazon|tidal|deezer)\b/i.test(q);
-  const asksTerritory = /\b(territory|country|market|region|geo|geography)\b/i.test(q) || asksTouring;
-  const asksTrend = /\b(trend|over time|qoq|yoy|mom|growth rate|month over month|quarter over quarter|week over week|month by month|week by week|day by day|quarter by quarter|last\s+\d+\s+(?:days?|weeks?|months?|quarters?)|prior\s+\d+\s+(?:days?|weeks?|months?|quarters?)|vs\s+prior|compared\s+to\s+prior)\b/i.test(q);
+  const asksMarketing = /\b(marketing|campaign|playlist|pitch(?:ing)?|promotion|budget)\b/i.test(q);
+  const asksMomentum = /\b(coming up|right now|grow(?:ing|th)?|fastest|moving|rising|momentum)\b/i.test(q);
+  const asksRevenue = /\b(revenu\w*|money|earning|royalt|gross|net)\b/i.test(q) || asksAttention || asksTouring || asksMarketing || asksMomentum;
+  const asksPlatform = /\b(platform|dsp|service|streaming|spotify|apple|youtube|amazon|tidal|deezer|playlist|pitch(?:ing)?)\b/i.test(q) || asksMarketing || asksTouring;
+  const asksTerritory = /\b(territor(?:y|ies)|countr(?:y|ies)|markets?|locations?|regions?|geo|geography)\b/i.test(q) || asksTouring || asksMarketing;
+  const asksTrend = /\b(trend|over time|qoq|yoy|mom|growth rate|growth|growing|coming up|right now|fastest|moving|rising|momentum|next\s+(?:week|month|quarter)|month over month|quarter over quarter|week over week|month by month|week by week|day by day|quarter by quarter|last\s+\d+\s+(?:days?|weeks?|months?|quarters?)|prior\s+\d+\s+(?:days?|weeks?|months?|quarters?)|vs\s+prior|compared\s+to\s+prior|compared?)\b/i.test(q);
   const explicitYearComparison = parseExplicitYearComparison(question);
   const comparisonWindow = parseComparisonWindow(question);
   const relativeWindow = parseRelativeWindow(question);
@@ -325,6 +327,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (asksRightsLeakage) dimensions.push("rights_type");
   if (/\b(rights|rights[-\s]?type|royalty type)\b/i.test(q)) dimensions.push("rights_type");
   if (asksTrend && !asksPeriodComparison) dimensions.push("event_date");
+  if (asksPeriodComparison && hasField("event_date")) dimensions.push("event_date");
   if (asksOwnership || asksEntitlement) {
     dimensions.push("party_name");
     if (rightsDimensionField) dimensions.push(rightsDimensionField);
@@ -336,7 +339,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (asksPoor && !dimensions.includes("track_title")) dimensions.push("track_title");
 
   const metrics: string[] = [];
-  if (asksRevenue) {
+  if (asksRevenue || asksOwnership || asksEntitlement) {
     if (catalog.columns.some((c) => c.field_key === "net_revenue")) metrics.push("net_revenue");
     else if (catalog.columns.some((c) => c.field_key === "gross_revenue")) metrics.push("gross_revenue");
   }
@@ -351,8 +354,8 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   }
 
   // When question is about track performance but no dimension yet, add track_title
-  if (!dimensions.includes("track_title") && /\b(track|song|title)\b/i.test(q)) {
-    dimensions.push("track_title");
+  if (!dimensions.includes("track_title") && /\b(track|song|title|releases?|catalog)\b/i.test(q)) {
+    dimensions.unshift("track_title");
   }
   if (asksHighestOpportunity && !dimensions.includes("track_title")) dimensions.push("track_title");
   if (asksRightsLeakage && !dimensions.includes("platform")) dimensions.push("platform");
@@ -360,6 +363,8 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
   if (asksStrategyAllocation && dimensions.length === 0) {
     dimensions.push("track_title");
   }
+  if (asksMarketing && hasField("territory") && !dimensions.includes("territory")) dimensions.push("territory");
+  if (asksMarketing && hasField("platform") && !dimensions.includes("platform")) dimensions.push("platform");
 
   const required_columns = unique([
     ...dimensions,
@@ -412,15 +417,15 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
     ? "quality_risk_impact"
     : asksOpportunityRisk || asksHighestOpportunity
     ? "opportunity_risk_tracks"
-    : asksPlatform
-      ? "platform_analysis"
-      : asksTerritory
+    : asksTerritory
         ? "territory_analysis"
-        : asksTrend
-          ? "trend_analysis"
-          : asksRevenue
-            ? "revenue_analysis"
-            : "exploratory_analysis";
+        : asksPlatform
+          ? "platform_analysis"
+          : asksTrend
+            ? "trend_analysis"
+            : asksRevenue
+              ? "revenue_analysis"
+              : "exploratory_analysis";
 
   const grain = asksPeriodComparison
     ? "none"
@@ -440,7 +445,7 @@ export function deriveAnalysisPlanFallback(question: string, catalog: ArtistCata
       ...(asksRightsLeakage ? ["gross_revenue", "net_revenue"] : []),
       ...(asksOwnership || asksEntitlement ? ["share_pct"] : []),
     ]).slice(0, 3),
-    dimensions: unique(dimensions).slice(0, 3),
+    dimensions: unique(dimensions).slice(0, 4),
     filters: planFilters,
     grain,
     time_window: "implicit",
@@ -517,7 +522,7 @@ function sourceKindFilterSql(intent: AnalysisPlan["intent"], byKey: Map<string, 
     "opportunity_risk_tracks",
     "rights_leakage",
   ].includes(intent)) {
-    return "lower(COALESCE(r.source_kind, '')) IN ('income', 'legacy_income')";
+    return "lower(COALESCE(r.source_kind, '')) IN ('income', 'legacy_income', '', 'custom')";
   }
   if (intent === "rights_ownership") {
     return "lower(COALESCE(r.source_kind, '')) IN ('rights', 'entitlement')";

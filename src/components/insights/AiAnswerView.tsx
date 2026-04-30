@@ -324,7 +324,7 @@ export function AiAnswerView({ payload, onUseQuestion }: AiAnswerViewProps) {
             ) : null}
           </div>
         </CardHeader>
-        {payload.follow_up_questions.length > 0 ? (
+        {Array.isArray(payload.follow_up_questions) && payload.follow_up_questions.length > 0 ? (
           <CardContent className="flex flex-wrap gap-2">
             {payload.follow_up_questions.slice(0, 3).map((question) => (
               <Button key={question} variant="outline" size="sm" onClick={() => onUseQuestion(question)}>

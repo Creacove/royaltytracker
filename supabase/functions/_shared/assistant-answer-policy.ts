@@ -193,6 +193,12 @@ function detectMoneyRows(
     .sort((a, b) => (toNum(b[moneyKey]) ?? 0) - (toNum(a[moneyKey]) ?? 0));
 }
 
+function isUnknownLabel(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  const text = String(value).trim().toLowerCase();
+  return text.length === 0 || text === "unknown" || text === "n/a" || text === "na";
+}
+
 function sumMoney(rows: Array<Record<string, unknown>>, moneyKey: string | null): number | null {
   if (!moneyKey) return null;
   const values = rows.map((row) => toNum(row[moneyKey])).filter((value): value is number => value !== null);
@@ -383,7 +389,9 @@ function buildTerritoryRankingAnswer(input: BuildDecisionGradeAnswerInput): Deci
     };
   }
 
-  const territoryRows = detectMoneyRows(rows, moneyKey).filter((row) => typeof row[territoryKey] === "string" && String(row[territoryKey]).trim().length > 0);
+  const allTerritoryRows = detectMoneyRows(rows, moneyKey).filter((row) => typeof row[territoryKey] === "string" && String(row[territoryKey]).trim().length > 0);
+  const unknownTerritoryCount = allTerritoryRows.filter((row) => isUnknownLabel(row[territoryKey])).length;
+  const territoryRows = allTerritoryRows.filter((row) => !isUnknownLabel(row[territoryKey]));
   if (territoryRows.length === 0) {
     return {
       objective: "territory_ranking",
@@ -405,9 +413,9 @@ function buildTerritoryRankingAnswer(input: BuildDecisionGradeAnswerInput): Deci
   return {
     objective: "territory_ranking",
     executive_answer: `The most important territories in the current result are ${list}. ${topThree[0].territory} is the lead market in this selected period.`,
-    why_this_matters: "These are the markets to defend first, but you should still separate royalty concentration from live demand before making touring or city-routing decisions.",
+    why_this_matters: `These are the markets to defend first, but you should still separate royalty concentration from live demand before making touring or city-routing decisions.${unknownTerritoryCount > 0 ? ` I excluded ${unknownTerritoryCount} Unknown territory row${unknownTerritoryCount === 1 ? "" : "s"} from the recommendation shortlist.` : ""}`,
     quality_outcome: "pass",
-    data_notes: [],
+    data_notes: unknownTerritoryCount > 0 ? ["unknown_territory_rows_excluded"] : [],
     missing_requirements: [],
     external_context_allowed: externalContextAllowed(input.question),
   };
@@ -430,6 +438,17 @@ function buildPlatformRankingAnswer(input: BuildDecisionGradeAnswerInput): Decis
     };
   }
   const platformRows = detectMoneyRows(rows, moneyKey).filter((row) => typeof row[platformKey] === "string" && String(row[platformKey]).trim().length > 0);
+  if (platformRows.length === 0) {
+    return {
+      objective: "platform_ranking",
+      executive_answer: "I can't rank platforms from this result because the platform rows returned are empty.",
+      why_this_matters: "Platform decisions need populated platform values and revenue in the same rows.",
+      quality_outcome: "constrained",
+      data_notes: ["empty_platform_rows"],
+      missing_requirements: ["platform"],
+      external_context_allowed: externalContextAllowed(input.question),
+    };
+  }
   const topThree = platformRows.slice(0, 3).map((row) => ({
     platform: String(row[platformKey]),
     money: toNum(row[moneyKey]) ?? 0,
@@ -498,12 +517,12 @@ function buildRecommendationAnswer(input: BuildDecisionGradeAnswerInput): Decisi
   const subject = subjectLabel(input.mode, input.resolvedEntities);
   const driverKey = columns.includes("track_title")
     ? "track_title"
-    : columns.includes("artist_name")
+    : columns.includes("platform")
+      ? "platform"
+      : columns.includes("territory")
+        ? "territory"
+        : columns.includes("artist_name")
       ? "artist_name"
-    : columns.includes("territory")
-      ? "territory"
-      : columns.includes("platform")
-        ? "platform"
         : null;
   if (!moneyKey || moneyRows.length === 0 || !driverKey) {
     return {
@@ -515,6 +534,21 @@ function buildRecommendationAnswer(input: BuildDecisionGradeAnswerInput): Decisi
       missing_requirements: ["ranked_driver", moneyKey ?? "revenue_metric"],
       external_context_allowed: externalContextAllowed(input.question),
     };
+  }
+  if (input.mode === "artist" && driverKey === "artist_name") {
+    const selectedArtist = input.resolvedEntities.artist_name?.trim().toLowerCase();
+    const onlySelectedArtist = moneyRows.every((row) => String(row.artist_name ?? "").trim().toLowerCase() === selectedArtist);
+    if (onlySelectedArtist) {
+      return {
+        objective: "recommendation",
+        executive_answer: `I can't give a useful operating recommendation from an artist-total row alone. The answer needs a ranked within-artist driver such as track, platform, territory, or a revenue-risk segment.`,
+        why_this_matters: "In artist scope, the selected artist is the subject of the question, not the operating lever. Budget and focus decisions need the parts of the artist business that can be acted on.",
+        quality_outcome: "constrained",
+        data_notes: ["selected_artist_total_is_not_actionable_driver"],
+        missing_requirements: ["ranked_within_artist_driver"],
+        external_context_allowed: externalContextAllowed(input.question),
+      };
+    }
   }
   const lead = moneyRows[0];
   const runnerUp = moneyRows[1];

@@ -6,6 +6,7 @@ import {
   normalizeAiEvidencePlan,
 } from "../../supabase/functions/_shared/assistant-ai-native-planner";
 import { buildCatalog } from "../../supabase/functions/_shared/assistant-query-engine";
+import { planAnswerEvidence } from "../../supabase/functions/_shared/answer-planner";
 
 function catalog() {
   return buildCatalog({
@@ -131,7 +132,7 @@ describe("AI-native assistant runtime helpers", () => {
     expect(result.row_count).toBe(1);
     expect(repairSql).toHaveBeenCalledWith(expect.objectContaining({
       original_question: "Which locations made the most revenue?",
-      failed_sql: expect.stringContaining("location"),
+      failed_sql: expect.stringContaining("territory"),
       error: "column location does not exist",
       schema_map: schemaMap,
     }));
@@ -181,5 +182,95 @@ describe("AI-native assistant runtime helpers", () => {
     expect(splits.verifier_status).toBe("failed");
     expect(splits.error).toContain("party_name");
     expect(revenue.rows[0].net_revenue).toBe(250);
+  });
+
+  it("fills weak LLM analysis plans with legacy inferred fields instead of accepting empty evidence requirements", () => {
+    const fallback = planAnswerEvidence({
+      question: "Which locations or markets should we focus on for revenue?",
+      catalog: catalog(),
+      mode: "workspace",
+    });
+
+    const plan = normalizeAiEvidencePlan({
+      raw: {
+        sql_jobs: [
+          {
+            job_id: "market-context",
+            purpose: "show market opportunity",
+            sub_question: "Which locations or markets should we focus on for revenue?",
+            analysis_plan: {
+              intent: "market_focus",
+              metrics: [],
+              dimensions: [],
+              required_columns: [],
+            },
+          },
+        ],
+      },
+      question: "Which locations or markets should we focus on for revenue?",
+      catalog: catalog(),
+      mode: "workspace",
+      fallback,
+    });
+
+    expect(plan.sql_jobs[0].analysis_plan.dimensions).toContain("territory");
+    expect(plan.sql_jobs[0].analysis_plan.metrics).toContain("net_revenue");
+    expect(plan.sql_jobs[0].analysis_plan.required_columns).toEqual(
+      expect.arrayContaining(["territory", "net_revenue"]),
+    );
+  });
+
+  it("executes compiled legacy SQL before raw LLM SQL so bad LLM field names cannot hide usable evidence", async () => {
+    const schemaMap = buildAiNativeSchemaMap({
+      catalog: catalog(),
+      mode: "workspace",
+      question: "Which locations made the most revenue?",
+      fromDate: "2026-01-01",
+      toDate: "2026-01-31",
+    });
+    const runSql = vi.fn().mockImplementation(async (sql: string) => {
+      if (sql.toLowerCase().includes("location")) throw new Error("column location does not exist");
+      return {
+        columns: ["territory", "net_revenue"],
+        rows: [{ territory: "NG", net_revenue: 100 }],
+        row_count: 1,
+      };
+    });
+
+    const result = await executeSqlEvidenceJobWithRepair({
+      job: {
+        job_id: "market-context",
+        purpose: "show territory revenue",
+        requirement: "supporting",
+        required_for_answer: false,
+        original_question: "Which locations made the most revenue?",
+        sub_question: "Which locations made the most revenue?",
+        expected_contribution: "Ranks territories by revenue",
+        analysis_plan: {
+          intent: "territory_analysis",
+          metrics: ["net_revenue"],
+          dimensions: ["territory"],
+          filters: [],
+          grain: "none",
+          time_window: "implicit",
+          confidence: "high",
+          required_columns: ["territory", "net_revenue"],
+          top_n: 10,
+          sort_by: "net_revenue",
+          sort_dir: "desc",
+        },
+        sql: "SELECT location, SUM(net_revenue)::numeric AS net_revenue FROM scoped_core GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+        sql_source: "llm",
+      },
+      schemaMap,
+      catalog: catalog(),
+      runSql,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.row_count).toBe(1);
+    expect(result.sql_preview.toLowerCase()).toContain("territory");
+    expect(result.sql_preview.toLowerCase()).not.toContain("location");
+    expect(runSql).toHaveBeenCalledTimes(1);
   });
 });

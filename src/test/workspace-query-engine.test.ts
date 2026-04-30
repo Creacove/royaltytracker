@@ -78,6 +78,45 @@ describe("workspace query engine", () => {
     expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
   });
 
+  it("compiles location and market focus questions with territory revenue evidence", () => {
+    const catalog = sampleWorkspaceCatalog();
+    const plan = deriveAnalysisPlanFallback("Which locations or markets should we focus on for revenue?", catalog);
+    const compiled = compileSqlFromPlan(plan, catalog);
+    const sql = compiled.sql.toLowerCase();
+
+    expect(plan.dimensions).toContain("territory");
+    expect(plan.metrics).toContain("net_revenue");
+    expect(sql).toContain("r.territory as territory");
+    expect(sql).toContain("sum(coalesce(r.net_revenue");
+    expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
+  });
+
+  it("compiles DSP revenue questions with platform revenue evidence", () => {
+    const catalog = sampleWorkspaceCatalog();
+    const plan = deriveAnalysisPlanFallback("Which DSP drove the most revenue?", catalog);
+    const compiled = compileSqlFromPlan(plan, catalog);
+    const sql = compiled.sql.toLowerCase();
+
+    expect(plan.dimensions).toContain("platform");
+    expect(plan.metrics).toContain("net_revenue");
+    expect(sql).toContain("r.platform as platform");
+    expect(sql).toContain("sum(coalesce(r.net_revenue");
+    expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
+  });
+
+  it("compiles attention questions with entity revenue evidence instead of an ungrouped total", () => {
+    const catalog = sampleWorkspaceCatalog();
+    const plan = deriveAnalysisPlanFallback("Which tracks deserve attention?", catalog);
+    const compiled = compileSqlFromPlan(plan, catalog);
+    const sql = compiled.sql.toLowerCase();
+
+    expect(plan.dimensions).toContain("track_title");
+    expect(plan.metrics).toContain("net_revenue");
+    expect(sql).toContain("r.track_title as track_title");
+    expect(sql).toContain("group by 1");
+    expect(() => validatePlannedSql(compiled.sql)).not.toThrow();
+  });
+
   it("compiles rights ownership SQL against rights-aware columns", () => {
     const catalog = sampleWorkspaceCatalog();
     const plan = deriveAnalysisPlanFallback("Show me who owns which works and their split percentages.", catalog);

@@ -1,0 +1,48 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e8]:
+        - img "OrderSounds" [ref=e9]
+        - generic [ref=e13]: Desk
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - heading "Bring music reporting into one decision workspace." [level=1] [ref=e16]
+          - paragraph [ref=e17]: Sign in to work across statements, PRO reports, royalty reports, and other music reporting in one workspace for normalization, analysis, and faster decisions.
+        - generic [ref=e18]:
+          - generic [ref=e19]:
+            - img [ref=e21]
+            - paragraph [ref=e23]: Normalize what comes in
+            - paragraph [ref=e24]: Bring statements, PRO reports, royalty reports, and other music reporting into one shared operating view.
+          - generic [ref=e25]:
+            - img [ref=e27]
+            - paragraph [ref=e30]: Ask questions from the reporting
+            - paragraph [ref=e31]: Use AI analysis that stays grounded in the uploaded reporting and the evidence behind it.
+          - generic [ref=e32]:
+            - img [ref=e34]
+            - paragraph [ref=e37]: Keep access controlled
+            - paragraph [ref=e38]: Every workspace stays restricted to approved operators, owners, and decision-makers.
+    - generic [ref=e41]:
+      - generic [ref=e43]:
+        - heading "Sign in" [level=3] [ref=e44]
+        - paragraph [ref=e45]: Use the work email and password attached to your invited workspace.
+      - generic [ref=e46]:
+        - generic [ref=e47]:
+          - generic [ref=e48]:
+            - text: Work email
+            - textbox "Work email" [ref=e49]:
+              - /placeholder: you@publisher.com
+          - generic [ref=e50]:
+            - text: Password
+            - textbox "Password" [ref=e51]:
+              - /placeholder: Enter your password
+          - button "Enter workspace" [ref=e52] [cursor=pointer]:
+            - text: Enter workspace
+            - img
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - paragraph [ref=e56]: Need access for your team?
+            - paragraph [ref=e57]: Request access and we'll set your team up in the right Desk workspace.
+          - button "Request access" [ref=e58] [cursor=pointer]

@@ -425,6 +425,7 @@ export type AiEvidenceBundleSqlJob = {
 };
 
 export type AiEvidenceBundle = {
+  evidence_answer_pack?: Record<string, unknown> | null;
   multi_evidence_plan?: Record<string, unknown>;
   sql_evidence_jobs?: AiEvidenceBundleSqlJob[];
   structured_sidecar_evidence?: Record<string, unknown> | null;
@@ -497,10 +498,16 @@ export type AiInsightsTurnResponse = {
   render_hints?: AiInsightsRenderHints;
   evidence_map?: Record<string, "workspace_data" | "external">;
   recommendations?: AiInsightsRecommendation[];
+  recommended_actions?: unknown[];
   citations?: AiInsightsCitation[];
   unknowns?: string[];
   answer_design?: AiInsightsAnswerDesign;
   answer_sections?: AiAnswerSection[];
   evidence_bundle?: AiEvidenceBundle;
   job_diagnostics?: AiJobDiagnostic[];
+  synthesis_source?: "ai_final_writer" | "deterministic_fallback" | "deterministic_policy" | string;
+  answer_quality?: {
+    status?: "passed" | "failed" | string;
+    reasons?: string[];
+  };
 };

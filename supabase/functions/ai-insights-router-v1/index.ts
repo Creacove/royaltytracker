@@ -1008,6 +1008,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function usesAiFinalWriter(payload: Record<string, unknown> | null | undefined): boolean {
+  if (!payload) return false;
+  if (payload.synthesis_source === "ai_final_writer") return true;
+  const diagnostics = payload.diagnostics;
+  return Boolean(diagnostics && typeof diagnostics === "object" && !Array.isArray(diagnostics) &&
+    (diagnostics as Record<string, unknown>).synthesis_source === "ai_final_writer");
+}
+
 function asString(value: unknown, maxLen = 3000): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -3651,7 +3659,8 @@ serve(async (req) => {
         return out;
       })();
       const isStrategyQuestion = isStrategyQuestionText(question);
-      const qualityOutcome = shouldConstrain || answerPolicy.quality_outcome === "constrained"
+      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
+      const qualityOutcome = shouldConstrain || (!aiFinalWriter && answerPolicy.quality_outcome === "constrained")
         ? "constrained"
         : (assistantPayload.quality_outcome ?? undefined);
       const requestedTopN = parseRequestedTopN(question);
@@ -3695,10 +3704,18 @@ serve(async (req) => {
         externalContext: externalContext ?? undefined,
         intentFamily,
       });
-      const executiveOut = [tourBrief?.executive ?? answerPolicy.executive_answer, topCountCaveat, largestChange]
+      const executiveOut = [
+        aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
+          ? assistantPayload.answer_text
+          : (tourBrief?.executive ?? answerPolicy.executive_answer),
+        topCountCaveat,
+        largestChange,
+      ]
         .filter(Boolean)
         .join(" ");
-      const whyOut = tourBrief?.why ?? answerPolicy.why_this_matters;
+      const whyOut = aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
+        ? assistantPayload.why_this_matters
+        : (tourBrief?.why ?? answerPolicy.why_this_matters);
       const recommendations = synthesizeAdvisorRecommendations({
         recommendations: baseRecommendations,
         theme: recommendationTheme,
@@ -3751,6 +3768,7 @@ serve(async (req) => {
         follow_up_questions: followUpsFinal,
         recommendations,
         external_context: externalContext ?? (shouldEnrich ? { status: "unavailable" } : undefined),
+        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
         quality_outcome: qualityOutcome,
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
@@ -3775,6 +3793,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
+          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
         },
       });
     }
@@ -3927,6 +3946,7 @@ serve(async (req) => {
         qualityOutcome: assistantPayload.quality_outcome,
         diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
       });
+      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
 
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
@@ -3935,8 +3955,12 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Track AI answer",
-        executive_answer: answerPolicy.executive_answer,
-        why_this_matters: answerPolicy.why_this_matters,
+        executive_answer: aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
+          ? assistantPayload.answer_text
+          : answerPolicy.executive_answer,
+        why_this_matters: aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
+          ? assistantPayload.why_this_matters
+          : answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -3960,7 +3984,8 @@ serve(async (req) => {
               "What should I review first to improve payout confidence?",
               "Show top leakage patterns for this track.",
             ],
-        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
+        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+        quality_outcome: !aiFinalWriter && answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -3980,6 +4005,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
+          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
         },
       });
     }
@@ -4183,6 +4209,7 @@ serve(async (req) => {
         qualityOutcome: assistantPayload.quality_outcome,
         diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
       });
+      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
 
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
@@ -4191,8 +4218,12 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Workspace AI answer",
-        executive_answer: answerPolicy.executive_answer,
-        why_this_matters: answerPolicy.why_this_matters,
+        executive_answer: aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
+          ? assistantPayload.answer_text
+          : answerPolicy.executive_answer,
+        why_this_matters: aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
+          ? assistantPayload.why_this_matters
+          : answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -4216,7 +4247,8 @@ serve(async (req) => {
               "Where are the biggest quality blockers across the workspace?",
               "Which tracks combine high opportunity with high risk?",
             ],
-        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
+        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+        quality_outcome: !aiFinalWriter && answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -4236,6 +4268,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
+          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
         },
       });
     }

@@ -3,6 +3,7 @@ import {
   type ArtistCatalog,
   compileSqlFromPlan,
   deriveAnalysisPlanFallback,
+  resolveColumnByAlias,
   validatePlannedSql,
   verifyQueryResult,
 } from "./assistant-query-engine.ts";
@@ -46,7 +47,7 @@ export type AiNativeSqlEvidenceJob = Omit<SqlEvidenceJob, "analysis_plan"> & {
   sub_question: string;
   expected_contribution: string;
   sql?: string;
-  sql_source?: "llm" | "fallback";
+  sql_source?: "llm" | "fallback" | "legacy_compiler";
 };
 
 export type AiNativeEvidencePlan = Omit<MultiEvidencePlan, "sql_jobs"> & {
@@ -70,7 +71,7 @@ export type AiNativeSqlJobResult = {
   warnings: string[];
   sql_preview: string;
   sql_hash: string;
-  sql_source: "llm" | "fallback";
+  sql_source: "llm" | "fallback" | "legacy_compiler";
   repair_status: "not_needed" | "repaired" | "failed" | "not_attempted";
   error?: string;
 };
@@ -142,7 +143,9 @@ export function buildAiNativeSchemaMap(args: {
     { phrase: "location", field_key: "territory", reason: "User-facing location language maps to territory in assistant data." },
     { phrase: "country", field_key: "territory", reason: "Country is stored as territory." },
     { phrase: "market", field_key: "territory", reason: "Market analysis is grouped by territory." },
+    { phrase: "tour", field_key: "territory", reason: "Touring, live routing, and concerts require territory-level demand signals." },
     { phrase: "DSP", field_key: "platform", reason: "DSP/service/channel language maps to platform." },
+    { phrase: "streaming", field_key: "platform", reason: "Streaming performance is grouped by platform." },
     { phrase: "service", field_key: "platform", reason: "Streaming services are stored as platform." },
     { phrase: "split", field_key: "share_pct", reason: "Rights split percentages are stored as share_pct when available." },
     { phrase: "ownership", field_key: "share_pct", reason: "Ownership share is represented by share_pct when available." },
@@ -196,19 +199,31 @@ function emptyPlan(question: string): MultiEvidencePlan {
   };
 }
 
+function resolvePlanFields(fields: string[], catalog: ArtistCatalog): string[] {
+  return unique(fields.flatMap((field) => {
+    const resolved = resolveColumnByAlias(field, catalog);
+    return resolved ? [resolved] : [];
+  }));
+}
+
 function normalizeAnalysisPlan(raw: unknown, question: string, catalog: ArtistCatalog): AnalysisPlan {
+  const fallback = deriveAnalysisPlanFallback(question, catalog);
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const record = raw as Partial<AnalysisPlan>;
-    const fallback = deriveAnalysisPlanFallback(question, catalog);
+    const metrics = resolvePlanFields(asArrayOfStrings(record.metrics), catalog);
+    const dimensions = resolvePlanFields(asArrayOfStrings(record.dimensions), catalog);
+    const requiredColumns = resolvePlanFields(asArrayOfStrings(record.required_columns), catalog);
     return {
       intent: asString(record.intent) ?? fallback.intent,
-      metrics: asArrayOfStrings(record.metrics),
-      dimensions: asArrayOfStrings(record.dimensions),
+      metrics: metrics.length > 0 ? metrics : fallback.metrics,
+      dimensions: dimensions.length > 0 ? dimensions : fallback.dimensions,
       filters: Array.isArray(record.filters) ? record.filters as AnalysisPlan["filters"] : [],
       grain: record.grain === "day" || record.grain === "week" || record.grain === "month" || record.grain === "quarter" || record.grain === "none" ? record.grain : fallback.grain,
       time_window: record.time_window === "explicit" ? "explicit" : "implicit",
       confidence: record.confidence === "high" || record.confidence === "medium" || record.confidence === "low" ? record.confidence : fallback.confidence,
-      required_columns: asArrayOfStrings(record.required_columns),
+      required_columns: requiredColumns.length > 0
+        ? unique([...requiredColumns, ...dimensions, ...metrics])
+        : fallback.required_columns,
       top_n: typeof record.top_n === "number" ? Math.min(50, Math.max(1, Math.round(record.top_n))) : fallback.top_n,
       sort_by: asString(record.sort_by) ?? fallback.sort_by,
       sort_dir: record.sort_dir === "asc" ? "asc" : "desc",
@@ -316,8 +331,13 @@ export async function planAiNativeEvidence(args: {
       systemPrompt: [
         "You are an AI-native evidence planner for a music royalty analytics app.",
         "Ground every decision in the original user question and the schema map.",
+        "Request multiple SQL jobs when it makes the answer richer (e.g., combining Touring + DSP + Catalog).",
+        "CRITICAL DOMAIN RULES:",
+        "- Questions about touring, live routing, concerts, or venues MUST group by 'territory'.",
+        "- Questions about DSPs, streaming, or platform share MUST group by 'platform'.",
+        "- Questions about artists, bands, or creators MUST group by 'artist_name' or 'party_name'.",
+        "- Questions about catalog, tracks, or songs MUST group by 'track_title' or 'work_title'.",
         "Return JSON with intent, answer_goal, sql_jobs, sidecar_jobs, answer_sections, and synthesis_requirements.",
-        "Request multiple SQL jobs when that would make the final answer richer.",
         "Missing sidecar evidence should degrade with a caveat, not block useful SQL-backed answers.",
       ].join(" "),
       userPrompt: JSON.stringify({ original_question: args.question, schema_map: args.schemaMap }),
@@ -336,27 +356,17 @@ async function sqlForJob(args: {
   schemaMap: AiNativeSchemaMap;
   catalog: ArtistCatalog;
   writeSql?: (input: { job: AiNativeSqlEvidenceJob; schema_map: AiNativeSchemaMap }) => Promise<{ sql?: string }>;
-}): Promise<{ sql: string; chosen_columns: string[]; source: "llm" | "fallback" }> {
+}): Promise<{ sql: string; chosen_columns: string[]; source: "llm" | "fallback" | "legacy_compiler" }> {
   const plan = args.job.analysis_plan ?? deriveAnalysisPlanFallback(args.job.sub_question || args.job.original_question, args.catalog);
-  if (args.job.sql) {
-    return { sql: validatePlannedSql(args.job.sql), chosen_columns: unique([...plan.dimensions, ...plan.metrics]), source: args.job.sql_source ?? "llm" };
-  }
-  if (args.writeSql) {
-    const written = await args.writeSql({ job: args.job, schema_map: args.schemaMap });
-    const sql = asString(written?.sql);
-    if (sql) {
-      return { sql: validatePlannedSql(sql), chosen_columns: unique([...plan.dimensions, ...plan.metrics]), source: "llm" };
-    }
-  }
   const compiled = compileSqlFromPlan(plan, args.catalog);
-  return { sql: validatePlannedSql(compiled.sql), chosen_columns: compiled.chosen_columns, source: "fallback" };
+  return { sql: validatePlannedSql(compiled.sql), chosen_columns: compiled.chosen_columns, source: "legacy_compiler" };
 }
 
 function failedResult(args: {
   job: AiNativeSqlEvidenceJob;
   sql: string;
   chosenColumns: string[];
-  source: "llm" | "fallback";
+  source: "llm" | "fallback" | "legacy_compiler";
   repairStatus: AiNativeSqlJobResult["repair_status"];
   error: unknown;
 }): AiNativeSqlJobResult {
@@ -388,7 +398,7 @@ async function runValidatedSql(args: {
   job: AiNativeSqlEvidenceJob;
   sql: string;
   chosenColumns: string[];
-  source: "llm" | "fallback";
+  source: "llm" | "fallback" | "legacy_compiler";
   runSql: (sql: string) => Promise<SqlExecutionResponse>;
 }): Promise<AiNativeSqlJobResult> {
   const plan = args.job.analysis_plan ?? deriveAnalysisPlanFallback(args.job.sub_question || args.job.original_question, { total_rows: 0, columns: [], aliases: {} });
@@ -441,7 +451,7 @@ export async function executeSqlEvidenceJobWithRepair(args: {
 }): Promise<AiNativeSqlJobResult> {
   let plannedSql = "";
   let chosenColumns: string[] = [];
-  let source: "llm" | "fallback" = "fallback";
+  let source: "llm" | "fallback" | "legacy_compiler" = "fallback";
   try {
     const planned = await sqlForJob({ job: args.job, schemaMap: args.schemaMap, catalog: args.catalog, writeSql: args.writeSql });
     plannedSql = planned.sql;

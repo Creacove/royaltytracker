@@ -467,7 +467,7 @@ function AdaptiveAnswerStack({
               ? String(item.value)
               : "-",
         }))
-      : payload.kpis.slice(0, 6).map((kpi) => ({ label: kpi.label, value: kpi.value }));
+      : (payload.kpis || []).slice(0, 6).map((kpi) => ({ label: kpi.label, value: kpi.value }));
   return (
     <div className="w-full min-w-0 flex-1 space-y-5">
       <section className="surface-hero forensic-frame spotlight-border relative min-w-0 overflow-hidden rounded-[calc(var(--radius)-2px)] p-5 md:p-6">
@@ -507,10 +507,10 @@ function AdaptiveAnswerStack({
                   Current scope
                 </p>
                 <p className="mt-2 break-words text-lg font-semibold tracking-tight text-foreground">
-                  {activeScopeTitle(payload.resolved_entities)}
+                  {activeScopeTitle(payload.resolved_entities || {})}
                 </p>
                 <p className="mt-1 break-words text-xs uppercase tracking-[0.14em] text-[hsl(var(--brand-accent))] [overflow-wrap:anywhere]">
-                  {modeLabel(payload.resolved_mode)} scope • {formatDateWindow(payload.evidence.from_date, payload.evidence.to_date)}
+                  {modeLabel(payload.resolved_mode)} scope • {payload.evidence ? formatDateWindow(payload.evidence.from_date, payload.evidence.to_date) : "No date range"}
                 </p>
               </div>
 
@@ -909,8 +909,8 @@ function LegacyAnswerView({
             <span className="rounded-full border border-[hsl(var(--brand-accent)/0.16)] bg-[hsl(var(--brand-accent-ghost)/0.84)] px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em] text-[hsl(var(--brand-accent))]">
               {modeLabel(payload.resolved_mode)} scope
             </span>
-            <span className={cn("rounded-full border px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em]", confidenceToneClass(payload.evidence.system_confidence))}>
-              {formatEvidenceConfidence(payload.evidence.system_confidence)}
+            <span className={cn("rounded-full border px-3 py-1 text-[10px] font-ui uppercase tracking-[0.16em]", confidenceToneClass(payload.evidence?.system_confidence))}>
+              {formatEvidenceConfidence(payload.evidence?.system_confidence ?? "low")}
             </span>
           </div>
           <h3 className="type-display-section break-words text-[clamp(2rem,2.3vw+1.1rem,3.2rem)] leading-[0.98] tracking-tight [overflow-wrap:anywhere]">
@@ -920,7 +920,7 @@ function LegacyAnswerView({
             {payload.executive_answer}
           </p>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {payload.kpis.map((kpi) => (
+            {(payload.kpis || []).map((kpi) => (
               <div key={kpi.label} className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-3">
                 <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">{kpi.label}</p>
                 <p className="mt-2 font-mono text-[1.05rem] font-semibold tracking-tight text-foreground" title={kpi.value}>
