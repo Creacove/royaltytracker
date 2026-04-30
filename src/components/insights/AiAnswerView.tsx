@@ -28,6 +28,19 @@ function toAssistantLabel(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function meaningfulRecommendationItems(items: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const record = item as Record<string, unknown>;
+    const title = typeof record.title === "string" ? record.title.trim() : "";
+    const action = typeof record.action === "string" ? record.action.trim() : "";
+    const rationale = typeof record.rationale === "string" ? record.rationale.trim() : "";
+    const summary = typeof record.summary === "string" ? record.summary.trim() : "";
+    return title || action || rationale || summary ? [record] : [];
+  });
+}
+
 function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBlock[] {
   const blocks: AiInsightsAnswerBlock[] = [];
 
@@ -71,7 +84,8 @@ function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBloc
     });
   }
 
-  if (Array.isArray(payload.recommended_actions) && payload.recommended_actions.length > 0) {
+  const recommendationItems = meaningfulRecommendationItems(payload.recommended_actions);
+  if (recommendationItems.length > 0) {
     blocks.push({
       id: "fallback-recommendations",
       type: "recommendations",
@@ -79,7 +93,7 @@ function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBloc
       source: "workspace_data",
       title: "Recommendations",
       payload: {
-        items: payload.recommended_actions,
+        items: recommendationItems,
       },
     });
   }
@@ -127,9 +141,8 @@ function formatValue(value: unknown): string {
 
 function renderSupportBlock(block: AiInsightsAnswerBlock) {
   if (block.type === "recommendations") {
-    const items = Array.isArray((block.payload as { items?: unknown }).items)
-      ? ((block.payload as { items?: unknown[] }).items ?? [])
-      : [];
+    const items = meaningfulRecommendationItems((block.payload as { items?: unknown }).items);
+    if (items.length === 0) return null;
     return (
       <Card key={block.id}>
         <CardHeader>
@@ -138,9 +151,10 @@ function renderSupportBlock(block: AiInsightsAnswerBlock) {
         <CardContent className="space-y-3">
           {items.map((item, idx) => {
             const record = (item ?? {}) as Record<string, unknown>;
+            const label = String(record.title ?? record.action ?? record.summary ?? "").trim();
             return (
               <div key={`${block.id}-${idx}`} className="space-y-1">
-                <p className="text-sm font-semibold">{String(record.title ?? record.action ?? `Recommendation ${idx + 1}`)}</p>
+                <p className="text-sm font-semibold">{label}</p>
                 {record.rationale ? <p className="text-sm text-muted-foreground">{String(record.rationale)}</p> : null}
               </div>
             );

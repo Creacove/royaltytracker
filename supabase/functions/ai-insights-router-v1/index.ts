@@ -183,6 +183,18 @@ function isAdaptiveCandidate(body: unknown): body is AdaptiveAnswerResponse {
   );
 }
 
+function meaningfulRecommendationItems(items: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(items)) return [];
+  return items.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const title = typeof item.title === "string" ? item.title.trim() : "";
+    const action = typeof item.action === "string" ? item.action.trim() : "";
+    const rationale = typeof item.rationale === "string" ? item.rationale.trim() : "";
+    const summary = typeof item.summary === "string" ? item.summary.trim() : "";
+    return title || action || rationale || summary ? [item] : [];
+  });
+}
+
 function isSingleWriterEnabled(): boolean {
   return Deno.env.get("AI_INSIGHTS_SINGLE_WRITER") !== "false";
 }
@@ -785,7 +797,7 @@ function buildAdaptiveBlocks(body: AdaptiveAnswerResponse): Array<Record<string,
     });
   }
 
-  const recommendationItems = Array.isArray(body.recommended_actions) ? body.recommended_actions : [];
+  const recommendationItems = meaningfulRecommendationItems(body.recommended_actions);
   if (recommendationItems.length > 0) {
     blocks.push({
       id: "recommendations",
@@ -905,9 +917,7 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
     visual: displayVisual,
     executive_answer: normalizedBody.executive_answer,
     why_this_matters: normalizedBody.why_this_matters,
-    recommended_actions: Array.isArray(normalizedBody.recommended_actions)
-      ? normalizedBody.recommended_actions as Array<Record<string, unknown>>
-      : [],
+    recommended_actions: meaningfulRecommendationItems(normalizedBody.recommended_actions),
   };
   const answer_blocks = buildAdaptiveBlocks(enrichedBody);
   const evidence_map: Record<string, "workspace_data" | "external"> = {};
@@ -1043,7 +1053,7 @@ function buildAiFinalWriterPassThroughResponse(params: {
     visual: params.visual,
     actions: params.actions,
     follow_up_questions: params.followUps,
-    recommended_actions: Array.isArray(assistantPayload.recommended_actions) ? assistantPayload.recommended_actions : [],
+    recommended_actions: meaningfulRecommendationItems(assistantPayload.recommended_actions),
     synthesis_source: "ai_final_writer",
     quality_outcome: assistantPayload.quality_outcome ?? undefined,
     resolved_scope: assistantPayload.resolved_scope ?? undefined,

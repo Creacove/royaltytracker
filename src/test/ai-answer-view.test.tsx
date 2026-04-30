@@ -85,6 +85,38 @@ describe("AiAnswerView", () => {
     expect(screen.queryByText("Evidence Table")).not.toBeInTheDocument();
   });
 
+  it("does not render placeholder recommendation cards for empty recommendation items", () => {
+    render(
+      <AiAnswerView
+        payload={samplePayload({
+          recommended_actions: [{}, { title: "" } as any, { action: "   " } as any],
+          answer_blocks: [
+            {
+              id: "recommendations",
+              type: "recommendations",
+              priority: 5,
+              source: "workspace_data",
+              title: "Recommendations",
+              payload: { items: [{}, { title: "" }, { action: "   " }] },
+            },
+          ],
+          render_hints: {
+            layout: "prose_first",
+            density: "expanded",
+            visual_preference: "none",
+            show_confidence_badges: true,
+            evidence_visibility: "collapsed",
+            visible_artifact_ids: ["recommendations"],
+          } as any,
+        })}
+        onUseQuestion={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Recommendations")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recommendation 1")).not.toBeInTheDocument();
+  });
+
   it("keeps answer sections out of the main view and groups evidence rows by job", () => {
     render(
       <AiAnswerView

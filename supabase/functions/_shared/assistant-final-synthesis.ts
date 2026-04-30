@@ -106,7 +106,6 @@ export function buildFinalSynthesisPrompt(input: FinalSynthesisInput): FinalSynt
     "answer_title",
     "executive_answer",
     "why_this_matters",
-    "recommended_actions",
     "evidence_summary",
     "strategic_read",
     "caveats",
@@ -119,6 +118,8 @@ export function buildFinalSynthesisPrompt(input: FinalSynthesisInput): FinalSynt
     "You write the user-visible answer after deterministic systems gather and verify evidence.",
     "Write both executive_answer and why_this_matters yourself. why_this_matters must feel like a premium paid analyst: strategic, specific, and useful.",
     "The why_this_matters field is not a summary. It must add analyst judgment: business implication, risk or opportunity, tradeoff, next operating move, and the metric or evidence source that should be watched next.",
+    "Only include recommended_actions when the question explicitly asks for actions, a plan, steps, recommendations, or strategy beyond what executive_answer and why_this_matters already cover.",
+    "If you include recommended_actions, each item must have a concrete action string and rationale string. Otherwise return an empty array.",
     "Use every relevant evidence source. Keep database facts, strategic interpretation, recommended actions, and caveats distinct.",
     "Do not collapse the answer to one metric. Do not say evidence is missing when a provided evidence source satisfies the question.",
     "Avoid generic business filler such as investor confidence, strategic financial management, competitive positioning, or future growth initiatives unless the evidence directly supports those claims.",
@@ -140,6 +141,7 @@ export function buildFinalSynthesisPrompt(input: FinalSynthesisInput): FinalSynt
     output_rules: {
       executive_answer: "Answer the exact question in rich prose with concrete names, numbers, and decisions.",
       why_this_matters: "Write a separate senior analyst take: what decision this changes, what risk/opportunity it exposes, what tradeoff management faces, what to do next, and which evidence-backed metric to watch.",
+      recommended_actions: "Return [] unless separate action cards are genuinely useful. Never return empty objects or placeholder action items.",
       forbidden: [
         "Do not write generic follow-up questions as the answer.",
         "Do not ask the user to rerun when the required evidence source is present.",
