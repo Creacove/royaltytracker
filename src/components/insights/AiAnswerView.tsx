@@ -71,7 +71,7 @@ function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBloc
     });
   }
 
-  if ((payload.recommendations?.length ?? 0) > 0) {
+  if (Array.isArray(payload.recommended_actions) && payload.recommended_actions.length > 0) {
     blocks.push({
       id: "fallback-recommendations",
       type: "recommendations",
@@ -79,7 +79,7 @@ function toFallbackBlocks(payload: AiInsightsTurnResponse): AiInsightsAnswerBloc
       source: "workspace_data",
       title: "Recommendations",
       payload: {
-        items: payload.recommendations,
+        items: payload.recommended_actions,
       },
     });
   }

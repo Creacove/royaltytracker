@@ -67,6 +67,7 @@ type TrackAssistantTurnResponse = {
     provenance?: string[];
   };
   follow_up_questions?: string[];
+  recommended_actions?: Array<Record<string, unknown>>;
   quality_outcome?: "pass" | "clarify" | "constrained";
   resolved_scope?: Record<string, unknown>;
   plan_trace?: Record<string, unknown>;
@@ -135,6 +136,7 @@ type AdaptiveAnswerResponse = {
   };
   kpis: Array<{ label: string; value: string }>;
   recommendations?: Array<Record<string, unknown>>;
+  recommended_actions?: Array<Record<string, unknown>>;
   external_context?: {
     summary?: string;
     advisory_take?: string;
@@ -179,6 +181,10 @@ function isAdaptiveCandidate(body: unknown): body is AdaptiveAnswerResponse {
     isRecord(body.visual) &&
     Array.isArray(body.kpis)
   );
+}
+
+function isSingleWriterEnabled(): boolean {
+  return Deno.env.get("AI_INSIGHTS_SINGLE_WRITER") !== "false";
 }
 
 function detectPersonaFromText(text: string): AdaptivePersona {
@@ -779,7 +785,7 @@ function buildAdaptiveBlocks(body: AdaptiveAnswerResponse): Array<Record<string,
     });
   }
 
-  const recommendationItems = Array.isArray(body.recommendations) ? body.recommendations : [];
+  const recommendationItems = Array.isArray(body.recommended_actions) ? body.recommended_actions : [];
   if (recommendationItems.length > 0) {
     blocks.push({
       id: "recommendations",
@@ -891,25 +897,7 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
   const answerTextForPersona = `${body.answer_title ?? ""} ${body.executive_answer} ${body.why_this_matters}`;
   const detected_intent = detectIntentFromBody(body);
   const detected_persona = detectPersonaFromText(answerTextForPersona);
-  const normalizedBody: AdaptiveAnswerResponse = (() => {
-    const existing = Array.isArray(body.recommendations) ? body.recommendations : [];
-    if (existing.length > 0) return body;
-    const needsDecisionGuidance =
-      detected_intent === "catalog_strategy" ||
-      detected_intent === "touring_live" ||
-      detected_intent === "audience_marketing" ||
-      detected_intent === "rights_revenue_risk";
-    if (!needsDecisionGuidance) return body;
-    return {
-      ...body,
-      recommendations: [{
-        action: "Choose one priority move and execute it for 14 days with explicit success thresholds.",
-        rationale: body.why_this_matters,
-        impact: "Transforms analysis into a testable decision path.",
-        risk: "If thresholds are not defined upfront, results become non-actionable.",
-      }],
-    };
-  })();
+  const normalizedBody: AdaptiveAnswerResponse = body;
   const displayVisual = decorateVisualForDisplay(normalizedBody.visual);
   const enrichedBody: AdaptiveAnswerResponse = {
     ...normalizedBody,
@@ -917,8 +905,8 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
     visual: displayVisual,
     executive_answer: normalizedBody.executive_answer,
     why_this_matters: normalizedBody.why_this_matters,
-    recommendations: Array.isArray(normalizedBody.recommendations)
-      ? normalizedBody.recommendations as Array<Record<string, unknown>>
+    recommended_actions: Array.isArray(normalizedBody.recommended_actions)
+      ? normalizedBody.recommended_actions as Array<Record<string, unknown>>
       : [],
   };
   const answer_blocks = buildAdaptiveBlocks(enrichedBody);
@@ -935,7 +923,7 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
         : answerTextForPersona) || answerTextForPersona,
     evidence: body.evidence,
     visual: body.visual,
-    recommendations: Array.isArray(enrichedBody.recommendations) ? enrichedBody.recommendations : [],
+    recommendations: Array.isArray(enrichedBody.recommended_actions) ? enrichedBody.recommended_actions : [],
     citations: Array.isArray(enrichedBody.citations) ? enrichedBody.citations : [],
     unknowns: Array.isArray(body.unknowns) ? body.unknowns.filter((item): item is string => typeof item === "string") : [],
     conflicts: Array.isArray(body.claims) ? body.claims : [],
@@ -991,7 +979,7 @@ function withAdaptiveAnswer(body: AdaptiveAnswerResponse): AdaptiveAnswerRespons
     answer_blocks,
     render_hints,
     evidence_map,
-    recommendations: recommendations as Array<Record<string, unknown>>,
+    recommended_actions: recommendations as Array<Record<string, unknown>>,
     citations: Array.isArray(enrichedBody.citations) ? enrichedBody.citations : [],
     unknowns,
   };
@@ -1014,6 +1002,70 @@ function usesAiFinalWriter(payload: Record<string, unknown> | null | undefined):
   const diagnostics = payload.diagnostics;
   return Boolean(diagnostics && typeof diagnostics === "object" && !Array.isArray(diagnostics) &&
     (diagnostics as Record<string, unknown>).synthesis_source === "ai_final_writer");
+}
+
+function buildAiFinalWriterPassThroughResponse(params: {
+  assistantPayload: TrackAssistantTurnResponse;
+  body: RequestPayload;
+  mode: AiInsightsMode;
+  resolvedEntities: EntityContext;
+  visual: AdaptiveAnswerResponse["visual"];
+  kpis: Array<{ label: string; value: string }>;
+  rowCount: number;
+  fromDate: string;
+  toDate: string;
+  provenanceFallback: string;
+  systemConfidence?: "high" | "medium" | "low";
+  actions: AdaptiveAnswerResponse["actions"];
+  followUps: string[];
+  citations?: Array<Record<string, unknown>>;
+  extraDiagnostics?: Record<string, unknown>;
+}): AdaptiveAnswerResponse {
+  const assistantPayload = params.assistantPayload;
+  return {
+    conversation_id: assistantPayload.conversation_id ?? params.body.conversation_id ?? crypto.randomUUID(),
+    resolved_mode: params.mode,
+    resolved_entities: params.resolvedEntities,
+    answer_title:
+      (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
+      (params.mode === "track" ? "Track AI answer" : params.mode === "artist" ? "Artist AI answer" : "Workspace AI answer"),
+    executive_answer: assistantPayload.answer_text ?? "",
+    why_this_matters: assistantPayload.why_this_matters ?? "",
+    evidence: {
+      row_count: params.rowCount,
+      scanned_rows: params.rowCount,
+      from_date: assistantPayload.evidence?.from_date ?? params.fromDate,
+      to_date: assistantPayload.evidence?.to_date ?? params.toDate,
+      provenance: Array.isArray(assistantPayload.evidence?.provenance) ? assistantPayload.evidence.provenance : [params.provenanceFallback],
+      system_confidence: params.systemConfidence ?? (params.rowCount > 0 ? "high" : "low"),
+    },
+    kpis: params.kpis,
+    visual: params.visual,
+    actions: params.actions,
+    follow_up_questions: params.followUps,
+    recommended_actions: Array.isArray(assistantPayload.recommended_actions) ? assistantPayload.recommended_actions : [],
+    synthesis_source: "ai_final_writer",
+    quality_outcome: assistantPayload.quality_outcome ?? undefined,
+    resolved_scope: assistantPayload.resolved_scope ?? undefined,
+    plan_trace: assistantPayload.plan_trace ?? undefined,
+    claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
+    citations: params.citations ?? (Array.isArray(assistantPayload.citations) ? assistantPayload.citations : undefined),
+    answer_blocks: undefined,
+    answer_sections: Array.isArray(assistantPayload.answer_sections) ? assistantPayload.answer_sections : undefined,
+    evidence_bundle: assistantPayload.evidence_bundle ?? undefined,
+    job_diagnostics: Array.isArray(assistantPayload.job_diagnostics) ? assistantPayload.job_diagnostics : undefined,
+    render_hints: assistantPayload.render_hints ?? undefined,
+    evidence_map: assistantPayload.evidence_map ?? undefined,
+    unknowns: Array.isArray(assistantPayload.unknowns) ? assistantPayload.unknowns : undefined,
+    clarification: assistantPayload.clarification ?? undefined,
+    diagnostics: {
+      ...(assistantPayload.diagnostics ?? {}),
+      ...(params.extraDiagnostics ?? {}),
+      synthesis_source: "ai_final_writer",
+      single_writer_enabled: isSingleWriterEnabled(),
+      single_writer_preserved: true,
+    },
+  };
 }
 
 function asString(value: unknown, maxLen = 3000): string | null {
@@ -3547,6 +3599,27 @@ serve(async (req) => {
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
       const visual = normalizedVisualForDecision(toAiVisual(assistantPayload));
+      if (isSingleWriterEnabled() && usesAiFinalWriter(assistantPayload as Record<string, unknown>)) {
+        return jsonResponse(buildAiFinalWriterPassThroughResponse({
+          assistantPayload,
+          body,
+          mode: "artist",
+          resolvedEntities,
+          visual,
+          kpis,
+          rowCount,
+          fromDate,
+          toDate,
+          provenanceFallback: "run_artist_chat_sql_v1",
+          systemConfidence: rowCount > 0 ? "high" : "low",
+          actions: [
+            { label: "Open Artist Transactions", href: `/transactions?q=${encodeURIComponent(resolvedEntities.artist_name ?? entityContext.artist_name ?? "")}`, kind: "primary" },
+            { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+            { label: "Open Statements", href: "/reports", kind: "ghost" },
+          ],
+          followUps,
+        }));
+      }
       const diag = (assistantPayload.diagnostics ?? {}) as Record<string, unknown>;
       const diagNotesRaw = Array.isArray(diag.data_notes) ? diag.data_notes : [];
       const trendQuestion = isTrendComparisonQuestion(question);
@@ -3659,8 +3732,7 @@ serve(async (req) => {
         return out;
       })();
       const isStrategyQuestion = isStrategyQuestionText(question);
-      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
-      const qualityOutcome = shouldConstrain || (!aiFinalWriter && answerPolicy.quality_outcome === "constrained")
+      const qualityOutcome = shouldConstrain || answerPolicy.quality_outcome === "constrained"
         ? "constrained"
         : (assistantPayload.quality_outcome ?? undefined);
       const requestedTopN = parseRequestedTopN(question);
@@ -3705,17 +3777,13 @@ serve(async (req) => {
         intentFamily,
       });
       const executiveOut = [
-        aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
-          ? assistantPayload.answer_text
-          : (tourBrief?.executive ?? answerPolicy.executive_answer),
+        tourBrief?.executive ?? answerPolicy.executive_answer,
         topCountCaveat,
         largestChange,
       ]
         .filter(Boolean)
         .join(" ");
-      const whyOut = aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
-        ? assistantPayload.why_this_matters
-        : (tourBrief?.why ?? answerPolicy.why_this_matters);
+      const whyOut = tourBrief?.why ?? answerPolicy.why_this_matters;
       const recommendations = synthesizeAdvisorRecommendations({
         recommendations: baseRecommendations,
         theme: recommendationTheme,
@@ -3766,9 +3834,9 @@ serve(async (req) => {
           { label: "Open Statements", href: "/reports", kind: "ghost" },
         ],
         follow_up_questions: followUpsFinal,
-        recommendations,
+        recommended_actions: recommendations,
         external_context: externalContext ?? (shouldEnrich ? { status: "unavailable" } : undefined),
-        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+        synthesis_source: "deterministic_policy",
         quality_outcome: qualityOutcome,
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
@@ -3793,7 +3861,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
-          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+          synthesis_source: "deterministic_policy",
         },
       });
     }
@@ -3927,6 +3995,27 @@ serve(async (req) => {
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
       const visual = toAiVisual(assistantPayload);
+      if (isSingleWriterEnabled() && usesAiFinalWriter(assistantPayload as Record<string, unknown>)) {
+        return jsonResponse(buildAiFinalWriterPassThroughResponse({
+          assistantPayload,
+          body,
+          mode: "track",
+          resolvedEntities,
+          visual,
+          kpis,
+          rowCount,
+          fromDate,
+          toDate,
+          provenanceFallback: "run_track_chat_sql_v2",
+          systemConfidence: rowCount > 0 ? "high" : "low",
+          actions: [
+            { label: "Open Track Insights", href: `/insights/${encodeURIComponent(entityContext.track_key)}?from=${fromDate}&to=${toDate}&track_key=${encodeURIComponent(entityContext.track_key)}`, kind: "primary" },
+            { label: "Open Transactions", href: `/transactions?track_key=${encodeURIComponent(entityContext.track_key)}`, kind: "secondary" },
+            { label: "Open Reviews", href: "/review-queue", kind: "ghost" },
+          ],
+          followUps,
+        }));
+      }
       const answerPolicy = buildDecisionGradeAnswer({
         question,
         mode: "track",
@@ -3946,8 +4035,6 @@ serve(async (req) => {
         qualityOutcome: assistantPayload.quality_outcome,
         diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
       });
-      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
-
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
         resolved_mode: "track",
@@ -3955,12 +4042,8 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Track AI answer",
-        executive_answer: aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
-          ? assistantPayload.answer_text
-          : answerPolicy.executive_answer,
-        why_this_matters: aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
-          ? assistantPayload.why_this_matters
-          : answerPolicy.why_this_matters,
+        executive_answer: answerPolicy.executive_answer,
+        why_this_matters: answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -3984,8 +4067,8 @@ serve(async (req) => {
               "What should I review first to improve payout confidence?",
               "Show top leakage patterns for this track.",
             ],
-        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
-        quality_outcome: !aiFinalWriter && answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
+        synthesis_source: "deterministic_policy",
+        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -4005,7 +4088,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
-          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+          synthesis_source: "deterministic_policy",
         },
       });
     }
@@ -4190,6 +4273,27 @@ serve(async (req) => {
       const kpis = normalizeAssistantKpis(assistantPayload.kpis);
       const followUps = normalizeAssistantFollowUps(assistantPayload.follow_up_questions);
       const visual = toAiVisual(assistantPayload);
+      if (isSingleWriterEnabled() && usesAiFinalWriter(assistantPayload as Record<string, unknown>)) {
+        return jsonResponse(buildAiFinalWriterPassThroughResponse({
+          assistantPayload,
+          body,
+          mode: "workspace-general",
+          resolvedEntities,
+          visual,
+          kpis,
+          rowCount,
+          fromDate,
+          toDate,
+          provenanceFallback: "run_workspace_chat_sql_v1",
+          systemConfidence: rowCount > 0 ? "high" : "low",
+          actions: [
+            { label: "Open Transactions", href: "/transactions", kind: "primary" },
+            { label: "Open Reviews", href: "/review-queue", kind: "secondary" },
+            { label: "Open Statements", href: "/reports", kind: "ghost" },
+          ],
+          followUps,
+        }));
+      }
       const answerPolicy = buildDecisionGradeAnswer({
         question,
         mode: "workspace-general",
@@ -4209,8 +4313,6 @@ serve(async (req) => {
         qualityOutcome: assistantPayload.quality_outcome,
         diagnostics: assistantPayload.diagnostics as Record<string, unknown> | undefined,
       });
-      const aiFinalWriter = usesAiFinalWriter(assistantPayload as Record<string, unknown>);
-
       return jsonResponse({
         conversation_id: assistantPayload.conversation_id ?? body.conversation_id ?? crypto.randomUUID(),
         resolved_mode: "workspace-general",
@@ -4218,12 +4320,8 @@ serve(async (req) => {
         answer_title:
           (isNonEmptyString(assistantPayload.answer_title) && assistantPayload.answer_title) ||
           "Workspace AI answer",
-        executive_answer: aiFinalWriter && isNonEmptyString(assistantPayload.answer_text)
-          ? assistantPayload.answer_text
-          : answerPolicy.executive_answer,
-        why_this_matters: aiFinalWriter && isNonEmptyString(assistantPayload.why_this_matters)
-          ? assistantPayload.why_this_matters
-          : answerPolicy.why_this_matters,
+        executive_answer: answerPolicy.executive_answer,
+        why_this_matters: answerPolicy.why_this_matters,
         evidence: {
           row_count: rowCount,
           scanned_rows: rowCount,
@@ -4247,8 +4345,8 @@ serve(async (req) => {
               "Where are the biggest quality blockers across the workspace?",
               "Which tracks combine high opportunity with high risk?",
             ],
-        synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
-        quality_outcome: !aiFinalWriter && answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
+        synthesis_source: "deterministic_policy",
+        quality_outcome: answerPolicy.quality_outcome === "constrained" ? "constrained" : (assistantPayload.quality_outcome ?? undefined),
         resolved_scope: assistantPayload.resolved_scope ?? undefined,
         plan_trace: assistantPayload.plan_trace ?? undefined,
         claims: Array.isArray(assistantPayload.claims) ? assistantPayload.claims : undefined,
@@ -4268,7 +4366,7 @@ serve(async (req) => {
             missing_requirements: answerPolicy.missing_requirements,
             external_context_allowed: answerPolicy.external_context_allowed,
           },
-          synthesis_source: aiFinalWriter ? "ai_final_writer" : "deterministic_policy",
+          synthesis_source: "deterministic_policy",
         },
       });
     }

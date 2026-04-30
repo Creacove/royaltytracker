@@ -35,7 +35,7 @@ function samplePayload(overrides: Partial<AiInsightsTurnResponse> = {}): AiInsig
       ],
     },
     kpis: [{ label: "Net revenue", value: "$1,800" }],
-    recommendations: [
+    recommended_actions: [
       {
         title: "Lean into Germany",
         rationale: "It is driving the strongest recent lift.",
