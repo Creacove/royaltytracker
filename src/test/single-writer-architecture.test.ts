@@ -26,6 +26,13 @@ describe("single-writer AI insights architecture", () => {
     expect(preservationIndex).toBeLessThan(deterministicPolicyIndex);
   });
 
+  it("does not allow the model to override successful final synthesis source", () => {
+    const runtime = readRepoFile("supabase/functions/_shared/assistant-runtime.ts");
+
+    expect(runtime).toMatch(/const synthesisSource = synthesized\s*\?\s*"ai_final_writer"\s*:\s*"deterministic_fallback"/);
+    expect(runtime).not.toMatch(/asString\(synthesized\?\.synthesis_source\)/);
+  });
+
   it("keeps UI display-only by rendering recommended_actions without creating copied recommendations", () => {
     const view = readRepoFile("src/components/insights/AiAnswerView.tsx");
 

@@ -1409,7 +1409,7 @@ export function serveAssistantRuntime(config: AssistantRuntimeConfig) {
         answer: { executive_answer: answerText, why_this_matters: whyThisMatters },
         evidenceSlots: evidenceAnswerPack.evidence_slots,
       });
-      const synthesisSource = asString(synthesized?.synthesis_source) ?? (synthesized ? "ai_final_writer" : "deterministic_fallback");
+      const synthesisSource = synthesized ? "ai_final_writer" : "deterministic_fallback";
       const kpis = sanitizeKpis(synthesized?.kpis);
       const claims = buildClaimsFromRows(columns, rows.slice(0, 25), config.sqlSourceRef);
       const unknowns = unique([...quality.unknowns, ...sidecarCaveats]);
