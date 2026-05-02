@@ -1,60 +1,76 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, isValid } from "date-fns";
-import { FileCheck2, FileText, Search, ShieldCheck, Split, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  Archive,
+  CheckCircle2,
+  FileCheck2,
+  FileText,
+  FolderCheck,
+  GitCompare,
+  Layers3,
+  Search,
+  ShieldCheck,
+  Split,
+  Users,
+} from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyStateBlock, KpiStrip, PageHeader } from "@/components/layout";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-
-type SplitClaim = {
-  id: string;
-  source_report_id: string | null;
-  source_row_id: string | null;
-  work_id: string | null;
-  party_id: string | null;
-  work_title: string | null;
-  iswc: string | null;
-  source_work_code: string | null;
-  party_name: string | null;
-  ipi_number: string | null;
-  source_role: string | null;
-  source_rights_code: string | null;
-  source_rights_label: string | null;
-  source_language: string | null;
-  canonical_rights_stream: string | null;
-  share_pct: number | null;
-  territory_scope: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  confidence: number | null;
-  review_status: string | null;
-  managed_party_match: boolean | null;
-  raw_payload: unknown;
-  created_at: string | null;
-};
-
-type RightsDocument = {
-  id: string;
-  cmo_name: string | null;
-  file_name: string | null;
-  status: string | null;
-  report_period: string | null;
-  created_at: string | null;
-  document_kind: string | null;
-  business_side: string | null;
-  parser_lane: string | null;
-};
+import {
+  buildSplitCases,
+  splitCaseMatches,
+  splitCaseStatusLabel,
+  type RightsDocumentForCase,
+  type SplitCase,
+  type SplitClaimForCase,
+  type SplitParty,
+  type SplitWork,
+} from "@/lib/split-cases";
 
 const claimSelect = [
+  "id",
+  "source_report_id",
+  "source_row_id",
+  "work_id",
+  "party_id",
+  "work_title",
+  "iswc",
+  "source_work_code",
+  "party_name",
+  "ipi_number",
+  "source_role",
+  "source_rights_code",
+  "source_rights_label",
+  "source_language",
+  "canonical_rights_stream",
+  "share_pct",
+  "territory_scope",
+  "valid_from",
+  "valid_to",
+  "confidence",
+  "review_status",
+  "managed_party_match",
+  "raw_payload",
+  "created_at",
+  "split_group_key",
+  "split_fingerprint",
+  "dedupe_status",
+  "matched_existing_rights_position_id",
+  "review_case_status",
+  "auto_applied_at",
+].join(",");
+
+const legacyClaimSelect = [
   "id",
   "source_report_id",
   "source_row_id",
@@ -102,9 +118,10 @@ const formatLabel = (value: string | null | undefined) => {
     .join(" ");
 };
 
-const formatShare = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(Number(value))) return "-";
-  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}%`;
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  return isValid(date) ? format(date, "MMM d, yyyy") : "-";
 };
 
 const formatConfidence = (value: number | null | undefined) => {
@@ -113,117 +130,199 @@ const formatConfidence = (value: number | null | undefined) => {
   return `${Math.round(normalized)}%`;
 };
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  return isValid(date) ? format(date, "MMM d, yyyy") : "-";
+const formatShare = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}%`;
 };
 
-const statusTone = (status: string | null | undefined) => {
-  switch ((status ?? "").toLowerCase()) {
-    case "approved":
-      return "border-[hsl(var(--tone-success)/0.2)] bg-[hsl(var(--tone-success)/0.08)] text-[hsl(var(--tone-success))]";
-    case "rejected":
-      return "border-[hsl(var(--tone-critical)/0.2)] bg-[hsl(var(--tone-critical)/0.08)] text-[hsl(var(--tone-critical))]";
-    case "pending":
+const statusTone = (status: SplitCase["status"] | SplitWork["status"]) => {
+  switch (status) {
+    case "already_known":
+    case "known":
+      return "border-[hsl(var(--tone-success)/0.22)] bg-[hsl(var(--tone-success)/0.08)] text-[hsl(var(--tone-success))]";
+    case "ready_to_approve":
+    case "new":
+      return "border-[hsl(var(--brand-accent)/0.22)] bg-[hsl(var(--brand-accent-ghost)/0.56)] text-foreground";
+    case "conflict":
+      return "border-[hsl(var(--tone-critical)/0.22)] bg-[hsl(var(--tone-critical)/0.08)] text-[hsl(var(--tone-critical))]";
+    case "archived":
+      return "border-[hsl(var(--border)/0.22)] bg-[hsl(var(--muted)/0.35)] text-muted-foreground";
+    case "needs_attention":
     default:
-      return "border-[hsl(var(--tone-warning)/0.2)] bg-[hsl(var(--tone-warning)/0.1)] text-[hsl(var(--tone-warning))]";
+      return "border-[hsl(var(--tone-warning)/0.22)] bg-[hsl(var(--tone-warning)/0.1)] text-[hsl(var(--tone-warning))]";
   }
 };
+
+const streamColumns = (work: SplitWork) =>
+  Array.from(
+    new Set([
+      "performance",
+      "mechanical",
+      "phonographic",
+      ...work.parties.flatMap((party) => Object.keys(party.shares)),
+    ]),
+  );
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.72)] px-3 py-2">
+      <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function CaseStatusBadge({ status }: { status: SplitCase["status"] | SplitWork["status"] }) {
+  return (
+    <Badge variant="outline" className={cn("w-fit", statusTone(status))}>
+      {splitCaseStatusLabel(status)}
+    </Badge>
+  );
+}
+
+function ShareInput({
+  claim,
+  stream,
+  party,
+  value,
+  pending,
+  onChange,
+}: {
+  claim: SplitClaimForCase | undefined;
+  stream: string;
+  party: SplitParty;
+  value: number | null | undefined;
+  pending: boolean;
+  onChange: (claimId: string, value: string) => void;
+}) {
+  if (!claim) {
+    return <span className="text-xs text-muted-foreground">-</span>;
+  }
+  return (
+    <Input
+      type="number"
+      min="0"
+      max="100"
+      step="0.0001"
+      value={value ?? ""}
+      disabled={pending}
+      aria-label={`${party.name} ${stream} share`}
+      onChange={(event) => onChange(claim.id, event.target.value)}
+      className="h-9 w-full min-w-0 text-right font-mono text-sm"
+    />
+  );
+}
 
 export default function RightsSplits() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [streamFilter, setStreamFilter] = useState("all");
-  const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
+  const [selectedWorkKey, setSelectedWorkKey] = useState<string | null>(null);
+  const [shareDrafts, setShareDrafts] = useState<Record<string, string>>({});
 
   const { data: claims = [], isLoading: claimsLoading } = useQuery({
     queryKey: ["rights-splits-claims"],
-    queryFn: async (): Promise<SplitClaim[]> => {
-      const { data, error } = await (supabase as any)
+    queryFn: async (): Promise<SplitClaimForCase[]> => {
+      const query = (select: string) => (supabase as any)
         .from("catalog_split_claims")
-        .select(claimSelect)
+        .select(select)
         .order("created_at", { ascending: false })
-        .limit(1000);
+        .limit(5000);
+
+      const { data, error } = await query(claimSelect);
+      if (error && String(error.message ?? "").includes("split_group_key")) {
+        const fallback = await query(legacyClaimSelect);
+        if (fallback.error) throw fallback.error;
+        return (fallback.data ?? []) as SplitClaimForCase[];
+      }
       if (error) throw error;
-      return (data ?? []) as SplitClaim[];
+      return (data ?? []) as SplitClaimForCase[];
     },
   });
 
   const { data: reports = [] } = useQuery({
     queryKey: ["rights-splits-documents"],
-    queryFn: async (): Promise<RightsDocument[]> => {
+    queryFn: async (): Promise<RightsDocumentForCase[]> => {
       const { data, error } = await (supabase as any)
         .from("cmo_reports")
         .select(reportSelect)
         .order("created_at", { ascending: false })
         .limit(500);
       if (error) throw error;
-      return (data ?? []) as RightsDocument[];
+      return (data ?? []) as RightsDocumentForCase[];
     },
   });
 
-  const reportById = useMemo(() => {
-    const map = new Map<string, RightsDocument>();
-    for (const report of reports) map.set(report.id, report);
-    return map;
-  }, [reports]);
-
-  const rightsDocuments = useMemo(() => {
-    const sourceReportIds = new Set(claims.map((claim) => claim.source_report_id).filter(Boolean));
-    return reports.filter((report) => {
-      const kind = report.document_kind ?? "";
-      return (
-        sourceReportIds.has(report.id) ||
-        ["rights_catalog", "split_sheet", "contract_summary"].includes(kind) ||
-        report.business_side === "publishing" ||
-        report.parser_lane === "rights"
-      );
-    });
-  }, [claims, reports]);
-
-  const streamOptions = useMemo(
-    () =>
-      Array.from(new Set(claims.map((claim) => claim.canonical_rights_stream).filter(Boolean) as string[])).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [claims],
+  const splitCases = useMemo(() => buildSplitCases(claims, reports), [claims, reports]);
+  const filteredCases = useMemo(
+    () => splitCases.filter((caseItem) => splitCaseMatches(caseItem, search, statusFilter)),
+    [search, splitCases, statusFilter],
   );
 
-  const filteredClaims = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return claims.filter((claim) => {
-      const matchesStatus = statusFilter === "all" || (claim.review_status ?? "pending") === statusFilter;
-      const matchesStream = streamFilter === "all" || claim.canonical_rights_stream === streamFilter;
-      const haystack = [
-        claim.work_title,
-        claim.party_name,
-        claim.ipi_number,
-        claim.iswc,
-        claim.source_work_code,
-        claim.source_rights_code,
-        claim.source_rights_label,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return matchesStatus && matchesStream && (!needle || haystack.includes(needle));
+  const selectedCase = useMemo(
+    () => splitCases.find((caseItem) => caseItem.id === selectedCaseId) ?? filteredCases[0] ?? splitCases[0] ?? null,
+    [filteredCases, selectedCaseId, splitCases],
+  );
+  const selectedWork = useMemo(
+    () =>
+      selectedCase?.works.find((work) => work.key === selectedWorkKey) ??
+      selectedCase?.works.find((work) => work.status !== "known") ??
+      selectedCase?.works[0] ??
+      null,
+    [selectedCase, selectedWorkKey],
+  );
+
+  useEffect(() => {
+    if (!selectedCase) {
+      setSelectedCaseId(null);
+      return;
+    }
+    if (selectedCaseId !== selectedCase.id) setSelectedCaseId(selectedCase.id);
+  }, [selectedCase, selectedCaseId]);
+
+  useEffect(() => {
+    if (!selectedWork) {
+      setSelectedWorkKey(null);
+      return;
+    }
+    if (selectedWorkKey !== selectedWork.key) setSelectedWorkKey(selectedWork.key);
+  }, [selectedWork, selectedWorkKey]);
+
+  useEffect(() => {
+    const drafts: Record<string, string> = {};
+    selectedWork?.parties.forEach((party) => {
+      party.claims.forEach((claim) => {
+        drafts[claim.id] = claim.share_pct == null ? "" : String(claim.share_pct);
+      });
     });
-  }, [claims, search, statusFilter, streamFilter]);
+    setShareDrafts(drafts);
+  }, [selectedWork]);
 
-  const workCount = useMemo(() => new Set(claims.map((claim) => claim.work_id ?? claim.work_title).filter(Boolean)).size, [claims]);
-  const partyCount = useMemo(() => new Set(claims.map((claim) => claim.party_id ?? claim.party_name).filter(Boolean)).size, [claims]);
-  const pendingCount = claims.filter((claim) => (claim.review_status ?? "pending") === "pending").length;
-  const approvedCount = claims.filter((claim) => claim.review_status === "approved").length;
+  const pendingCases = splitCases.filter((caseItem) => ["ready_to_approve", "needs_attention", "conflict"].includes(caseItem.status)).length;
+  const conflictCount = splitCases.reduce((sum, caseItem) => sum + caseItem.conflictCount, 0);
+  const autoKnownCount = splitCases.reduce((sum, caseItem) => sum + caseItem.duplicateCount, 0);
+  const approvedWorksCount = splitCases.reduce((sum, caseItem) => sum + caseItem.works.filter((work) => work.status === "known").length, 0);
 
-  const decideClaimMutation = useMutation({
-    mutationFn: async ({ claimId, action }: { claimId: string; action: "approve" | "reject" }) => {
-      setActiveClaimId(claimId);
+  const decideCaseMutation = useMutation({
+    mutationFn: async ({
+      caseItem,
+      action,
+      workKeys,
+    }: {
+      caseItem: SplitCase;
+      action: "approve" | "reject" | "keep_existing" | "replace_existing";
+      workKeys?: string[];
+    }) => {
+      const claimIds = workKeys && workKeys.length > 0
+        ? caseItem.works.filter((work) => workKeys.includes(work.key)).flatMap((work) => work.claimIds)
+        : caseItem.claims.map((claim) => claim.id);
       const { data, error } = await supabase.functions.invoke("submit-split-claim-decisions", {
         body: {
-          claim_ids: [claimId],
+          claim_ids: claimIds,
+          source_report_id: caseItem.reportId,
+          work_group_keys: workKeys,
           action,
         },
       });
@@ -235,27 +334,69 @@ export default function RightsSplits() {
         queryClient.invalidateQueries({ queryKey: ["rights-splits-claims"] }),
         queryClient.invalidateQueries({ queryKey: ["rights-splits-documents"] }),
         queryClient.invalidateQueries({ queryKey: ["reports"] }),
+        queryClient.invalidateQueries({ queryKey: ["report-split-claims"] }),
       ]);
       toast({
-        title: variables.action === "approve" ? "Split claim approved" : "Split claim rejected",
+        title:
+          variables.action === "approve" || variables.action === "replace_existing"
+            ? "Split case approved"
+            : variables.action === "keep_existing"
+              ? "Existing catalog rights kept"
+              : "Split case rejected",
         description:
-          variables.action === "approve"
-            ? "The claim was promoted into canonical rights positions."
-            : "The claim will stay out of canonical rights positions.",
+          variables.action === "approve" || variables.action === "replace_existing"
+            ? "The selected rights positions were promoted into the catalog."
+            : "The selected split evidence was kept out of canonical rights.",
       });
     },
     onError: (error: Error) => {
       toast({ title: "Split review failed", description: error.message, variant: "destructive" });
     },
-    onSettled: () => setActiveClaimId(null),
   });
+
+  const saveSharesMutation = useMutation({
+    mutationFn: async () => {
+      const updates = Object.entries(shareDrafts).map(([id, rawValue]) => ({
+        id,
+        share_pct: rawValue.trim() === "" ? null : Number(rawValue),
+      }));
+      for (const update of updates) {
+        const { error } = await (supabase as any)
+          .from("catalog_split_claims")
+          .update({ share_pct: update.share_pct, review_case_status: "ready_to_approve", dedupe_status: "manual" })
+          .eq("id", update.id);
+        if (error && String(error.message ?? "").includes("review_case_status")) {
+          const fallback = await (supabase as any)
+            .from("catalog_split_claims")
+            .update({ share_pct: update.share_pct })
+            .eq("id", update.id);
+          if (fallback.error) throw fallback.error;
+          continue;
+        }
+        if (error) throw error;
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["rights-splits-claims"] });
+      toast({ title: "Split shares saved", description: "The work review was updated before approval." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Could not save shares", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const activeStreams = selectedWork ? streamColumns(selectedWork) : [];
+  const cleanWorkKeys = selectedCase?.works
+    .filter((work) => work.status === "new")
+    .map((work) => work.key) ?? [];
+  const canApproveDocument = Boolean(selectedCase?.reportId && cleanWorkKeys.length > 0 && selectedCase.status !== "conflict");
 
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Rights Evidence"
+        eyebrow="Rights Intelligence"
         title="Rights & Splits"
-        subtitle="Review extracted split claims, source documents, parties, shares, and provenance before those facts are promoted into entitlement answers."
+        subtitle="Review split documents as cases: known rights are auto-recognized, clean works move in bulk, and conflicts stay isolated."
         actions={
           <Button asChild variant="quiet" className="h-10">
             <Link to="/reports">
@@ -268,207 +409,344 @@ export default function RightsSplits() {
 
       <KpiStrip
         items={[
-          { label: "Split Claims", value: claims.length.toLocaleString(), icon: <Split className="h-4 w-4" />, tone: "accent" },
-          { label: "Works", value: workCount.toLocaleString(), icon: <FileCheck2 className="h-4 w-4" /> },
-          { label: "Parties", value: partyCount.toLocaleString(), icon: <Users className="h-4 w-4" /> },
-          { label: "Pending Review", value: pendingCount.toLocaleString(), hint: `${approvedCount.toLocaleString()} approved`, tone: pendingCount > 0 ? "warning" : "success" },
+          { label: "Cases Needing Review", value: pendingCases.toLocaleString(), icon: <FolderCheck className="h-4 w-4" />, tone: pendingCases ? "warning" : "success" },
+          { label: "Conflicts", value: conflictCount.toLocaleString(), icon: <GitCompare className="h-4 w-4" />, tone: conflictCount ? "critical" : "success" },
+          { label: "Auto-Known Works", value: autoKnownCount.toLocaleString(), icon: <ShieldCheck className="h-4 w-4" /> },
+          { label: "Catalog Rights", value: approvedWorksCount.toLocaleString(), icon: <FileCheck2 className="h-4 w-4" />, tone: "accent" },
         ]}
       />
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Card className="forensic-frame surface-panel overflow-hidden rounded-[calc(var(--radius)-2px)]">
-          <CardHeader className="border-b border-[hsl(var(--border)/0.1)]">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div>
-                <CardTitle className="type-display-section text-xl">Extracted Split Claims</CardTitle>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Typed claim facts preserved from the source vocabulary and mapped into canonical rights streams.
-                </p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_150px_190px] lg:w-[620px]">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search works, parties, IPI, ISWC"
-                    className="pl-9"
-                  />
-                </div>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select value={streamFilter} onValueChange={setStreamFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Stream" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Streams</SelectItem>
-                    {streamOptions.map((stream) => (
-                      <SelectItem key={stream} value={stream}>
-                        {formatLabel(stream)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            {claimsLoading ? (
-              <div className="flex min-h-[280px] items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-              </div>
-            ) : filteredClaims.length === 0 ? (
-              <EmptyStateBlock
-                className="m-4"
-                icon={<ShieldCheck className="h-6 w-6" />}
-                title="No split claims found"
-                description="Rights and split documents will appear here after ingestion creates typed catalog split claims."
-                action={
-                  <Button asChild variant="quiet">
-                    <Link to="/reports">Upload a rights document</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>WORK</TableHead>
-                      <TableHead>PARTY</TableHead>
-                      <TableHead>ROLE</TableHead>
-                      <TableHead>SOURCE RIGHT</TableHead>
-                      <TableHead>CANONICAL STREAM</TableHead>
-                      <TableHead className="text-right">SHARE</TableHead>
-                      <TableHead>REVIEW</TableHead>
-                      <TableHead>PROVENANCE</TableHead>
-                      <TableHead className="text-right">ACTION</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredClaims.slice(0, 200).map((claim) => {
-                      const report = claim.source_report_id ? reportById.get(claim.source_report_id) : null;
-                      return (
-                        <TableRow key={claim.id}>
-                          <TableCell className="min-w-[220px]">
-                            <div className="font-medium text-foreground">{claim.work_title ?? "Untitled work"}</div>
-                            <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                              {claim.iswc ? <span>ISWC {claim.iswc}</span> : null}
-                              {claim.source_work_code ? <span>Code {claim.source_work_code}</span> : null}
-                            </div>
-                          </TableCell>
-                          <TableCell className="min-w-[210px]">
-                            <div className="font-medium text-foreground">{claim.party_name ?? "Unknown party"}</div>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                              {claim.ipi_number ? <span>IPI {claim.ipi_number}</span> : null}
-                              {claim.managed_party_match ? <Badge variant="outline">Managed</Badge> : <Badge variant="outline">External</Badge>}
-                            </div>
-                          </TableCell>
-                          <TableCell>{claim.source_role ?? "-"}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <span className="font-mono text-xs">{claim.source_rights_code ?? "-"}</span>
-                              <span className="text-xs text-muted-foreground">{claim.source_rights_label ?? claim.source_language ?? "-"}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatLabel(claim.canonical_rights_stream)}</TableCell>
-                          <TableCell className="text-right font-mono">{formatShare(claim.share_pct)}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <Badge variant="outline" className={cn("w-fit", statusTone(claim.review_status))}>
-                                {formatLabel(claim.review_status ?? "pending")}
-                              </Badge>
-                              <span className="text-[11px] text-muted-foreground">Confidence {formatConfidence(claim.confidence)}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="min-w-[190px]">
-                            <div className="text-xs text-foreground">{report?.file_name ?? "Source document"}</div>
-                            <div className="mt-1 text-[11px] text-muted-foreground">
-                              Row {claim.source_row_id ? claim.source_row_id.slice(0, 8) : "-"} - {formatDate(claim.created_at)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="min-w-[170px] text-right">
-                            {(claim.review_status ?? "pending") === "pending" ? (
-                              <div className="flex justify-end gap-2">
-                                <Button
-                                  type="button"
-                                  variant="quiet"
-                                  size="sm"
-                                  disabled={decideClaimMutation.isPending && activeClaimId === claim.id}
-                                  onClick={() => decideClaimMutation.mutate({ claimId: claim.id, action: "reject" })}
-                                >
-                                  Reject
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={decideClaimMutation.isPending && activeClaimId === claim.id}
-                                  onClick={() => decideClaimMutation.mutate({ claimId: claim.id, action: "approve" })}
-                                >
-                                  Approve
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Reviewed</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <Tabs defaultValue="cases" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="cases">Split Cases</TabsTrigger>
+          <TabsTrigger value="review">Work Review</TabsTrigger>
+          <TabsTrigger value="catalog">Catalog Rights</TabsTrigger>
+        </TabsList>
 
-        <aside className="space-y-4">
+        <TabsContent value="cases" className="space-y-4">
           <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
-            <CardHeader>
-              <CardTitle className="type-display-section text-lg">Source Documents</CardTitle>
-              <p className="text-sm text-muted-foreground">Documents classified as rights, split, contract, or publishing evidence.</p>
+            <CardHeader className="border-b border-[hsl(var(--border)/0.1)]">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <CardTitle className="type-display-section text-xl">Case Inbox</CardTitle>
+                  <p className="mt-2 text-sm text-muted-foreground">One uploaded file, one review decision. Duplicates and conflicts are separated before you touch them.</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_190px] lg:w-[560px]">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search file, work, ISWC, party, IPI" className="pl-9" />
+                  </div>
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value)}
+                    className="h-10 rounded-[calc(var(--radius-sm))] border border-input bg-background px-3 text-sm"
+                    aria-label="Filter split cases by status"
+                  >
+                    <option value="all">All cases</option>
+                    <option value="ready_to_approve">Ready to approve</option>
+                    <option value="needs_attention">Needs attention</option>
+                    <option value="conflict">Conflicts</option>
+                    <option value="already_known">Already known</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {rightsDocuments.length === 0 ? (
-                <p className="rounded-[calc(var(--radius-md)-2px)] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-panel)/0.7)] p-4 text-sm text-muted-foreground">
-                  No rights documents have produced split evidence yet.
-                </p>
+            <CardContent className="p-4">
+              {claimsLoading ? (
+                <div className="flex min-h-[260px] items-center justify-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+                </div>
+              ) : filteredCases.length === 0 ? (
+                <EmptyStateBlock
+                  icon={<Split className="h-6 w-6" />}
+                  title="No split cases found"
+                  description="Rights documents will appear here as review cases after ingestion extracts works, parties, and shares."
+                  action={
+                    <Button asChild variant="quiet">
+                      <Link to="/reports">Upload a rights document</Link>
+                    </Button>
+                  }
+                />
               ) : (
-                rightsDocuments.slice(0, 12).map((report) => {
-                  const claimCount = claims.filter((claim) => claim.source_report_id === report.id).length;
-                  return (
-                    <article key={report.id} className="rounded-[calc(var(--radius-md)-2px)] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.72)] p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">{report.file_name ?? report.cmo_name ?? "Rights document"}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">{formatDate(report.created_at)} - {formatLabel(report.document_kind)}</p>
+                <div className="grid gap-3">
+                  {filteredCases.map((caseItem) => (
+                    <article
+                      key={caseItem.id}
+                      className={cn(
+                        "rounded-[calc(var(--radius-md)-2px)] border bg-[hsl(var(--surface-elevated)/0.72)] p-4 transition-colors",
+                        selectedCase?.id === caseItem.id
+                          ? "border-[hsl(var(--brand-accent)/0.45)]"
+                          : "border-[hsl(var(--border)/0.12)] hover:border-[hsl(var(--brand-accent)/0.24)]",
+                      )}
+                    >
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => {
+                            setSelectedCaseId(caseItem.id);
+                            setSelectedWorkKey(caseItem.works.find((work) => work.status !== "known")?.key ?? caseItem.works[0]?.key ?? null);
+                          }}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <CaseStatusBadge status={caseItem.status} />
+                            <span className="text-xs text-muted-foreground">{formatDate(caseItem.uploadedAt)}</span>
+                            <span className="text-xs text-muted-foreground">{formatLabel(caseItem.documentKind)}</span>
+                          </div>
+                          <h3 className="mt-3 truncate text-base font-semibold text-foreground">{caseItem.fileName}</h3>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {caseItem.sourceName} - {caseItem.workCount.toLocaleString()} works - {caseItem.partyCount.toLocaleString()} parties
+                          </p>
+                        </button>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:w-[520px]">
+                          <Metric label="Known" value={caseItem.duplicateCount} />
+                          <Metric label="New" value={caseItem.works.filter((work) => work.status === "new").length} />
+                          <Metric label="Attention" value={caseItem.needsAttentionCount} />
+                          <Metric label="Conflicts" value={caseItem.conflictCount} />
                         </div>
-                        <Badge variant="outline" className="shrink-0">
-                          {claimCount}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        <Badge variant="outline">{formatLabel(report.business_side ?? "unknown")}</Badge>
-                        <Badge variant="outline">{formatLabel(report.status)}</Badge>
+                        <div className="flex flex-wrap gap-2 xl:justify-end">
+                          <Button
+                            type="button"
+                            variant="quiet"
+                            disabled={!caseItem.reportId || decideCaseMutation.isPending}
+                            onClick={() => {
+                              setSelectedCaseId(caseItem.id);
+                              setSelectedWorkKey(caseItem.works[0]?.key ?? null);
+                            }}
+                          >
+                            Review
+                          </Button>
+                          <Button
+                            type="button"
+                            disabled={!caseItem.reportId || caseItem.status !== "ready_to_approve" || decideCaseMutation.isPending}
+                            onClick={() => decideCaseMutation.mutate({ caseItem, action: "approve" })}
+                          >
+                            Approve document
+                          </Button>
+                        </div>
                       </div>
                     </article>
-                  );
-                })
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
-        </aside>
-      </section>
+        </TabsContent>
+
+        <TabsContent value="review" className="space-y-4">
+          {!selectedCase || !selectedWork ? (
+            <EmptyStateBlock
+              icon={<Layers3 className="h-6 w-6" />}
+              title="Select a split case"
+              description="Choose a file from the case inbox to review works, edit shares, and approve the clean rights positions."
+            />
+          ) : (
+            <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
+                <CardHeader>
+                  <CardTitle className="type-display-section text-lg">Work Review</CardTitle>
+                  <p className="text-sm text-muted-foreground">{selectedCase.fileName}</p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {selectedCase.works.map((work) => (
+                    <button
+                      type="button"
+                      key={work.key}
+                      onClick={() => setSelectedWorkKey(work.key)}
+                      className={cn(
+                        "w-full rounded-[calc(var(--radius-sm))] border p-3 text-left transition-colors",
+                        selectedWork.key === work.key
+                          ? "border-[hsl(var(--brand-accent)/0.45)] bg-[hsl(var(--brand-accent-ghost)/0.42)]"
+                          : "border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.68)] hover:border-[hsl(var(--brand-accent)/0.22)]",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{work.title}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{work.iswc ? `ISWC ${work.iswc}` : work.sourceWorkCode ? `Code ${work.sourceWorkCode}` : "No strong work ID"}</p>
+                        </div>
+                        <CaseStatusBadge status={work.status} />
+                      </div>
+                    </button>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
+                <CardHeader className="border-b border-[hsl(var(--border)/0.1)]">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CaseStatusBadge status={selectedWork.status} />
+                        <Badge variant="outline">Confidence {formatConfidence(selectedWork.confidence)}</Badge>
+                      </div>
+                      <CardTitle className="mt-3 type-display-section text-xl">{selectedWork.title}</CardTitle>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {selectedWork.iswc ? `ISWC ${selectedWork.iswc}` : "No ISWC"} - {selectedWork.sourceWorkCode ? `Work code ${selectedWork.sourceWorkCode}` : "No source work code"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="quiet" disabled={saveSharesMutation.isPending} onClick={() => saveSharesMutation.mutate()}>
+                        Save edits
+                      </Button>
+                      <Button
+                        type="button"
+                        disabled={!selectedCase.reportId || decideCaseMutation.isPending}
+                        onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "approve", workKeys: [selectedWork.key] })}
+                      >
+                        Approve work
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5 p-4">
+                  <div className="grid gap-2 md:grid-cols-4">
+                    {activeStreams.map((stream) => (
+                      <Metric key={stream} label={`${formatLabel(stream)} total`} value={formatShare(selectedWork.streamTotals[stream] ?? 0)} />
+                    ))}
+                  </div>
+
+                  {selectedWork.warnings.length > 0 ? (
+                    <div className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--tone-warning)/0.22)] bg-[hsl(var(--tone-warning)/0.08)] p-3 text-sm text-[hsl(var(--tone-warning))]">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <p>{selectedWork.warnings.join(". ")}. Confirm the source before approving.</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="overflow-hidden rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)]">
+                    <div
+                      className="grid gap-0 bg-[hsl(var(--muted)/0.28)] text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground"
+                      style={{ gridTemplateColumns: `minmax(180px,1.5fr) minmax(90px,.7fr) repeat(${activeStreams.length}, minmax(120px,1fr))` }}
+                    >
+                      <div className="border-r border-[hsl(var(--border)/0.12)] p-3">Party</div>
+                      <div className="border-r border-[hsl(var(--border)/0.12)] p-3">Role</div>
+                      {activeStreams.map((stream) => (
+                        <div key={stream} className="border-r border-[hsl(var(--border)/0.12)] p-3 last:border-r-0">
+                          {formatLabel(stream)}
+                        </div>
+                      ))}
+                    </div>
+                    {selectedWork.parties.map((party) => (
+                      <div
+                        key={party.key}
+                        className="grid items-center border-t border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.66)]"
+                        style={{ gridTemplateColumns: `minmax(180px,1.5fr) minmax(90px,.7fr) repeat(${activeStreams.length}, minmax(120px,1fr))` }}
+                      >
+                        <div className="min-w-0 border-r border-[hsl(var(--border)/0.12)] p-3">
+                          <p className="truncate text-sm font-semibold text-foreground">{party.name}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{party.ipiNumber ? `IPI ${party.ipiNumber}` : "No IPI"}</p>
+                        </div>
+                        <div className="border-r border-[hsl(var(--border)/0.12)] p-3 text-sm text-muted-foreground">{party.role ?? "-"}</div>
+                        {activeStreams.map((stream) => {
+                          const claim = party.claims.find(
+                            (candidate) =>
+                              (candidate.canonical_rights_stream?.toLowerCase() || candidate.source_rights_code?.toLowerCase() || "source_defined") === stream,
+                          );
+                          return (
+                            <div key={stream} className="border-r border-[hsl(var(--border)/0.12)] p-2 last:border-r-0">
+                              <ShareInput
+                                claim={claim}
+                                stream={stream}
+                                party={party}
+                                value={claim ? Number(shareDrafts[claim.id]) : party.shares[stream]}
+                                pending={saveSharesMutation.isPending}
+                                onChange={(claimId, value) => setShareDrafts((current) => ({ ...current, [claimId]: value }))}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+
+                  <details className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.54)] p-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-foreground">Source evidence</summary>
+                    <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                      <p>File: {selectedCase.fileName}</p>
+                      <p>Fingerprint: <span className="font-mono">{selectedWork.fingerprint}</span></p>
+                      <p>Rows: {selectedWork.claimIds.length.toLocaleString()} extracted claim facts grouped into this work.</p>
+                    </div>
+                  </details>
+
+                  <div className="flex flex-wrap gap-2 border-t border-[hsl(var(--border)/0.1)] pt-4">
+                    <Button
+                      type="button"
+                      disabled={!canApproveDocument || decideCaseMutation.isPending}
+                      onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "approve", workKeys: cleanWorkKeys })}
+                    >
+                      Approve document
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="quiet"
+                      disabled={!selectedCase.reportId || decideCaseMutation.isPending}
+                      onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "reject" })}
+                    >
+                      Reject document
+                    </Button>
+                    {selectedCase.status === "conflict" ? (
+                      <>
+                        <Button type="button" variant="quiet" disabled={decideCaseMutation.isPending} onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "keep_existing" })}>
+                          Keep existing catalog
+                        </Button>
+                        <Button type="button" disabled={decideCaseMutation.isPending} onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "replace_existing" })}>
+                          Replace with file
+                        </Button>
+                      </>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="catalog" className="space-y-4">
+          <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
+            <CardHeader>
+              <CardTitle className="type-display-section text-xl">Catalog Rights</CardTitle>
+              <p className="text-sm text-muted-foreground">Approved or auto-recognized split positions, grouped as works instead of extraction rows.</p>
+            </CardHeader>
+            <CardContent className="grid gap-3">
+              {splitCases.flatMap((caseItem) => caseItem.works.filter((work) => work.status === "known").map((work) => ({ caseItem, work }))).length === 0 ? (
+                <EmptyStateBlock
+                  icon={<Archive className="h-6 w-6" />}
+                  title="No approved catalog rights yet"
+                  description="Approved split cases and exact duplicates will appear here as trusted catalog positions."
+                />
+              ) : (
+                splitCases.flatMap((caseItem) =>
+                  caseItem.works
+                    .filter((work) => work.status === "known")
+                    .map((work) => (
+                      <article key={`${caseItem.id}-${work.key}`} className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.68)] p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <CheckCircle2 className="h-4 w-4 text-[hsl(var(--tone-success))]" />
+                              <p className="font-semibold text-foreground">{work.title}</p>
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">{work.iswc ? `ISWC ${work.iswc}` : work.sourceWorkCode ?? "No identifier"} - {caseItem.fileName}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {Object.entries(work.streamTotals).map(([stream, total]) => (
+                              <Badge key={stream} variant="outline">
+                                {formatLabel(stream)} {formatShare(total)}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </article>
+                    )),
+                )
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

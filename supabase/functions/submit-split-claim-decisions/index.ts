@@ -7,8 +7,14 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-type SplitDecisionAction = "approve" | "reject";
-type SplitDecisionRequest = { claim_ids?: unknown; action: "approve" | "reject"; note?: string };
+type SplitDecisionAction = "approve" | "reject" | "keep_existing" | "replace_existing";
+type SplitDecisionRequest = {
+  claim_ids?: unknown;
+  source_report_id?: unknown;
+  work_group_keys?: unknown;
+  action: SplitDecisionAction;
+  note?: string;
+};
 type JsonRecord = Record<string, unknown>;
 
 function parseJwtClaims(token: string): { role?: string; sub?: string; user_id?: string } | null {
@@ -81,14 +87,32 @@ serve(async (req) => {
     }
 
     const body = (await req.json().catch(() => ({}))) as Partial<SplitDecisionRequest>;
-    const claimIds = Array.isArray(body.claim_ids)
+    let claimIds = Array.isArray(body.claim_ids)
       ? (body.claim_ids.map(String).filter(Boolean))
       : [];
     const action = body.action as SplitDecisionAction | undefined;
     const note = asString(body.note);
+    const sourceReportId = asString(body.source_report_id);
+    const workGroupKeys = Array.isArray(body.work_group_keys)
+      ? body.work_group_keys.map(String).filter(Boolean)
+      : [];
 
-    if (claimIds.length === 0) throw new Error("claim_ids is required");
-    if (action !== "approve" && action !== "reject") throw new Error('action must be "approve" or "reject"');
+    if (!["approve", "reject", "keep_existing", "replace_existing"].includes(action ?? "")) {
+      throw new Error('action must be "approve", "reject", "keep_existing", or "replace_existing"');
+    }
+
+    if (claimIds.length === 0 && sourceReportId) {
+      let claimQuery = supabase
+        .from("catalog_split_claims")
+        .select("id")
+        .eq("source_report_id", sourceReportId);
+      if (workGroupKeys.length > 0) claimQuery = claimQuery.in("split_group_key", workGroupKeys);
+      const { data: groupedClaims, error: groupedErr } = await claimQuery;
+      if (groupedErr) throw new Error(`Failed to resolve split case claims: ${groupedErr.message}`);
+      claimIds = (groupedClaims ?? []).map((claim: JsonRecord) => String(claim.id)).filter(Boolean);
+    }
+
+    if (claimIds.length === 0) throw new Error("claim_ids or source_report_id is required");
 
     const { data: splitClaims, error: claimsErr } = await supabase
       .from("catalog_split_claims")
@@ -113,20 +137,33 @@ serve(async (req) => {
       }
     }
 
-    if (action === "reject") {
+    if (action === "reject" || action === "keep_existing") {
+      const nextReviewCaseStatus = action === "keep_existing" ? "archived" : "rejected";
       const { error: rejectErr } = await supabase
         .from("catalog_split_claims")
-        .update({ review_status: "rejected" })
+        .update({
+          review_status: "rejected",
+          review_case_status: nextReviewCaseStatus,
+          dedupe_status: action === "keep_existing" ? "manual" : "new_needs_review",
+        })
         .in("id", claimIds);
-      if (rejectErr) throw new Error(`Failed to reject split claims: ${rejectErr.message}`);
+      if (rejectErr) {
+        const missingCaseColumns = rejectErr.message.includes("review_case_status") || rejectErr.message.includes("dedupe_status");
+        if (!missingCaseColumns) throw new Error(`Failed to reject split claims: ${rejectErr.message}`);
+        const { error: legacyRejectErr } = await supabase
+          .from("catalog_split_claims")
+          .update({ review_status: "rejected" })
+          .in("id", claimIds);
+        if (legacyRejectErr) throw new Error(`Failed to reject split claims: ${legacyRejectErr.message}`);
+      }
 
       const events = splitClaims.map((claim: JsonRecord) => ({
         company_id: claim.company_id,
         entity_type: "catalog_split_claim",
         entity_id: claim.id,
-        event_type: "split_claim_rejected",
+        event_type: action === "keep_existing" ? "split_conflict_kept_existing" : "split_claim_rejected",
         previous_state: { review_status: claim.review_status },
-        new_state: { review_status: "rejected", note },
+        new_state: { review_status: "rejected", review_case_status: nextReviewCaseStatus, note },
         decided_by: requesterId,
       }));
       const { error: eventErr } = await supabase.from("catalog_resolution_events").insert(events);
@@ -212,12 +249,12 @@ serve(async (req) => {
       }
 
       let catalogClaimId: string | null = null;
-      if (claim.source_report_id && claim.source_row_id) {
+      {
         const { data: existingClaim, error: existingClaimErr } = await supabase
           .from("catalog_claims")
           .select("id")
-          .eq("source_report_id", claim.source_report_id)
-          .eq("source_row_id", claim.source_row_id)
+          .eq("company_id", claim.company_id)
+          .contains("payload", { split_claim_id: claim.id })
           .maybeSingle();
         if (existingClaimErr) throw new Error(`Failed to find catalog claim: ${existingClaimErr.message}`);
         catalogClaimId = existingClaim?.id ?? null;
@@ -262,6 +299,20 @@ serve(async (req) => {
       }
 
       await supabase.from("catalog_rights_positions").delete().eq("source_claim_id", catalogClaimId);
+      if (action === "replace_existing") {
+        let replaceQuery = supabase
+          .from("catalog_rights_positions")
+          .delete()
+          .eq("company_id", claim.company_id)
+          .eq("asset_type", "work")
+          .eq("asset_id", workId)
+          .eq("party_id", partyId)
+          .eq("rights_stream", asString(claim.canonical_rights_stream) ?? "unknown");
+        const territory = asString(claim.territory_scope);
+        if (territory) replaceQuery = replaceQuery.eq("territory_scope", territory);
+        const { error: replaceDeleteErr } = await replaceQuery;
+        if (replaceDeleteErr) throw new Error(`Failed to replace existing rights position: ${replaceDeleteErr.message}`);
+      }
       const { error: rightsPositionErr } = await supabase.from("catalog_rights_positions").upsert({
         company_id: claim.company_id,
         asset_type: "work",
@@ -283,17 +334,35 @@ serve(async (req) => {
 
       const { error: claimUpdateErr } = await supabase
         .from("catalog_split_claims")
-        .update({ review_status: "approved", work_id: workId, party_id: partyId })
+        .update({
+          review_status: "approved",
+          review_case_status: "approved",
+          dedupe_status: action === "replace_existing" ? "manual" : claim.dedupe_status ?? "manual",
+          work_id: workId,
+          party_id: partyId,
+          matched_existing_rights_position_id: null,
+        })
         .eq("id", claim.id);
-      if (claimUpdateErr) throw new Error(`Failed to approve split claim: ${claimUpdateErr.message}`);
+      if (claimUpdateErr) {
+        const missingCaseColumns =
+          claimUpdateErr.message.includes("review_case_status") ||
+          claimUpdateErr.message.includes("dedupe_status") ||
+          claimUpdateErr.message.includes("matched_existing_rights_position_id");
+        if (!missingCaseColumns) throw new Error(`Failed to approve split claim: ${claimUpdateErr.message}`);
+        const { error: legacyClaimUpdateErr } = await supabase
+          .from("catalog_split_claims")
+          .update({ review_status: "approved", work_id: workId, party_id: partyId })
+          .eq("id", claim.id);
+        if (legacyClaimUpdateErr) throw new Error(`Failed to approve split claim: ${legacyClaimUpdateErr.message}`);
+      }
 
       const { error: eventErr } = await supabase.from("catalog_resolution_events").insert({
         company_id: claim.company_id,
         entity_type: "catalog_split_claim",
         entity_id: claim.id,
-        event_type: "split_claim_approved",
+        event_type: action === "replace_existing" ? "split_conflict_replaced_existing" : "split_claim_approved",
         previous_state: { review_status: claim.review_status, work_id: claim.work_id, party_id: claim.party_id },
-        new_state: { review_status: "approved", work_id: workId, party_id: partyId, source_claim_id: catalogClaimId, note },
+        new_state: { review_status: "approved", review_case_status: "approved", work_id: workId, party_id: partyId, source_claim_id: catalogClaimId, note },
         decided_by: requesterId,
       });
       if (eventErr) throw new Error(`Failed to write approval event: ${eventErr.message}`);

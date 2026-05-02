@@ -44,6 +44,7 @@ import {
   pruneTrackMatchSelections,
   reopenFilePicker,
 } from "@/lib/report-workflow";
+import { buildSplitCases, splitCaseStatusLabel } from "@/lib/split-cases";
 import { StatementWorkflowCard } from "@/components/reports/StatementWorkflowCard";
 import {
   NO_MATCH_VALUE,
@@ -399,6 +400,10 @@ export default function Reports() {
   });
 
   const selectedReportIsRightsDocument = selectedReportMetadataIsRightsDocument || reportSplitClaims.length > 0;
+  const selectedReportSplitCase = useMemo(() => {
+    if (!selectedReport) return null;
+    return buildSplitCases(reportSplitClaims as any, [selectedReport as any])[0] ?? null;
+  }, [reportSplitClaims, selectedReport]);
 
   const trackMatchTasks = useMemo(
     () =>
@@ -1122,66 +1127,54 @@ export default function Reports() {
                 {selectedReportIsRightsDocument ? (
                   <TabsContent value="rights" className="mt-4">
                     <div className="mb-3">
-                      <p className="type-display-section text-lg text-foreground">Extracted Split Claims</p>
+                      <p className="type-display-section text-lg text-foreground">Split case summary</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Rights rows are shown as source-backed split evidence, not revenue transactions.
+                        Rights evidence is grouped by work, parties, and stream shares so the file can be reviewed as one case.
                       </p>
                     </div>
-                    {reportSplitClaims.length > 0 ? (
-                      <Table className="min-w-[1180px]" variant="evidence" density="compact">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Work</TableHead>
-                            <TableHead>Party</TableHead>
-                            <TableHead>Role</TableHead>
-                            <TableHead>Source Right</TableHead>
-                            <TableHead>Canonical Stream</TableHead>
-                            <TableHead className="text-right">Share</TableHead>
-                            <TableHead>Review</TableHead>
-                            <TableHead>Provenance</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {reportSplitClaims.slice(0, 200).map((claim) => (
-                            <TableRow key={claim.id}>
-                              <TableCell className="min-w-[220px]">
-                                <div className="font-medium text-foreground">{claim.work_title ?? "Untitled work"}</div>
-                                <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                                  {claim.iswc ? <span>ISWC {claim.iswc}</span> : null}
-                                  {claim.source_work_code ? <span>Code {claim.source_work_code}</span> : null}
+                    {selectedReportSplitCase && selectedReportSplitCase.works.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Case status</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{splitCaseStatusLabel(selectedReportSplitCase.status)}</p>
+                          </div>
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Works</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{selectedReportSplitCase.workCount.toLocaleString()}</p>
+                          </div>
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Parties</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{selectedReportSplitCase.partyCount.toLocaleString()}</p>
+                          </div>
+                          <div className="surface-elevated forensic-frame rounded-[calc(var(--radius-sm))] p-4">
+                            <p className="text-[10px] font-ui uppercase tracking-[0.12em] text-muted-foreground">Conflicts</p>
+                            <p className="mt-2 text-sm font-semibold text-foreground">{selectedReportSplitCase.conflictCount.toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <div className="grid gap-2">
+                          {selectedReportSplitCase.works.slice(0, 24).map((work) => (
+                            <article key={work.key} className="rounded-[calc(var(--radius-sm))] border border-[hsl(var(--border)/0.12)] bg-[hsl(var(--surface-elevated)/0.68)] p-4">
+                              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-foreground">{work.title}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {work.iswc ? `ISWC ${work.iswc}` : work.sourceWorkCode ? `Code ${work.sourceWorkCode}` : "No strong work ID"} - {work.parties.length} parties
+                                  </p>
                                 </div>
-                              </TableCell>
-                              <TableCell className="min-w-[210px]">
-                                <div className="font-medium text-foreground">{claim.party_name ?? "Unknown party"}</div>
-                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                                  {claim.ipi_number ? <span>IPI {claim.ipi_number}</span> : null}
-                                  {claim.managed_party_match ? <Badge variant="outline">Managed</Badge> : <Badge variant="outline">External</Badge>}
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="outline">{splitCaseStatusLabel(work.status)}</Badge>
+                                  {Object.entries(work.streamTotals).map(([stream, total]) => (
+                                    <Badge key={stream} variant="outline">
+                                      {formatDocumentLabel(stream)} {formatSharePct(total)}
+                                    </Badge>
+                                  ))}
                                 </div>
-                              </TableCell>
-                              <TableCell>{claim.source_role ?? "-"}</TableCell>
-                              <TableCell>
-                                <div className="flex flex-col gap-1">
-                                  <span className="font-mono text-xs">{claim.source_rights_code ?? "-"}</span>
-                                  <span className="text-xs text-muted-foreground">{claim.source_rights_label ?? "-"}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>{formatDocumentLabel(claim.canonical_rights_stream)}</TableCell>
-                              <TableCell className="text-right font-mono">{formatSharePct(claim.share_pct)}</TableCell>
-                              <TableCell>
-                                <div className="flex flex-col gap-1">
-                                  <Badge variant="outline">{formatDocumentLabel(claim.review_status ?? "pending")}</Badge>
-                                  <span className="text-[11px] text-muted-foreground">
-                                    Confidence {formatConfidencePct(claim.confidence)}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-xs">
-                                {claim.source_row_id ? claim.source_row_id.slice(0, 8) : "-"}
-                              </TableCell>
-                            </TableRow>
+                              </div>
+                            </article>
                           ))}
-                        </TableBody>
-                      </Table>
+                        </div>
+                      </div>
                     ) : (
                       <EmptyStateBlock
                         icon={<FileText className="h-10 w-10" />}

@@ -32,6 +32,29 @@ export type TypedSplitClaim = {
   raw_payload: SplitClaimInputRow;
 };
 
+export type SplitReviewClaimLike = {
+  company_id?: string | null;
+  work_id?: string | null;
+  party_id?: string | null;
+  work_title?: string | null;
+  iswc?: string | null;
+  source_work_code?: string | null;
+  party_name?: string | null;
+  ipi_number?: string | null;
+  source_role?: string | null;
+  canonical_rights_stream?: string | null;
+  source_rights_code?: string | null;
+  share_pct?: number | string | null;
+  territory_scope?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+};
+
+export type SplitClaimReviewMetadata = {
+  split_group_key: string;
+  split_fingerprint: string;
+};
+
 type BuildSplitClaimOptions = {
   source_report_id?: string | null;
   source_row_ids?: Array<string | null>;
@@ -186,6 +209,102 @@ function parseSacemRightsholderLine(line: string): {
     party_name: partyName || sourcePartyText || null,
     source_party_text: sourcePartyText || null,
   };
+}
+
+function normalizeReviewToken(value: unknown): string | null {
+  const text = asString(value);
+  if (!text) return null;
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function normalizeIdentifierToken(value: unknown): string | null {
+  const text = asString(value);
+  if (!text) return null;
+  return text.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function formatFingerprintShare(value: unknown): string {
+  const number = asNumber(value);
+  if (number == null) return "null";
+  return Number(number.toFixed(4)).toString();
+}
+
+export function buildWorkGroupKeyFromClaim(claim: SplitReviewClaimLike): string {
+  const iswc = normalizeIdentifierToken(claim.iswc);
+  if (iswc) return `iswc:${iswc}`;
+
+  const sourceWorkCode = normalizeIdentifierToken(claim.source_work_code);
+  if (sourceWorkCode) return `source_work_code:${sourceWorkCode}`;
+
+  const title = normalizeReviewToken(claim.work_title);
+  if (title) return `title:${title}`;
+
+  const workId = normalizeReviewToken(claim.work_id);
+  return workId ? `work_id:${workId}` : "work:unknown";
+}
+
+export function buildPartyKeyFromClaim(claim: SplitReviewClaimLike): string {
+  const ipi = normalizeIdentifierToken(claim.ipi_number);
+  if (ipi) return `ipi:${ipi}`;
+
+  const partyId = normalizeIdentifierToken(claim.party_id);
+  if (partyId) return `party_id:${partyId}`;
+
+  const partyName = normalizeReviewToken(claim.party_name);
+  const role = normalizeReviewToken(claim.source_role);
+  if (partyName) return `name:${partyName}|role:${role ?? "unknown"}`;
+
+  return "party:unknown";
+}
+
+export function buildSplitFingerprint(claims: SplitReviewClaimLike[]): string {
+  if (claims.length === 0) return "split:empty";
+
+  const workKey = buildWorkGroupKeyFromClaim(claims[0]);
+  const territory = normalizeReviewToken(claims.find((claim) => claim.territory_scope)?.territory_scope) ?? "world";
+  const validFrom = normalizeReviewToken(claims.find((claim) => claim.valid_from)?.valid_from) ?? "open";
+  const validTo = normalizeReviewToken(claims.find((claim) => claim.valid_to)?.valid_to) ?? "open";
+  const entries = claims
+    .map((claim) => {
+      const partyKey = buildPartyKeyFromClaim(claim);
+      const stream =
+        normalizeReviewToken(claim.canonical_rights_stream) ??
+        normalizeReviewToken(claim.source_rights_code) ??
+        "unknown";
+      return `${partyKey}|${stream}|${formatFingerprintShare(claim.share_pct)}`;
+    })
+    .sort();
+
+  return `split:${workKey}|territory:${territory}|from:${validFrom}|to:${validTo}|${entries.join(";")}`;
+}
+
+export function buildSplitClaimReviewMetadata<T extends SplitReviewClaimLike>(claims: T[]): Map<T, SplitClaimReviewMetadata> {
+  const byWork = new Map<string, T[]>();
+  for (const claim of claims) {
+    const key = buildWorkGroupKeyFromClaim(claim);
+    const bucket = byWork.get(key) ?? [];
+    bucket.push(claim);
+    byWork.set(key, bucket);
+  }
+
+  const metadata = new Map<T, SplitClaimReviewMetadata>();
+  for (const [splitGroupKey, workClaims] of byWork.entries()) {
+    const splitFingerprint = buildSplitFingerprint(workClaims);
+    for (const claim of workClaims) {
+      metadata.set(claim, {
+        split_group_key: splitGroupKey,
+        split_fingerprint: splitFingerprint,
+      });
+    }
+  }
+
+  return metadata;
 }
 
 function decodePdfLiteralString(value: string): string {

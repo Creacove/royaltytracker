@@ -3,7 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { parse as parseCsv } from "https://deno.land/std@0.168.0/encoding/csv.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5?target=deno";
 import { classifyDocumentFamily, rowHasExplicitSplitSignal, rowHasRevenueSignal, type ParserLane } from "../_shared/document-classification.ts";
-import { buildSplitClaimsFromRows, extractSacemCatalogueRowsFromPdfBytes, extractSacemCatalogueRowsFromText } from "../_shared/rights-splits.ts";
+import {
+  buildSplitClaimReviewMetadata,
+  buildSplitClaimsFromRows,
+  extractSacemCatalogueRowsFromPdfBytes,
+  extractSacemCatalogueRowsFromText,
+} from "../_shared/rights-splits.ts";
 
 
 const corsHeaders = {
@@ -2237,12 +2242,43 @@ serve(async (req) => {
         if (claimErr) throw new Error(`Failed to insert catalog claims: ${claimErr.message}`);
       }
 
-      const typedSplitClaims = buildSplitClaimsFromRows(splitEntries.map(({ r }) => r), {
+      const builtSplitClaims = buildSplitClaimsFromRows(splitEntries.map(({ r }) => r), {
         source_report_id: report_id,
         source_row_ids: splitEntries.map(({ i }) => insertedSourceRowIds[i] ?? null),
         source_language: "fr",
         default_review_status: "pending",
-      }).map((claim) => ({
+      });
+      const reviewMetadata = buildSplitClaimReviewMetadata(builtSplitClaims);
+      const splitFingerprints = Array.from(
+        new Set(
+          Array.from(reviewMetadata.values())
+            .map((metadata) => metadata.split_fingerprint)
+            .filter(Boolean),
+        ),
+      );
+      const approvedFingerprints = new Set<string>();
+      if (splitFingerprints.length > 0) {
+        const { data: existingApproved, error: existingApprovedErr } = await supabase
+          .from("catalog_split_claims")
+          .select("split_fingerprint")
+          .eq("company_id", workspaceCompanyId)
+          .eq("review_status", "approved")
+          .in("split_fingerprint", splitFingerprints);
+        if (existingApprovedErr) {
+          const missingFingerprintColumn = existingApprovedErr.message.includes("split_fingerprint");
+          if (!missingFingerprintColumn) {
+            throw new Error(`Failed to compare existing split fingerprints: ${existingApprovedErr.message}`);
+          }
+        }
+        (existingApproved ?? []).forEach((row: { split_fingerprint?: string | null }) => {
+          if (row.split_fingerprint) approvedFingerprints.add(row.split_fingerprint);
+        });
+      }
+      const autoAppliedAt = new Date().toISOString();
+      const typedSplitClaims = builtSplitClaims.map((claim) => {
+        const metadata = reviewMetadata.get(claim);
+        const isDuplicate = metadata?.split_fingerprint ? approvedFingerprints.has(metadata.split_fingerprint) : false;
+        return ({
         company_id: workspaceCompanyId,
         source_report_id: claim.source_report_id,
         source_row_id: claim.source_row_id,
@@ -2263,16 +2299,66 @@ serve(async (req) => {
         valid_from: claim.valid_from,
         valid_to: claim.valid_to,
         confidence: claim.confidence,
-        review_status: claim.review_status,
+        review_status: isDuplicate ? "approved" : claim.review_status,
         managed_party_match: claim.managed_party_match,
         raw_payload: claim.raw_payload,
-      }));
+        split_group_key: metadata?.split_group_key ?? null,
+        split_fingerprint: metadata?.split_fingerprint ?? null,
+        dedupe_status: isDuplicate ? "auto_applied" : "new_needs_review",
+        review_case_status: isDuplicate ? "already_known" : "ready_to_approve",
+        auto_applied_at: isDuplicate ? autoAppliedAt : null,
+      });
+      });
       typedSplitClaimCount = typedSplitClaims.length;
 
       for (let start = 0; start < typedSplitClaims.length; start += BATCH_SIZE) {
         const batch = typedSplitClaims.slice(start, start + BATCH_SIZE);
         const { error: splitClaimErr } = await supabase.from("catalog_split_claims").insert(batch);
-        if (splitClaimErr) throw new Error(`Failed to insert catalog split claims: ${splitClaimErr.message}`);
+        if (splitClaimErr) {
+          const missingCaseColumns =
+            splitClaimErr.message.includes("split_group_key") ||
+            splitClaimErr.message.includes("split_fingerprint") ||
+            splitClaimErr.message.includes("dedupe_status") ||
+            splitClaimErr.message.includes("review_case_status") ||
+            splitClaimErr.message.includes("auto_applied_at") ||
+            splitClaimErr.message.includes("matched_existing_rights_position_id");
+          if (!missingCaseColumns) throw new Error(`Failed to insert catalog split claims: ${splitClaimErr.message}`);
+
+          const legacyBatch = batch.map((claim) => {
+            const {
+              split_group_key: _splitGroupKey,
+              split_fingerprint: _splitFingerprint,
+              dedupe_status: _dedupeStatus,
+              review_case_status: _reviewCaseStatus,
+              auto_applied_at: _autoAppliedAt,
+              matched_existing_rights_position_id: _matchedExistingRightsPositionId,
+              ...legacyClaim
+            } = claim;
+            return legacyClaim;
+          });
+          const { error: legacySplitClaimErr } = await supabase.from("catalog_split_claims").insert(legacyBatch);
+          if (legacySplitClaimErr) throw new Error(`Failed to insert catalog split claims: ${legacySplitClaimErr.message}`);
+        }
+      }
+
+      const autoAppliedClaims = typedSplitClaims.filter((claim) => claim.dedupe_status === "auto_applied");
+      if (autoAppliedClaims.length > 0) {
+        const events = autoAppliedClaims.map((claim) => ({
+          company_id: workspaceCompanyId,
+          entity_type: "catalog_split_claim",
+          entity_id: null,
+          event_type: "split_claim_auto_applied_duplicate",
+          previous_state: {},
+          new_state: {
+            source_report_id: report_id,
+            split_group_key: claim.split_group_key,
+            split_fingerprint: claim.split_fingerprint,
+            review_status: "approved",
+          },
+          decided_by: report.user_id,
+        }));
+        const { error: autoEventErr } = await supabase.from("catalog_resolution_events").insert(events);
+        if (autoEventErr) throw new Error(`Failed to record auto-applied duplicate events: ${autoEventErr.message}`);
       }
     }
 

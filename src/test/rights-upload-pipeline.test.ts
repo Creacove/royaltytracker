@@ -27,7 +27,9 @@ describe("rights upload pipeline orchestration", () => {
     expect(existsSync(path.resolve(process.cwd(), functionPath))).toBe(true);
 
     const source = read(functionPath);
-    expect(source).toContain('action: "approve" | "reject"');
+    expect(source).toContain('type SplitDecisionAction = "approve" | "reject" | "keep_existing" | "replace_existing"');
+    expect(source).toContain("source_report_id");
+    expect(source).toContain("work_group_keys");
     expect(source).toContain('from("catalog_split_claims")');
     expect(source).toContain('from("catalog_works").upsert');
     expect(source).toContain('from("catalog_parties").upsert');

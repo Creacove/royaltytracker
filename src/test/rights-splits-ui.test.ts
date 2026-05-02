@@ -37,7 +37,7 @@ describe("rights and splits product surface", () => {
     expect(reports).toContain('queryKey: ["report-split-claims"');
     expect(reports).toContain('from("catalog_split_claims")');
     expect(reports).toContain('TabsTrigger value="rights"');
-    expect(reports).toContain("Extracted Split Claims");
+    expect(reports).toContain("Split case summary");
   });
 
   it("lets existing typed split claims force the report detail into rights mode", () => {
@@ -54,8 +54,27 @@ describe("rights and splits product surface", () => {
     expect(page).toContain('supabase.functions.invoke("submit-split-claim-decisions"');
     expect(page).toContain('action: "approve"');
     expect(page).toContain('action: "reject"');
-    expect(page).toContain("Approve");
-    expect(page).toContain("Reject");
+    expect(page).toContain("Approve document");
+    expect(page).toContain("Reject document");
     expect(page).toContain("queryClient.invalidateQueries({ queryKey: [\"rights-splits-claims\"] })");
+  });
+
+  it("renders split cases instead of a per-claim approval table", () => {
+    const page = read("src/pages/RightsSplits.tsx");
+
+    expect(page).toContain("Split Cases");
+    expect(page).toContain("Work Review");
+    expect(page).toContain("Catalog Rights");
+    expect(page).toContain("buildSplitCases");
+    expect(page).not.toContain("<TableHead>PARTY</TableHead>");
+    expect(page).not.toContain("filteredClaims.slice(0, 200).map");
+  });
+
+  it("updates report detail rights evidence to use grouped split case summaries", () => {
+    const reports = read("src/pages/Reports.tsx");
+
+    expect(reports).toContain("buildSplitCases");
+    expect(reports).toContain("Split case summary");
+    expect(reports).not.toContain('Table className="min-w-[1180px]"');
   });
 });
