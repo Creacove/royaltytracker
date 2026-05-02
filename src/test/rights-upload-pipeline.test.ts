@@ -62,6 +62,9 @@ describe("rights upload pipeline orchestration", () => {
     const source = read("supabase/functions/delete-report/index.ts");
 
     expect(reports).toContain('invokeFunction("delete-report"');
+    expect(source).not.toContain('rpc("can_access_company_data"');
+    expect(source).toContain('from("company_memberships")');
+    expect(source).toContain('from("platform_admins")');
     expect(source).toContain('from("catalog_rights_positions").delete().in("source_claim_id"');
     expect(source).toContain('["catalog_split_claims", "source_report_id"]');
     expect(source).toContain('from("cmo_reports").delete().eq("id", reportId)');

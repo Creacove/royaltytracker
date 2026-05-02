@@ -27,6 +27,37 @@ function asString(value: unknown): string | null {
   return text ? text : null;
 }
 
+async function canDeleteReport(
+  supabase: ReturnType<typeof createClient>,
+  requesterId: string | null,
+  companyId: string | null,
+  reportUserId: string | null,
+): Promise<boolean> {
+  if (!requesterId) return false;
+
+  const { data: platformAdmin, error: platformAdminErr } = await supabase
+    .from("platform_admins")
+    .select("user_id")
+    .eq("user_id", requesterId)
+    .maybeSingle();
+  if (platformAdminErr) throw new Error(`Failed to verify platform admin access: ${platformAdminErr.message}`);
+  if (platformAdmin) return true;
+
+  if (companyId) {
+    const { data: membership, error: membershipErr } = await supabase
+      .from("company_memberships")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("user_id", requesterId)
+      .eq("membership_status", "active")
+      .maybeSingle();
+    if (membershipErr) throw new Error(`Failed to verify company access: ${membershipErr.message}`);
+    return Boolean(membership);
+  }
+
+  return requesterId === reportUserId;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -61,19 +92,20 @@ serve(async (req) => {
 
     const { data: report, error: reportErr } = await supabase
       .from("cmo_reports")
-      .select("id, company_id, file_path")
+      .select("id, company_id, user_id, file_path")
       .eq("id", reportId)
       .maybeSingle();
     if (reportErr) throw new Error(`Failed to load report: ${reportErr.message}`);
     if (!report) throw new Error("Report not found");
 
     if (requesterRole !== "service_role") {
-      if (!report.company_id) throw new Error("Report has no company scope");
-      const { data: allowed, error: accessErr } = await supabase.rpc("can_access_company_data", {
-        p_company_id: report.company_id,
-        p_fallback_user_id: requesterId,
-      });
-      if (accessErr || !allowed) {
+      const allowed = await canDeleteReport(
+        supabase,
+        requesterId,
+        asString(report.company_id),
+        asString(report.user_id),
+      );
+      if (!allowed) {
         return new Response(JSON.stringify({ error: "Forbidden" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
