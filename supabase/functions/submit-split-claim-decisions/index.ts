@@ -198,8 +198,9 @@ serve(async (req) => {
         else if (sourceWorkCode) workQuery = workQuery.eq("source_work_code", sourceWorkCode);
         else workQuery = workQuery.eq("normalized_title", normalizeText(workTitle));
 
-        const { data: existingWork, error: workLookupErr } = await workQuery.maybeSingle();
+        const { data: existingWorks, error: workLookupErr } = await workQuery.order("created_at", { ascending: true }).limit(1);
         if (workLookupErr) throw new Error(`Failed to find catalog work: ${workLookupErr.message}`);
+        const existingWork = existingWorks?.[0] ?? null;
 
         if (existingWork?.id) {
           workId = existingWork.id;
@@ -227,8 +228,9 @@ serve(async (req) => {
         if (ipiNumber) partyQuery = partyQuery.eq("ipi_number", ipiNumber);
         else partyQuery = partyQuery.eq("normalized_name", normalizeText(partyName));
 
-        const { data: existingParty, error: partyLookupErr } = await partyQuery.maybeSingle();
+        const { data: existingParties, error: partyLookupErr } = await partyQuery.order("created_at", { ascending: true }).limit(1);
         if (partyLookupErr) throw new Error(`Failed to find catalog party: ${partyLookupErr.message}`);
+        const existingParty = existingParties?.[0] ?? null;
 
         if (existingParty?.id) {
           partyId = existingParty.id;
@@ -250,13 +252,15 @@ serve(async (req) => {
 
       let catalogClaimId: string | null = null;
       {
-        const { data: existingClaim, error: existingClaimErr } = await supabase
+        const { data: existingClaims, error: existingClaimErr } = await supabase
           .from("catalog_claims")
           .select("id")
           .eq("company_id", claim.company_id)
           .contains("payload", { split_claim_id: claim.id })
-          .maybeSingle();
+          .order("created_at", { ascending: true })
+          .limit(1);
         if (existingClaimErr) throw new Error(`Failed to find catalog claim: ${existingClaimErr.message}`);
+        const existingClaim = existingClaims?.[0] ?? null;
         catalogClaimId = existingClaim?.id ?? null;
       }
 

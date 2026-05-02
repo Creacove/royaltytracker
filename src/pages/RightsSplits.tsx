@@ -135,6 +135,23 @@ const formatShare = (value: number | null | undefined) => {
   return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}%`;
 };
 
+const readFunctionErrorMessage = async (error: unknown, fallback: string) => {
+  let message = error instanceof Error ? error.message : fallback;
+  const context = (error as { context?: { text?: () => Promise<string> } } | null)?.context;
+  if (!context?.text) return message;
+
+  try {
+    const text = await context.text();
+    if (!text) return message;
+    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+    message = String(parsed.error ?? parsed.message ?? text);
+  } catch {
+    return message;
+  }
+
+  return message;
+};
+
 const statusTone = (status: SplitCase["status"] | SplitWork["status"]) => {
   switch (status) {
     case "already_known":
@@ -327,7 +344,7 @@ export default function RightsSplits() {
           action,
         },
       });
-      if (error) throw error;
+      if (error) throw new Error(await readFunctionErrorMessage(error, "Split review failed"));
       return data;
     },
     onSuccess: async (_data, variables) => {

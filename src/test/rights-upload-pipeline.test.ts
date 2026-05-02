@@ -36,4 +36,11 @@ describe("rights upload pipeline orchestration", () => {
     expect(source).toContain('from("catalog_rights_positions").upsert');
     expect(source).toContain('from("catalog_resolution_events").insert');
   });
+
+  it("keeps split approval tolerant of existing duplicate catalog records", () => {
+    const source = read("supabase/functions/submit-split-claim-decisions/index.ts");
+
+    expect(source).not.toContain(".maybeSingle()");
+    expect(source).toContain(".limit(1)");
+  });
 });
