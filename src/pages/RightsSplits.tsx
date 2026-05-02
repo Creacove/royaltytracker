@@ -218,6 +218,7 @@ export default function RightsSplits() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState("cases");
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedWorkKey, setSelectedWorkKey] = useState<string | null>(null);
   const [shareDrafts, setShareDrafts] = useState<Record<string, string>>({});
@@ -386,10 +387,10 @@ export default function RightsSplits() {
   });
 
   const activeStreams = selectedWork ? streamColumns(selectedWork) : [];
-  const cleanWorkKeys = selectedCase?.works
-    .filter((work) => work.status === "new")
+  const approvableWorkKeys = selectedCase?.works
+    .filter((work) => work.claimIds.length > 0 && work.status !== "known" && work.status !== "archived")
     .map((work) => work.key) ?? [];
-  const canApproveDocument = Boolean(selectedCase?.reportId && cleanWorkKeys.length > 0 && selectedCase.status !== "conflict");
+  const canApproveDocument = Boolean(selectedCase?.reportId && approvableWorkKeys.length > 0);
 
   return (
     <div className="space-y-6">
@@ -416,7 +417,7 @@ export default function RightsSplits() {
         ]}
       />
 
-      <Tabs defaultValue="cases" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="cases">Split Cases</TabsTrigger>
           <TabsTrigger value="review">Work Review</TabsTrigger>
@@ -509,18 +510,27 @@ export default function RightsSplits() {
                           <Button
                             type="button"
                             variant="quiet"
-                            disabled={!caseItem.reportId || decideCaseMutation.isPending}
+                            disabled={caseItem.works.length === 0 || decideCaseMutation.isPending}
                             onClick={() => {
                               setSelectedCaseId(caseItem.id);
                               setSelectedWorkKey(caseItem.works[0]?.key ?? null);
+                              setActiveTab("review");
                             }}
                           >
                             Review
                           </Button>
                           <Button
                             type="button"
-                            disabled={!caseItem.reportId || caseItem.status !== "ready_to_approve" || decideCaseMutation.isPending}
-                            onClick={() => decideCaseMutation.mutate({ caseItem, action: "approve" })}
+                            disabled={!caseItem.reportId || caseItem.claims.filter((claim) => (claim.review_status ?? "pending") === "pending").length === 0 || decideCaseMutation.isPending}
+                            onClick={() =>
+                              decideCaseMutation.mutate({
+                                caseItem,
+                                action: "approve",
+                                workKeys: caseItem.works
+                                  .filter((work) => work.claimIds.length > 0 && work.status !== "known" && work.status !== "archived")
+                                  .map((work) => work.key),
+                              })
+                            }
                           >
                             Approve document
                           </Button>
@@ -542,13 +552,13 @@ export default function RightsSplits() {
               description="Choose a file from the case inbox to review works, edit shares, and approve the clean rights positions."
             />
           ) : (
-            <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
-                <CardHeader>
+            <div className="grid min-h-[680px] gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <Card className="forensic-frame surface-panel flex max-h-[calc(100vh-13rem)] min-h-[520px] flex-col overflow-hidden rounded-[calc(var(--radius)-2px)]">
+                <CardHeader className="shrink-0">
                   <CardTitle className="type-display-section text-lg">Work Review</CardTitle>
                   <p className="text-sm text-muted-foreground">{selectedCase.fileName}</p>
                 </CardHeader>
-                <CardContent className="space-y-2">
+                <CardContent className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-3">
                   {selectedCase.works.map((work) => (
                     <button
                       type="button"
@@ -573,8 +583,8 @@ export default function RightsSplits() {
                 </CardContent>
               </Card>
 
-              <Card className="forensic-frame surface-panel rounded-[calc(var(--radius)-2px)]">
-                <CardHeader className="border-b border-[hsl(var(--border)/0.1)]">
+              <Card className="forensic-frame surface-panel flex max-h-[calc(100vh-13rem)] min-h-[520px] flex-col overflow-hidden rounded-[calc(var(--radius)-2px)]">
+                <CardHeader className="shrink-0 border-b border-[hsl(var(--border)/0.1)]">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
@@ -600,7 +610,7 @@ export default function RightsSplits() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-5 p-4">
+                <CardContent className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
                   <div className="grid gap-2 md:grid-cols-4">
                     {activeStreams.map((stream) => (
                       <Metric key={stream} label={`${formatLabel(stream)} total`} value={formatShare(selectedWork.streamTotals[stream] ?? 0)} />
@@ -675,7 +685,7 @@ export default function RightsSplits() {
                     <Button
                       type="button"
                       disabled={!canApproveDocument || decideCaseMutation.isPending}
-                      onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "approve", workKeys: cleanWorkKeys })}
+                      onClick={() => decideCaseMutation.mutate({ caseItem: selectedCase, action: "approve", workKeys: approvableWorkKeys })}
                     >
                       Approve document
                     </Button>

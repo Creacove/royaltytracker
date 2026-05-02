@@ -57,6 +57,9 @@ verify_jwt = false
 [functions.submit-review-resolution]
 verify_jwt = false
 
+[functions.submit-split-claim-decisions]
+verify_jwt = false
+
 [functions.insights-natural-chat]
 verify_jwt = false
 

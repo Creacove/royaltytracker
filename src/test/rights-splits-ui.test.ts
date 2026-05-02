@@ -66,6 +66,8 @@ describe("rights and splits product surface", () => {
     expect(page).toContain("Work Review");
     expect(page).toContain("Catalog Rights");
     expect(page).toContain("buildSplitCases");
+    expect(page).toContain('setActiveTab("review")');
+    expect(page).toContain("approvableWorkKeys");
     expect(page).not.toContain("<TableHead>PARTY</TableHead>");
     expect(page).not.toContain("filteredClaims.slice(0, 200).map");
   });
