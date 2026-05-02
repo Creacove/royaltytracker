@@ -173,23 +173,6 @@ WHERE public.can_access_company_data(rp.company_id);
 CREATE OR REPLACE VIEW public.assistant_allocation_fact_v1 AS
 WITH split_basis AS (
   SELECT
-    s.company_id,
-    s.split_claim_id::TEXT AS evidence_id,
-    s.work_id,
-    NULL::UUID AS recording_id,
-    s.party_id,
-    s.work_title,
-    s.party_name,
-    s.canonical_rights_stream AS rights_stream,
-    s.share_pct,
-    CASE WHEN s.review_status = 'approved' THEN 'payable_allocation' ELSE 'estimated_allocation' END AS allocation_label,
-    s.review_status,
-    s.confidence,
-    s.source_ref
-  FROM public.assistant_split_claim_fact_v1 s
-  WHERE s.review_status <> 'rejected'
-  UNION ALL
-  SELECT
     r.company_id,
     r.rights_position_id::TEXT AS evidence_id,
     r.work_id,
@@ -201,7 +184,7 @@ WITH split_basis AS (
     r.share_pct,
     CASE WHEN r.share_kind = 'payable' THEN 'payable_allocation' ELSE 'estimated_allocation' END AS allocation_label,
     'approved'::TEXT AS review_status,
-    r.confidence,
+    r.confidence::numeric AS confidence,
     r.source_ref
   FROM public.assistant_rights_position_fact_v1 r
   WHERE COALESCE(r.is_conflicted, false) = false
@@ -227,7 +210,7 @@ SELECT
   ROUND((COALESCE(rev.net_revenue, rev.gross_revenue, 0) * COALESCE(split_basis.share_pct, 0) / 100)::numeric, 6) AS allocation_amount,
   split_basis.allocation_label,
   split_basis.review_status,
-  split_basis.confidence,
+  split_basis.confidence::numeric AS confidence,
   ARRAY[rev.transaction_id::TEXT, split_basis.evidence_id] AS evidence_ids,
   CASE
     WHEN rev.rights_stream IS NULL OR rev.rights_stream = 'unknown' THEN 'Revenue stream missing; allocation estimated at available revenue level.'
@@ -241,7 +224,6 @@ JOIN split_basis
   AND (
     split_basis.work_id = rev.work_id
     OR split_basis.recording_id = rev.recording_id
-    OR lower(COALESCE(split_basis.work_title, '')) = lower(COALESCE(rev.work_title, rev.recording_title, ''))
   )
 WHERE public.can_access_company_data(rev.company_id);
 

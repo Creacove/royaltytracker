@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { parse as parseCsv } from "https://deno.land/std@0.168.0/encoding/csv.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5?target=deno";
-import { classifyDocumentFamily, type ParserLane } from "../_shared/document-classification.ts";
+import { classifyDocumentFamily, rowHasExplicitSplitSignal, rowHasRevenueSignal, type ParserLane } from "../_shared/document-classification.ts";
 import { buildSplitClaimsFromRows, extractSacemCatalogueRowsFromPdfBytes, extractSacemCatalogueRowsFromText } from "../_shared/rights-splits.ts";
 
 
@@ -942,8 +942,16 @@ function normalizeRightsStream(value: unknown): "performance" | "mechanical" | "
 }
 
 function inferRightsFamily(row: TransactionRow): "publishing" | "recording" | "neighboring" | "mixed" | "unknown" {
+  if (row.isrc) return "recording";
+  if (row.iswc && (row.track_title || row.release_title || row.upc)) return "mixed";
   if (row.iswc || row.work_title || row.party_name || row.publisher_name || row.source_work_code) return "publishing";
-  if (row.isrc || row.track_title || row.release_title || row.upc) return "recording";
+  if (row.track_title || row.release_title || row.upc) return "recording";
+  return "unknown";
+}
+
+function inferAssetClass(row: TransactionRow): "recording" | "work" | "unknown" {
+  if (row.isrc) return "recording";
+  if (row.iswc || row.work_title || row.source_work_code) return "work";
   return "unknown";
 }
 
@@ -2080,8 +2088,13 @@ serve(async (req) => {
     }
 
     // 10. Insert transactions into royalty_transactions (now with source_row_id links)
-    const shouldInsertTransactions = documentFamily.parser_lane !== "rights";
-    const transactions = shouldInsertTransactions ? normalizedRows.map((r, i) => ({
+    const shouldInsertTransactions = documentFamily.parser_lane === "income" || documentFamily.parser_lane === "mixed";
+    const transactionEntries = shouldInsertTransactions
+      ? normalizedRows
+        .map((r, i) => ({ r, i }))
+        .filter(({ r }) => documentFamily.parser_lane !== "mixed" || rowHasRevenueSignal(r as unknown as Record<string, unknown>))
+      : [];
+    const transactions = transactionEntries.map(({ r, i }) => ({
       report_id,
       company_id: workspaceCompanyId,
       user_id: report.user_id,
@@ -2161,14 +2174,14 @@ serve(async (req) => {
         return extra;
       })(),
       basis_type: "observed",
-      asset_class: r.iswc || r.work_title ? "work" : "recording",
+      asset_class: inferAssetClass(r),
       rights_family: inferRightsFamily(r),
       rights_stream: normalizeRightsStream(r.usage_type ?? r.rights_type),
-    })) : [];
+    }));
 
     // Insert in batches of 500 and keep inserted ids for task linkage.
     const BATCH_SIZE = 500;
-    const insertedTransactionIds: Array<string | null> = new Array(transactions.length).fill(null);
+    const insertedTransactionIds: Array<string | null> = new Array(normalizedRows.length).fill(null);
     for (let start = 0; start < transactions.length; start += BATCH_SIZE) {
       const batch = transactions.slice(start, start + BATCH_SIZE);
       const { data: insertedBatch, error: insErr } = await supabase
@@ -2183,7 +2196,7 @@ serve(async (req) => {
         throw new Error("Failed to confirm inserted transactions for task linkage.");
       }
       for (let i = 0; i < insertedBatch.length; i++) {
-        insertedTransactionIds[start + i] = insertedBatch[i].id ?? null;
+        insertedTransactionIds[transactionEntries[start + i]?.i ?? start + i] = insertedBatch[i].id ?? null;
       }
     }
 
@@ -2191,8 +2204,14 @@ serve(async (req) => {
 
     let typedSplitClaimCount = 0;
 
-    if (documentFamily.parser_lane !== "income") {
-      const catalogClaims = normalizedRows.map((r, i) => ({
+    if (documentFamily.parser_lane === "rights" || documentFamily.parser_lane === "mixed") {
+      const splitEntries = normalizedRows
+        .map((r, i) => ({ r, i }))
+        .filter(({ r }) =>
+          documentFamily.parser_lane !== "mixed" ||
+          (rowHasExplicitSplitSignal(r as unknown as Record<string, unknown>) && !rowHasRevenueSignal(r as unknown as Record<string, unknown>))
+        );
+      const catalogClaims = splitEntries.map(({ r, i }) => ({
         company_id: workspaceCompanyId,
         claim_type: documentFamily.document_kind,
         basis_type: "registered",
@@ -2218,9 +2237,9 @@ serve(async (req) => {
         if (claimErr) throw new Error(`Failed to insert catalog claims: ${claimErr.message}`);
       }
 
-      const typedSplitClaims = buildSplitClaimsFromRows(normalizedRows, {
+      const typedSplitClaims = buildSplitClaimsFromRows(splitEntries.map(({ r }) => r), {
         source_report_id: report_id,
-        source_row_ids: insertedSourceRowIds,
+        source_row_ids: splitEntries.map(({ i }) => insertedSourceRowIds[i] ?? null),
         source_language: "fr",
         default_review_status: "pending",
       }).map((claim) => ({

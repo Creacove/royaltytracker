@@ -39,6 +39,23 @@ describe("process-report split ingestion", () => {
     expect(source).toContain("party_name: item.track_artist ?? item.release_artist");
     expect(source).toContain("rights_family: inferRightsFamily(r)");
     expect(source).toContain("rights_stream: normalizeRightsStream(r.usage_type ?? r.rights_type)");
-    expect(source).toContain('documentFamily.parser_lane !== "income"');
+    expect(source).toContain('documentFamily.parser_lane === "rights" || documentFamily.parser_lane === "mixed"');
+  });
+
+  it("keeps revenue routing separate from split-claim routing", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain('const shouldInsertTransactions = documentFamily.parser_lane === "income" || documentFamily.parser_lane === "mixed"');
+    expect(source).toContain('if (documentFamily.parser_lane === "rights" || documentFamily.parser_lane === "mixed")');
+    expect(source).toContain('rowHasExplicitSplitSignal(r as unknown as Record<string, unknown>) && !rowHasRevenueSignal(r as unknown as Record<string, unknown>)');
+    expect(source).not.toContain('if (documentFamily.parser_lane !== "income")');
+  });
+
+  it("prefers recording metadata when ISRC and ISWC both appear on revenue rows", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain('asset_class: inferAssetClass(r)');
+    expect(source).toContain('function inferAssetClass');
+    expect(source).toContain('if (row.isrc) return "recording"');
   });
 });

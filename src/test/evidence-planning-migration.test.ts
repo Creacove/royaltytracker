@@ -28,4 +28,13 @@ describe("AI-native evidence planning migration", () => {
     expect(sql).toContain("CREATE OR REPLACE VIEW public.assistant_data_quality_fact_v1");
     expect(sql).toContain("CREATE OR REPLACE FUNCTION public.run_workspace_evidence_plan_v1");
   });
+
+  it("keeps assistant allocation conservative and avoids title-only auto-links", () => {
+    const sql = readFileSync(migrationPath, "utf8");
+
+    expect(sql).not.toContain("lower(COALESCE(split_basis.work_title, '')) = lower(COALESCE(rev.work_title, rev.recording_title, ''))");
+    expect(sql).not.toContain("FROM public.assistant_split_claim_fact_v1 s\n  WHERE s.review_status <> 'rejected'");
+    expect(sql).toContain("FROM public.assistant_rights_position_fact_v1 r");
+    expect(sql).toContain("WHERE COALESCE(r.is_conflicted, false) = false");
+  });
 });

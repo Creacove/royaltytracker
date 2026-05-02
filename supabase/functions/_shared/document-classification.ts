@@ -40,35 +40,66 @@ function rowHasSourceSplitShare(row: InputRow): boolean {
   ]);
 }
 
+export function rowHasRevenueSignal(row: InputRow): boolean {
+  return rowHasAny(row, [
+    "net_revenue",
+    "gross_revenue",
+    "amount_reporting",
+    "amount_original",
+    "commission",
+    "publisher_share",
+  ]) ||
+    (rowHasAny(row, ["platform", "channel", "territory", "country"]) &&
+      rowHasAny(row, ["track_title", "work_title", "isrc", "iswc", "quantity", "usage_count"])) ||
+    (rowHasAny(row, ["sales_start", "sales_end", "report_date", "period_start", "period_end"]) &&
+      rowHasAny(row, ["quantity", "usage_count", "net_revenue", "gross_revenue"]));
+}
+
+export function rowHasExplicitSplitSignal(row: InputRow): boolean {
+  const hasSourceSplit = rowHasSourceSplitShare(row);
+  const hasShare = rowHasAny(row, ["share_pct", "split", "ownership_share", "writer_share", "publisher_share_pct"]);
+  const hasParty = rowHasAny(row, ["rightsholder_name", "party_name", "writer_name", "publisher_name", "ipi_number"]);
+  const hasRole = rowHasAny(row, ["source_role", "role"]);
+
+  return hasSourceSplit || (hasShare && (hasParty || hasRole));
+}
+
+export function rowHasContractSignal(row: InputRow): boolean {
+  return rowHasAny(row, ["effective_start", "effective_end", "term_mode", "agreement_type", "contract_type"]);
+}
+
 export function classifyDocumentFamily(rows: InputRow[]): {
   document_kind: DocumentKind;
   parser_lane: ParserLane;
   business_side: BusinessSide;
 } {
-  const incomeRows = rows.filter((row) =>
-    rowHasAny(row, ["net_revenue", "gross_revenue", "amount_reporting", "amount_original"]) ||
-    (rowHasAny(row, ["platform", "territory"]) && rowHasAny(row, ["track_title", "isrc", "quantity"])),
-  );
-  const rightsRows = rows.filter((row) =>
-    rowHasAny(row, ["iswc", "share_pct", "rightsholder_name", "party_name", "work_title", "publisher_name", "ipi_number", "source_role"]) ||
-    rowHasSourceSplitShare(row),
-  );
+  const incomeRows = rows.filter(rowHasRevenueSignal);
+  const explicitSplitRows = rows.filter(rowHasExplicitSplitSignal);
+  const contractRows = rows.filter(rowHasContractSignal);
+  const hasSourceSplitShares = rows.some(rowHasSourceSplitShare);
+
+  const hasIncome = incomeRows.length > 0;
+  const hasExplicitSplits = explicitSplitRows.length > 0;
+  const hasContracts = contractRows.length > 0;
+  const hasStandaloneSplitRows = explicitSplitRows.some((row) => !rowHasRevenueSignal(row));
 
   const parser_lane: ParserLane =
-    incomeRows.length > 0 && rightsRows.length > 0
-      ? "mixed"
-      : incomeRows.length > 0
+    hasIncome && hasStandaloneSplitRows
+        ? "mixed"
+        : hasIncome
         ? "income"
-        : "rights";
+        : hasExplicitSplits || hasContracts
+          ? "rights"
+          : "rights";
 
   const document_kind: DocumentKind =
     parser_lane === "mixed"
       ? "mixed_statement"
       : parser_lane === "income"
         ? "income_statement"
-        : rowHasAny(rows[0] ?? {}, ["effective_start", "effective_end", "term_mode"])
+        : hasContracts
           ? "contract_summary"
-          : rowHasSourceSplitShare(rows[0] ?? {})
+          : hasSourceSplitShares
             ? "split_sheet"
             : rowHasAny(rows[0] ?? {}, ["share_pct", "split"])
             ? "rights_catalog"
