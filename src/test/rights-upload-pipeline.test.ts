@@ -43,4 +43,15 @@ describe("rights upload pipeline orchestration", () => {
     expect(source).not.toContain(".maybeSingle()");
     expect(source).toContain(".limit(1)");
   });
+
+  it("resolves document-level approvals without constructing giant claim id queries", () => {
+    const page = read("src/pages/RightsSplits.tsx");
+    const source = read("supabase/functions/submit-split-claim-decisions/index.ts");
+
+    expect(page).toContain("claim_ids: caseItem.reportId ? undefined : claimIds");
+    expect(source).toContain("QUERY_CHUNK_SIZE");
+    expect(source).toContain("loadSplitClaims");
+    expect(source).toContain("chunkArray(workGroupKeys");
+    expect(source).toContain("chunkArray(claimIds");
+  });
 });

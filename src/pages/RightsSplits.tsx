@@ -338,7 +338,7 @@ export default function RightsSplits() {
         : caseItem.claims.map((claim) => claim.id);
       const { data, error } = await supabase.functions.invoke("submit-split-claim-decisions", {
         body: {
-          claim_ids: claimIds,
+          claim_ids: caseItem.reportId ? undefined : claimIds,
           source_report_id: caseItem.reportId,
           work_group_keys: workKeys,
           action,

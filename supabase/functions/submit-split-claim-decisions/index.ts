@@ -16,6 +16,7 @@ type SplitDecisionRequest = {
   note?: string;
 };
 type JsonRecord = Record<string, unknown>;
+const QUERY_CHUNK_SIZE = 40;
 
 function parseJwtClaims(token: string): { role?: string; sub?: string; user_id?: string } | null {
   try {
@@ -55,6 +56,55 @@ function splitClaimToCatalogClaimPayload(claim: JsonRecord): JsonRecord {
     territory_scope: claim.territory_scope,
     raw_payload: claim.raw_payload,
   };
+}
+
+function chunkArray<T>(items: T[], size = QUERY_CHUNK_SIZE): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function loadSplitClaims(
+  supabase: ReturnType<typeof createClient>,
+  claimIds: string[],
+  sourceReportId: string | null,
+  workGroupKeys: string[],
+): Promise<JsonRecord[]> {
+  if (sourceReportId) {
+    if (workGroupKeys.length === 0) {
+      const { data, error } = await supabase
+        .from("catalog_split_claims")
+        .select("*")
+        .eq("source_report_id", sourceReportId);
+      if (error) throw new Error(`Failed to load split case claims: ${error.message}`);
+      return (data ?? []) as JsonRecord[];
+    }
+
+    const claims: JsonRecord[] = [];
+    for (const groupKeyChunk of chunkArray(workGroupKeys)) {
+      const { data, error } = await supabase
+        .from("catalog_split_claims")
+        .select("*")
+        .eq("source_report_id", sourceReportId)
+        .in("split_group_key", groupKeyChunk);
+      if (error) throw new Error(`Failed to load split case work claims: ${error.message}`);
+      claims.push(...((data ?? []) as JsonRecord[]));
+    }
+    return claims;
+  }
+
+  const claims: JsonRecord[] = [];
+  for (const claimIdChunk of chunkArray(claimIds)) {
+    const { data, error } = await supabase
+      .from("catalog_split_claims")
+      .select("*")
+      .in("id", claimIdChunk);
+    if (error) throw new Error(`Failed to load split claims: ${error.message}`);
+    claims.push(...((data ?? []) as JsonRecord[]));
+  }
+  return claims;
 }
 
 serve(async (req) => {
@@ -101,25 +151,11 @@ serve(async (req) => {
       throw new Error('action must be "approve", "reject", "keep_existing", or "replace_existing"');
     }
 
-    if (claimIds.length === 0 && sourceReportId) {
-      let claimQuery = supabase
-        .from("catalog_split_claims")
-        .select("id")
-        .eq("source_report_id", sourceReportId);
-      if (workGroupKeys.length > 0) claimQuery = claimQuery.in("split_group_key", workGroupKeys);
-      const { data: groupedClaims, error: groupedErr } = await claimQuery;
-      if (groupedErr) throw new Error(`Failed to resolve split case claims: ${groupedErr.message}`);
-      claimIds = (groupedClaims ?? []).map((claim: JsonRecord) => String(claim.id)).filter(Boolean);
-    }
+    if (claimIds.length === 0 && !sourceReportId) throw new Error("claim_ids or source_report_id is required");
 
-    if (claimIds.length === 0) throw new Error("claim_ids or source_report_id is required");
-
-    const { data: splitClaims, error: claimsErr } = await supabase
-      .from("catalog_split_claims")
-      .select("*")
-      .in("id", claimIds);
-    if (claimsErr) throw new Error(`Failed to load split claims: ${claimsErr.message}`);
-    if (!splitClaims || splitClaims.length === 0) throw new Error("No split claims found.");
+    const splitClaims = await loadSplitClaims(supabase, claimIds, sourceReportId, workGroupKeys);
+    if (splitClaims.length === 0) throw new Error("No split claims found.");
+    claimIds = splitClaims.map((claim: JsonRecord) => String(claim.id)).filter(Boolean);
 
     const companyIds = new Set(splitClaims.map((claim: JsonRecord) => asString(claim.company_id)).filter(Boolean));
     if (companyIds.size !== 1) throw new Error("Split claim decisions must target one company at a time.");
@@ -139,22 +175,24 @@ serve(async (req) => {
 
     if (action === "reject" || action === "keep_existing") {
       const nextReviewCaseStatus = action === "keep_existing" ? "archived" : "rejected";
-      const { error: rejectErr } = await supabase
-        .from("catalog_split_claims")
-        .update({
-          review_status: "rejected",
-          review_case_status: nextReviewCaseStatus,
-          dedupe_status: action === "keep_existing" ? "manual" : "new_needs_review",
-        })
-        .in("id", claimIds);
-      if (rejectErr) {
-        const missingCaseColumns = rejectErr.message.includes("review_case_status") || rejectErr.message.includes("dedupe_status");
-        if (!missingCaseColumns) throw new Error(`Failed to reject split claims: ${rejectErr.message}`);
-        const { error: legacyRejectErr } = await supabase
+      for (const claimIdChunk of chunkArray(claimIds)) {
+        const { error: rejectErr } = await supabase
           .from("catalog_split_claims")
-          .update({ review_status: "rejected" })
-          .in("id", claimIds);
-        if (legacyRejectErr) throw new Error(`Failed to reject split claims: ${legacyRejectErr.message}`);
+          .update({
+            review_status: "rejected",
+            review_case_status: nextReviewCaseStatus,
+            dedupe_status: action === "keep_existing" ? "manual" : "new_needs_review",
+          })
+          .in("id", claimIdChunk);
+        if (rejectErr) {
+          const missingCaseColumns = rejectErr.message.includes("review_case_status") || rejectErr.message.includes("dedupe_status");
+          if (!missingCaseColumns) throw new Error(`Failed to reject split claims: ${rejectErr.message}`);
+          const { error: legacyRejectErr } = await supabase
+            .from("catalog_split_claims")
+            .update({ review_status: "rejected" })
+            .in("id", claimIdChunk);
+          if (legacyRejectErr) throw new Error(`Failed to reject split claims: ${legacyRejectErr.message}`);
+        }
       }
 
       const events = splitClaims.map((claim: JsonRecord) => ({
@@ -166,8 +204,10 @@ serve(async (req) => {
         new_state: { review_status: "rejected", review_case_status: nextReviewCaseStatus, note },
         decided_by: requesterId,
       }));
-      const { error: eventErr } = await supabase.from("catalog_resolution_events").insert(events);
-      if (eventErr) throw new Error(`Failed to write rejection events: ${eventErr.message}`);
+      for (const eventChunk of chunkArray(events)) {
+        const { error: eventErr } = await supabase.from("catalog_resolution_events").insert(eventChunk);
+        if (eventErr) throw new Error(`Failed to write rejection events: ${eventErr.message}`);
+      }
 
       return new Response(
         JSON.stringify({
