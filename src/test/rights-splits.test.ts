@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { deflateSync, inflateSync } from "node:zlib";
 
 import {
   buildSplitClaimsFromRows,
@@ -105,6 +106,26 @@ describe("rights split source vocabulary", () => {
       }),
     ]);
   });
+
+  it("can require explicit share evidence for SACEM catalogue rows", () => {
+    const claims = buildSplitClaimsFromRows([
+      {
+        work_title: "BELIEVE",
+        iswc: "T-333.869.164.4",
+        source_work_code: "111492018167",
+        party_name: "EMEYOMA-ATIGBI",
+        source_role: "Chant",
+        rights_type: "Chant",
+      },
+    ], {
+      source_report_id: "report_1",
+      source_row_ids: ["row_1"],
+      source_language: "fr",
+      require_share_evidence: true,
+    });
+
+    expect(claims).toEqual([]);
+  });
 });
 
 describe("rights split document classification", () => {
@@ -169,6 +190,78 @@ Total 100,000 100,000 100,000
         }),
       ]),
     );
+  });
+
+  it("extracts real rows from the provided SACEM PDF text sample", () => {
+    const rows = extractSacemCatalogueRowsFromText(`
+Chant T-338.961.666.0111770208367 02/03/2026BAD INTENTIONS
+C 2162992 50,00000,0000 50,0000EKEKWE Alexander Pas de societe381800272EKEKWE ALEXANDER
+C 2162993 0,000050,0000 0,0000BMIEKEKWE Alexander 381800272EKEKWE ALEXANDER
+E 1926670 50,000050,0000 50,0000SACEMNEXUS MUSIC PUBLISHING SACEM1252479349NEXUS MUSIC PUBLISHING
+Total 100,000 100,000 100,000
+Chant T-339.110.723.2111774203267 02/03/2026BAMIJO
+C 2165480 50,00000,0000 50,0000SANUSI Babajide Pas de societe1331281489SANUSI BABAJIDE EMMANUEL
+C 2165481 0,000050,0000 0,0000BMISANUSI Babajide 1331281489SANUSI BABAJIDE EMMANUEL
+A 2165483 25,00000,0000 25,0000ADELUSI Segun Pas de societe1315535962ADELUSI SEGUN VICTOR (Pas de
+A 2165484 0,000025,0000 0,0000BMIADELUSI Segun 1315535962ADELUSI SEGUN VICTOR (BMI)
+E 1926670 25,000025,0000 25,0000SACEMNEXUS MUSIC PUBLISHING SACEM1252479349NEXUS MUSIC PUBLISHING
+Total 100,000 100,000 100,000
+Chant T-333.869.164.4111492018167 21/07/2025BELIEVE
+CA 2023581 50,000066,6700 50,0000ASCAPEMEYOMA-ATIGBI Pas de societe1252825361EMEYOMA-ATIGBI
+E 1926670 50,000033,3300 50,0000SACEMNEXUS MUSIC PUBLISHING SACEM1252479349NEXUS MUSIC PUBLISHING
+Total 100,000 100,000 100,000
+Chant T-333.336.342.7111474864967 23/06/2025BIG BIG THINGS
+C 2011196 25,000033,3330 25,0000BMIDRIZZDPRODUCER Pas de societe1179495896OLALEYE ISRAEL TOLUWANI
+A 2035207 25,000033,3330 50,0000PRSVIXXBUG Pas de societe1288967868TINUBU VICTOR AYOMIDE
+E 1926670 50,000033,3340 25,0000SACEMNEXUS MUSIC PUBLISHING SACEM1252479349NEXUS MUSIC PUBLISHING
+Total 100,000 100,000 100,000
+`);
+
+    expect(rows).toHaveLength(13);
+    expect(new Set(rows.map((row) => row.work_title))).toEqual(new Set([
+      "BAD INTENTIONS",
+      "BAMIJO",
+      "BELIEVE",
+      "BIG BIG THINGS",
+    ]));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          work_title: "BELIEVE",
+          iswc: "T-333.869.164.4",
+          source_work_code: "111492018167",
+          source_role: "CA",
+          party_name: "EMEYOMA-ATIGBI",
+          de_share: "50,0000",
+          dr_share: "66,6700",
+          ph_share: "50,0000",
+        }),
+        expect.objectContaining({
+          work_title: "BELIEVE",
+          party_name: "NEXUS MUSIC PUBLISHING",
+          de_share: "50,0000",
+          dr_share: "33,3300",
+          ph_share: "50,0000",
+        }),
+      ]),
+    );
+  });
+
+  it("parses SACEM rightsholder shares when all three share columns are spaced", () => {
+    const rows = extractSacemCatalogueRowsFromText(`
+Chant T-333.869.164.4111492018167 21/07/2025BELIEVE
+CA 2023581 50,0000 66,6700 50,0000 ASCAPEMEYOMA-ATIGBI Pas de societe1252825361EMEYOMA-ATIGBI
+`);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        source_role: "CA",
+        de_share: "50,0000",
+        dr_share: "66,6700",
+        ph_share: "50,0000",
+        party_name: "EMEYOMA-ATIGBI",
+      }),
+    ]);
   });
 
   it("parses SACEM catalogue rows from the PDF text layer even when the header is missing", () => {
@@ -254,9 +347,50 @@ endobj`;
         work_title: "BAD INTENTIONS",
         source_role: "C",
         party_name: "EKEKWE ALEXANDER",
-        de_share: "0,0000",
-        dr_share: "50,0000",
+        de_share: "50,0000",
+        dr_share: "0,0000",
         ph_share: "25,0000",
+      }),
+    ]);
+  });
+
+  it("inflates FlateDecode PDF streams before parsing SACEM coordinates", async () => {
+    const content = `BT 1 0 0 1 432.99 580.38 Tm (Chant)Tj ET
+BT 1 0 0 1 522.48 580.38 Tm (T-333.869.164.4)Tj ET
+BT 1 0 0 1 270 580.38 Tm (111492018167)Tj ET
+BT 1 0 0 1 672.48 580.38 Tm (21/07/2025)Tj ET
+BT 1 0 0 1 25 580.38 Tm (BELIEVE)Tj ET
+BT 1 0 0 1 34.44 525.23 Tm (CA)Tj ET
+BT 1 0 0 1 219.43 525.23 Tm (2023581)Tj ET
+BT 1 0 0 1 663.04 525.23 Tm (50,0000)Tj ET
+BT 1 0 0 1 600.04 525.23 Tm (66,6700)Tj ET
+BT 1 0 0 1 725.54 525.23 Tm (50,0000)Tj ET
+BT 1 0 0 1 264 525.23 Tm (EMEYOMA-ATIGBI)Tj ET
+BT 1 0 0 1 397.76 525.23 Tm (1252825361)Tj ET
+BT 1 0 0 1 74 525.23 Tm (EMEYOMA-ATIGBI)Tj ET`;
+    const compressed = deflateSync(Buffer.from(content, "binary"));
+    const pdfBytes = Buffer.concat([
+      Buffer.from(`%PDF-1.4
+1 0 obj
+<< /Length ${compressed.length} /Filter /FlateDecode >>
+stream
+`, "binary"),
+      compressed,
+      Buffer.from(`
+endstream
+endobj`, "binary"),
+    ]);
+
+    const rows = await extractSacemCatalogueRowsFromPdfBytes(pdfBytes, (bytes) => inflateSync(Buffer.from(bytes)));
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        work_title: "BELIEVE",
+        source_role: "CA",
+        party_name: "EMEYOMA-ATIGBI",
+        de_share: "50,0000",
+        dr_share: "66,6700",
+        ph_share: "50,0000",
       }),
     ]);
   });

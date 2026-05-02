@@ -60,6 +60,7 @@ type BuildSplitClaimOptions = {
   source_row_ids?: Array<string | null>;
   source_language?: string;
   default_review_status?: "pending" | "approved" | "rejected";
+  require_share_evidence?: boolean;
 };
 
 type SacemWorkContext = {
@@ -77,7 +78,7 @@ type PdfTextAtom = {
   text: string;
 };
 
-type PdfInflateFn = (bytes: Uint8Array) => Uint8Array;
+type PdfInflateFn = (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>;
 
 const SOURCE_VOCABULARY: Record<string, SourceRightsVocabulary> = {
   "fr:de": {
@@ -186,7 +187,7 @@ function parseSacemRightsholderLine(line: string): {
   source_party_text: string | null;
 } | null {
   const match = line.match(
-    /^([A-Z]{1,3})\s+(\d+)\s+(\d{1,3},\d{4})(\d{1,3},\d{4})\s+(\d{1,3},\d{4})(.+)$/,
+    /^([A-Z]{1,3})\s+(\d+)\s+(\d{1,3},\d{4})\s*(\d{1,3},\d{4})\s+(\d{1,3},\d{4})\s*(.+)$/,
   );
   if (!match) return null;
 
@@ -344,13 +345,25 @@ function binaryStringToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function inflatePdfStreamBytes(bytes: Uint8Array, inflate?: PdfInflateFn): Uint8Array | null {
-  if (!inflate) return null;
+async function inflateWithCompressionStream(bytes: Uint8Array): Promise<Uint8Array | null> {
+  const DecompressionStreamCtor = globalThis.DecompressionStream;
+  if (typeof DecompressionStreamCtor !== "function") return null;
+
   try {
-    return inflate(bytes);
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStreamCtor("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch (_error) {
     return null;
   }
+}
+
+async function inflatePdfStreamBytes(bytes: Uint8Array, inflate?: PdfInflateFn): Promise<Uint8Array | null> {
+  try {
+    if (inflate) return await inflate(bytes);
+  } catch (_error) {
+    // Fall through to the platform decompressor when a caller-supplied inflater fails.
+  }
+  return inflateWithCompressionStream(bytes);
 }
 
 function extractPdfTextAtomsFromContent(content: string, page: number): PdfTextAtom[] {
@@ -438,8 +451,8 @@ function parseSacemPdfRowsFromAtoms(atoms: PdfTextAtom[]): SplitClaimInputRow[] 
 
     const role = row.find((atom) => atom.x >= 25 && atom.x < 60 && /^[A-Z]{1,3}$/.test(atom.text))?.text ?? null;
     const sourceRightsholderCode = row.find((atom) => atom.x >= 190 && atom.x < 250 && /^\d+$/.test(atom.text))?.text ?? null;
-    const deShare = textInBand(row, 590, 645);
-    const drShare = textInBand(row, 645, 710);
+    const deShare = textInBand(row, 645, 710);
+    const drShare = textInBand(row, 590, 645);
     const phShare = textInBand(row, 710, 770);
 
     if (!role || !sourceRightsholderCode || !deShare || !drShare || !phShare) {
@@ -461,8 +474,8 @@ function parseSacemPdfRowsFromAtoms(atoms: PdfTextAtom[]): SplitClaimInputRow[] 
       source_role: role,
       source_rightsholder_code: sourceRightsholderCode,
       source_party_text: textInBand(row, 250, 390),
-      society_de: textInBand(row, 465, 525),
-      society_dr: textInBand(row, 525, 590),
+      society_de: textInBand(row, 525, 590),
+      society_dr: textInBand(row, 465, 525),
       de_share: deShare,
       dr_share: drShare,
       ph_share: phShare,
@@ -492,7 +505,7 @@ export async function extractSacemCatalogueRowsFromPdfBytes(
     const dictionaryPrefix = binary.slice(objectIndex > 0 ? objectIndex : Math.max(0, streamIndex - 5000), streamIndex);
     if (/\/Subtype\s*\/Image/.test(dictionaryPrefix)) continue;
     const inflated = dictionaryPrefix.includes("FlateDecode")
-      ? inflatePdfStreamBytes(streamBytes, inflate)
+      ? await inflatePdfStreamBytes(streamBytes, inflate)
       : null;
     if (dictionaryPrefix.includes("FlateDecode") && !inflated) continue;
     const decodedBytes = inflated ?? streamBytes;
@@ -625,11 +638,12 @@ function fallbackRightsCode(row: SplitClaimInputRow): string {
 export function buildSplitClaimsFromRows(rows: SplitClaimInputRow[], options: BuildSplitClaimOptions = {}): TypedSplitClaim[] {
   const sourceLanguage = options.source_language ?? "en";
   const reviewStatus = options.default_review_status ?? "pending";
+  const requireShareEvidence = options.require_share_evidence ?? false;
   const claims: TypedSplitClaim[] = [];
 
   rows.forEach((row, index) => {
     const entries = shareEntries(row);
-    if (entries.length === 0 && hasReviewableRightsEvidence(row)) {
+    if (entries.length === 0 && !requireShareEvidence && hasReviewableRightsEvidence(row)) {
       entries.push({ code: fallbackRightsCode(row), value: null });
     }
 

@@ -135,6 +135,12 @@ const formatShare = (value: number | null | undefined) => {
   return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}%`;
 };
 
+const parseShareDraft = (value: string | undefined): number | null => {
+  if (value == null || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 const readFunctionErrorMessage = async (error: unknown, fallback: string) => {
   let message = error instanceof Error ? error.message : fallback;
   const context = (error as { context?: { text?: () => Promise<string> } } | null)?.context;
@@ -630,7 +636,7 @@ export default function RightsSplits() {
                 <CardContent className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
                   <div className="grid gap-2 md:grid-cols-4">
                     {activeStreams.map((stream) => (
-                      <Metric key={stream} label={`${formatLabel(stream)} total`} value={formatShare(selectedWork.streamTotals[stream] ?? 0)} />
+                      <Metric key={stream} label={`${formatLabel(stream)} total`} value={formatShare(selectedWork.streamTotals[stream])} />
                     ))}
                   </div>
 
@@ -678,7 +684,7 @@ export default function RightsSplits() {
                                 claim={claim}
                                 stream={stream}
                                 party={party}
-                                value={claim ? Number(shareDrafts[claim.id]) : party.shares[stream]}
+                                value={claim ? parseShareDraft(shareDrafts[claim.id]) : party.shares[stream]}
                                 pending={saveSharesMutation.isPending}
                                 onChange={(claimId, value) => setShareDrafts((current) => ({ ...current, [claimId]: value }))}
                               />

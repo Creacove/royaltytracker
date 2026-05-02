@@ -131,4 +131,27 @@ describe("split cases", () => {
       phonographic: 50,
     });
   });
+
+  it("warns about missing share evidence without treating it as a zero total", () => {
+    const cases = buildSplitCases([
+      {
+        ...baseClaim,
+        id: "claim_missing",
+        work_title: "Believe",
+        iswc: "T-333.869.164.4",
+        source_work_code: "111492018167",
+        party_name: "EMEYOMA-ATIGBI",
+        ipi_number: null,
+        source_role: "CA",
+        source_rights_code: "CHANT",
+        source_rights_label: "Chant",
+        canonical_rights_stream: "chant",
+        share_pct: null,
+      },
+    ]);
+
+    expect(cases[0].works[0].streamTotals).not.toHaveProperty("chant");
+    expect(cases[0].works[0].warnings).toEqual(["Chant has missing share evidence"]);
+    expect(cases[0].works[0].status).toBe("needs_attention");
+  });
 });

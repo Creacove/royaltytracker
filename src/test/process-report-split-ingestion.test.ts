@@ -32,6 +32,9 @@ describe("process-report split ingestion", () => {
     expect(source).toContain("sacemPdfRowsWithShares > 0");
     expect(source).toContain("falling back to Document AI");
     expect(source).toContain("sacemCatalogueRowsWithShares > 0");
+    expect(source).toContain("isSacemCatalogueText(document.text)");
+    expect(source).toContain("sacemCatalogueDetected");
+    expect(source).toContain("require_share_evidence: requireSplitShareEvidence");
   });
 
   it("clears prior rights claims before forced reprocessing to prevent duplicate split evidence", () => {
@@ -39,6 +42,13 @@ describe("process-report split ingestion", () => {
 
     expect(source).toContain('.from("catalog_split_claims").delete().eq("source_report_id", report_id)');
     expect(source).toContain('.from("catalog_claims").delete().eq("source_report_id", report_id)');
+  });
+
+  it("does not fail ingestion when duplicate fingerprint comparison is unavailable", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain("Skipping existing split fingerprint comparison");
+    expect(source).not.toContain("throw new Error(`Failed to compare existing split fingerprints");
   });
 
   it("maps custom extractor rights rows into work party evidence and constrained transaction vocabularies", () => {

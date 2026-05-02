@@ -210,16 +210,24 @@ export function buildSplitWorks(claims: SplitClaimForCase[]): SplitWork[] {
         .sort((a, b) => a.name.localeCompare(b.name));
 
       const streamTotals: Record<string, number> = {};
+      const missingShareStreams = new Set<string>();
       for (const claim of workClaims) {
+        if (claim.share_pct == null || Number.isNaN(Number(claim.share_pct))) {
+          missingShareStreams.add(streamKey(claim));
+          continue;
+        }
         const value = Number(claim.share_pct);
         if (!Number.isFinite(value)) continue;
         const stream = streamKey(claim);
         streamTotals[stream] = (streamTotals[stream] ?? 0) + value;
       }
 
-      const warnings = Object.entries(streamTotals)
+      const warnings = [
+        ...Array.from(missingShareStreams).map((stream) => `${formatLabel(stream)} has missing share evidence`),
+        ...Object.entries(streamTotals)
         .filter(([, total]) => Math.abs(total - 100) > 0.01)
-        .map(([stream, total]) => `${formatLabel(stream)} totals ${Number(total.toFixed(4))}%`);
+        .map(([stream, total]) => `${formatLabel(stream)} totals ${Number(total.toFixed(4))}%`),
+      ];
 
       const first = workClaims[0];
       const fingerprint = first.split_fingerprint || buildSplitFingerprint(workClaims);

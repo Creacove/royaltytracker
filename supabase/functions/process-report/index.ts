@@ -8,6 +8,7 @@ import {
   buildSplitClaimsFromRows,
   extractSacemCatalogueRowsFromPdfBytes,
   extractSacemCatalogueRowsFromText,
+  isSacemCatalogueText,
 } from "../_shared/rights-splits.ts";
 
 
@@ -1689,12 +1690,14 @@ serve(async (req) => {
     let document: any = null;
     let extractedItems: DocumentAiReportItem[] = [];
     let rawRows: TransactionRow[] = [];
+    let requireSplitShareEvidence = false;
 
     if (mimeType === "application/pdf") {
       const sacemPdfRows = await extractSacemCatalogueRowsFromPdfBytes(fileBytes);
       const sacemPdfRowsWithShares = sacemPdfRows.filter(hasSplitShareEvidence).length;
       if (sacemPdfRowsWithShares > 0) {
         rawRows = sacemPdfRows;
+        requireSplitShareEvidence = true;
         console.log(`[process-report] Parsed ${rawRows.length} SACEM rights catalogue rows from native PDF text coordinates (${sacemPdfRowsWithShares} rows with share evidence)`);
       } else if (sacemPdfRows.length > 0) {
         console.log(`[process-report] Ignoring ${sacemPdfRows.length} incomplete native SACEM rows with no share evidence; falling back to Document AI`);
@@ -1795,15 +1798,17 @@ serve(async (req) => {
       // Prefer deterministic rights catalogue parsing when OCR text identifies
       // a SACEM works catalogue; generic report_item extractors flatten this
       // layout into track/artist fields and lose DE/DR/PH split semantics.
+      const sacemCatalogueDetected = typeof document?.text === "string" && isSacemCatalogueText(document.text);
       const sacemCatalogueRows = typeof document?.text === "string"
         ? extractSacemCatalogueRowsFromText(document.text)
         : [];
       const sacemCatalogueRowsWithShares = sacemCatalogueRows.filter(hasSplitShareEvidence).length;
       if (sacemCatalogueRowsWithShares > 0) {
         rawRows = sacemCatalogueRows;
+        requireSplitShareEvidence = true;
         console.log(`[process-report] Built ${rawRows.length} SACEM rights catalogue rows from OCR text (${sacemCatalogueRowsWithShares} rows with share evidence)`);
-      } else if (sacemCatalogueRows.length > 0) {
-        console.log(`[process-report] Ignoring ${sacemCatalogueRows.length} incomplete OCR SACEM rows with no share evidence; falling back to generic Document AI rows`);
+      } else if (sacemCatalogueDetected || sacemCatalogueRows.length > 0) {
+        console.log(`[process-report] Ignoring ${sacemCatalogueRows.length} incomplete OCR SACEM rows with no share evidence; refusing generic Document AI fallback for SACEM catalogue`);
       } else if (extractedItems.length > 0) {
         rawRows = extractedItems
           .map((item) => ({
@@ -2270,6 +2275,7 @@ serve(async (req) => {
         source_row_ids: splitEntries.map(({ i }) => insertedSourceRowIds[i] ?? null),
         source_language: "fr",
         default_review_status: "pending",
+        require_share_evidence: requireSplitShareEvidence,
       });
       const reviewMetadata = buildSplitClaimReviewMetadata(builtSplitClaims);
       const splitFingerprints = Array.from(
@@ -2290,7 +2296,7 @@ serve(async (req) => {
         if (existingApprovedErr) {
           const missingFingerprintColumn = existingApprovedErr.message.includes("split_fingerprint");
           if (!missingFingerprintColumn) {
-            throw new Error(`Failed to compare existing split fingerprints: ${existingApprovedErr.message}`);
+            console.error(`[process-report] Skipping existing split fingerprint comparison: ${existingApprovedErr.message}`);
           }
         }
         (existingApproved ?? []).forEach((row: { split_fingerprint?: string | null }) => {
