@@ -51,7 +51,19 @@ describe("rights upload pipeline orchestration", () => {
     expect(page).toContain("claim_ids: caseItem.reportId ? undefined : claimIds");
     expect(source).toContain("QUERY_CHUNK_SIZE");
     expect(source).toContain("loadSplitClaims");
-    expect(source).toContain("chunkArray(workGroupKeys");
+    expect(source).toContain("fetchSplitClaimsByReport");
+    expect(source).toContain("buildWorkGroupKeyFromClaim");
+    expect(source).toContain("asString(claim.split_group_key) ?? buildWorkGroupKeyFromClaim");
     expect(source).toContain("chunkArray(claimIds");
+  });
+
+  it("deletes report graphs through a service-side function", () => {
+    const reports = read("src/pages/Reports.tsx");
+    const source = read("supabase/functions/delete-report/index.ts");
+
+    expect(reports).toContain('invokeFunction("delete-report"');
+    expect(source).toContain('from("catalog_rights_positions").delete().in("source_claim_id"');
+    expect(source).toContain('["catalog_split_claims", "source_report_id"]');
+    expect(source).toContain('from("cmo_reports").delete().eq("id", reportId)');
   });
 });

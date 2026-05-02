@@ -946,6 +946,23 @@ function normalizeRightsStream(value: unknown): "performance" | "mechanical" | "
   return "other";
 }
 
+function hasSplitShareEvidence(row: TransactionRow): boolean {
+  const shareValues = [
+    row.de_share,
+    row.dr_share,
+    row.ph_share,
+    row.share_pct,
+    row.split,
+    row.share,
+  ];
+  return shareValues.some((value) => {
+    if (typeof value === "number") return Number.isFinite(value);
+    if (typeof value !== "string") return false;
+    const normalized = value.replace(/\s/g, "").replace(",", ".").trim();
+    return /^-?\d+(?:\.\d+)?$/.test(normalized);
+  });
+}
+
 function inferRightsFamily(row: TransactionRow): "publishing" | "recording" | "neighboring" | "mixed" | "unknown" {
   if (row.isrc) return "recording";
   if (row.iswc && (row.track_title || row.release_title || row.upc)) return "mixed";
@@ -1675,9 +1692,12 @@ serve(async (req) => {
 
     if (mimeType === "application/pdf") {
       const sacemPdfRows = await extractSacemCatalogueRowsFromPdfBytes(fileBytes);
-      if (sacemPdfRows.length > 0) {
+      const sacemPdfRowsWithShares = sacemPdfRows.filter(hasSplitShareEvidence).length;
+      if (sacemPdfRowsWithShares > 0) {
         rawRows = sacemPdfRows;
-        console.log(`[process-report] Parsed ${rawRows.length} SACEM rights catalogue rows from native PDF text coordinates`);
+        console.log(`[process-report] Parsed ${rawRows.length} SACEM rights catalogue rows from native PDF text coordinates (${sacemPdfRowsWithShares} rows with share evidence)`);
+      } else if (sacemPdfRows.length > 0) {
+        console.log(`[process-report] Ignoring ${sacemPdfRows.length} incomplete native SACEM rows with no share evidence; falling back to Document AI`);
       }
     }
 
@@ -1778,9 +1798,12 @@ serve(async (req) => {
       const sacemCatalogueRows = typeof document?.text === "string"
         ? extractSacemCatalogueRowsFromText(document.text)
         : [];
-      if (sacemCatalogueRows.length > 0) {
+      const sacemCatalogueRowsWithShares = sacemCatalogueRows.filter(hasSplitShareEvidence).length;
+      if (sacemCatalogueRowsWithShares > 0) {
         rawRows = sacemCatalogueRows;
-        console.log(`[process-report] Built ${rawRows.length} SACEM rights catalogue rows from OCR text`);
+        console.log(`[process-report] Built ${rawRows.length} SACEM rights catalogue rows from OCR text (${sacemCatalogueRowsWithShares} rows with share evidence)`);
+      } else if (sacemCatalogueRows.length > 0) {
+        console.log(`[process-report] Ignoring ${sacemCatalogueRows.length} incomplete OCR SACEM rows with no share evidence; falling back to generic Document AI rows`);
       } else if (extractedItems.length > 0) {
         rawRows = extractedItems
           .map((item) => ({

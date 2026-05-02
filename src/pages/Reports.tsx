@@ -648,14 +648,17 @@ export default function Reports() {
 
   const deleteMutation = useMutation({
     mutationFn: async (report: { id: string; file_path: string }) => {
-      await supabase.storage.from("cmo-reports").remove([report.file_path]);
-      const { error } = await supabase.from("cmo_reports").delete().eq("id", report.id);
-      if (error) throw error;
+      await invokeFunction("delete-report", { report_id: report.id });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["reports"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["rights-splits-claims"] });
+      queryClient.invalidateQueries({ queryKey: ["rights-splits-documents"] });
       toast({ title: "Report deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
     },
   });
 

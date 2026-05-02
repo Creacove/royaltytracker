@@ -25,6 +25,15 @@ describe("process-report split ingestion", () => {
     );
   });
 
+  it("does not trust incomplete SACEM parser rows without share evidence", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain("function hasSplitShareEvidence");
+    expect(source).toContain("sacemPdfRowsWithShares > 0");
+    expect(source).toContain("falling back to Document AI");
+    expect(source).toContain("sacemCatalogueRowsWithShares > 0");
+  });
+
   it("clears prior rights claims before forced reprocessing to prevent duplicate split evidence", () => {
     const source = readFileSync(processReportPath, "utf8");
 

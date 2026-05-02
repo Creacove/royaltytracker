@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { buildWorkGroupKeyFromClaim } from "../_shared/rights-splits.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,6 +18,7 @@ type SplitDecisionRequest = {
 };
 type JsonRecord = Record<string, unknown>;
 const QUERY_CHUNK_SIZE = 40;
+const REPORT_PAGE_SIZE = 1000;
 
 function parseJwtClaims(token: string): { role?: string; sub?: string; user_id?: string } | null {
   try {
@@ -73,26 +75,11 @@ async function loadSplitClaims(
   workGroupKeys: string[],
 ): Promise<JsonRecord[]> {
   if (sourceReportId) {
-    if (workGroupKeys.length === 0) {
-      const { data, error } = await supabase
-        .from("catalog_split_claims")
-        .select("*")
-        .eq("source_report_id", sourceReportId);
-      if (error) throw new Error(`Failed to load split case claims: ${error.message}`);
-      return (data ?? []) as JsonRecord[];
-    }
+    const claims = await fetchSplitClaimsByReport(supabase, sourceReportId);
+    if (workGroupKeys.length === 0) return claims;
 
-    const claims: JsonRecord[] = [];
-    for (const groupKeyChunk of chunkArray(workGroupKeys)) {
-      const { data, error } = await supabase
-        .from("catalog_split_claims")
-        .select("*")
-        .eq("source_report_id", sourceReportId)
-        .in("split_group_key", groupKeyChunk);
-      if (error) throw new Error(`Failed to load split case work claims: ${error.message}`);
-      claims.push(...((data ?? []) as JsonRecord[]));
-    }
-    return claims;
+    const groupKeySet = new Set(workGroupKeys);
+    return claims.filter((claim) => groupKeySet.has(asString(claim.split_group_key) ?? buildWorkGroupKeyFromClaim(claim)));
   }
 
   const claims: JsonRecord[] = [];
@@ -103,6 +90,25 @@ async function loadSplitClaims(
       .in("id", claimIdChunk);
     if (error) throw new Error(`Failed to load split claims: ${error.message}`);
     claims.push(...((data ?? []) as JsonRecord[]));
+  }
+  return claims;
+}
+
+async function fetchSplitClaimsByReport(
+  supabase: ReturnType<typeof createClient>,
+  sourceReportId: string,
+): Promise<JsonRecord[]> {
+  const claims: JsonRecord[] = [];
+  for (let offset = 0; ; offset += REPORT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("catalog_split_claims")
+      .select("*")
+      .eq("source_report_id", sourceReportId)
+      .range(offset, offset + REPORT_PAGE_SIZE - 1);
+    if (error) throw new Error(`Failed to load split case claims: ${error.message}`);
+    const page = (data ?? []) as JsonRecord[];
+    claims.push(...page);
+    if (page.length < REPORT_PAGE_SIZE) break;
   }
   return claims;
 }
