@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { parse as parseCsv } from "https://deno.land/std@0.168.0/encoding/csv.ts";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5?target=deno";
 import { classifyDocumentFamily, type ParserLane } from "../_shared/document-classification.ts";
-import { buildSplitClaimsFromRows, extractSacemCatalogueRowsFromText } from "../_shared/rights-splits.ts";
+import { buildSplitClaimsFromRows, extractSacemCatalogueRowsFromPdfBytes, extractSacemCatalogueRowsFromText } from "../_shared/rights-splits.ts";
 
 
 const corsHeaders = {
@@ -930,6 +930,23 @@ function normalizeCurrencyCode(value: any): string | null {
   return null;
 }
 
+function normalizeRightsStream(value: unknown): "performance" | "mechanical" | "sync" | "phonographic" | "other" | "unknown" {
+  if (value == null || value === "") return "unknown";
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return "unknown";
+  if (normalized.includes("mechanical") || normalized.includes("reproduction") || normalized === "dr") return "mechanical";
+  if (normalized.includes("performance") || normalized.includes("execution") || normalized === "de") return "performance";
+  if (normalized.includes("sync") || normalized.includes("synchronization")) return "sync";
+  if (normalized.includes("phonographic") || normalized.includes("master") || normalized === "ph") return "phonographic";
+  return "other";
+}
+
+function inferRightsFamily(row: TransactionRow): "publishing" | "recording" | "neighboring" | "mixed" | "unknown" {
+  if (row.iswc || row.work_title || row.party_name || row.publisher_name || row.source_work_code) return "publishing";
+  if (row.isrc || row.track_title || row.release_title || row.upc) return "recording";
+  return "unknown";
+}
+
 function parseDate(value: any): string | null {
   if (value == null || value === "") return null;
   const str = String(value).trim();
@@ -1643,7 +1660,17 @@ serve(async (req) => {
     let extractedItems: DocumentAiReportItem[] = [];
     let rawRows: TransactionRow[] = [];
 
-    if (lane === "structured") {
+    if (mimeType === "application/pdf") {
+      const sacemPdfRows = await extractSacemCatalogueRowsFromPdfBytes(fileBytes);
+      if (sacemPdfRows.length > 0) {
+        rawRows = sacemPdfRows;
+        console.log(`[process-report] Parsed ${rawRows.length} SACEM rights catalogue rows from native PDF text coordinates`);
+      }
+    }
+
+    if (rawRows.length > 0) {
+      console.log(`[process-report] Using native rights parser output; skipping generic Document AI extraction`);
+    } else if (lane === "structured") {
       console.log(`[process-report] Processing structured file natively (bypass Document AI)`);
       const result = await parseStructuredFile(fileBytes, mimeType, resolveCanonicalField);
       extractedItems = result.extractedItems;
@@ -1751,7 +1778,11 @@ serve(async (req) => {
             track_artist: item.track_artist ?? item.release_artist,
             release_title: item.release_title,
             isrc: item.isrc,
+            iswc: typeof item.isrc === "string" && item.isrc.trim().startsWith("T-") ? item.isrc.trim() : null,
             upc: item.release_upc,
+            work_title: item.track_title,
+            source_work_code: item.release_upc,
+            party_name: item.track_artist ?? item.release_artist,
             platform: item.channel,
             territory: item.country,
             usage_count: item.quantity,
@@ -2130,9 +2161,9 @@ serve(async (req) => {
         return extra;
       })(),
       basis_type: "observed",
-      asset_class: r.iswc ? "mixed" : "recording",
-      rights_family: r.rights_type ?? null,
-      rights_stream: r.usage_type ?? null,
+      asset_class: r.iswc || r.work_title ? "work" : "recording",
+      rights_family: inferRightsFamily(r),
+      rights_stream: normalizeRightsStream(r.usage_type ?? r.rights_type),
     })) : [];
 
     // Insert in batches of 500 and keep inserted ids for task linkage.
@@ -2160,7 +2191,7 @@ serve(async (req) => {
 
     let typedSplitClaimCount = 0;
 
-    if (!shouldInsertTransactions) {
+    if (documentFamily.parser_lane !== "income") {
       const catalogClaims = normalizedRows.map((r, i) => ({
         company_id: workspaceCompanyId,
         claim_type: documentFamily.document_kind,

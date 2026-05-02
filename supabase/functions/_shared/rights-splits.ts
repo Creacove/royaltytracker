@@ -22,7 +22,7 @@ export type TypedSplitClaim = {
   source_rights_label: string;
   source_language: string;
   canonical_rights_stream: string;
-  share_pct: number;
+  share_pct: number | null;
   territory_scope: string | null;
   valid_from: string | null;
   valid_to: string | null;
@@ -46,6 +46,15 @@ type SacemWorkContext = {
   work_genre: string | null;
   deposit_date: string | null;
 };
+
+type PdfTextAtom = {
+  page: number;
+  x: number;
+  y: number;
+  text: string;
+};
+
+type PdfInflateFn = (bytes: Uint8Array) => Uint8Array;
 
 const SOURCE_VOCABULARY: Record<string, SourceRightsVocabulary> = {
   "fr:de": {
@@ -179,11 +188,211 @@ function parseSacemRightsholderLine(line: string): {
   };
 }
 
-export function extractSacemCatalogueRowsFromText(text: string): SplitClaimInputRow[] {
-  if (!isSacemCatalogueText(text)) return [];
+function decodePdfLiteralString(value: string): string {
+  return value.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_match, escaped: string) => {
+    if (/^[0-7]+$/.test(escaped)) return String.fromCharCode(parseInt(escaped, 8));
+    switch (escaped) {
+      case "n":
+        return "\n";
+      case "r":
+        return "\r";
+      case "t":
+        return "\t";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      default:
+        return escaped;
+    }
+  });
+}
 
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let output = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    output += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return output;
+}
+
+function binaryStringToBytes(value: string): Uint8Array {
+  const bytes = new Uint8Array(value.length);
+  for (let i = 0; i < value.length; i += 1) {
+    bytes[i] = value.charCodeAt(i) & 0xff;
+  }
+  return bytes;
+}
+
+function inflatePdfStreamBytes(bytes: Uint8Array, inflate?: PdfInflateFn): Uint8Array | null {
+  if (!inflate) return null;
+  try {
+    return inflate(bytes);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function extractPdfTextAtomsFromContent(content: string, page: number): PdfTextAtom[] {
+  const atoms: PdfTextAtom[] = [];
+  const blockPattern = /BT([\s\S]*?)ET/g;
+  let blockMatch: RegExpExecArray | null;
+
+  while ((blockMatch = blockPattern.exec(content))) {
+    const block = blockMatch[1];
+    const matrix = block.match(/1\s+0\s+0\s+1\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+Tm/);
+    if (!matrix) continue;
+
+    const textParts = Array.from(block.matchAll(/\(((?:\\.|[^\\)])*)\)\s*Tj/g))
+      .map((match) => decodePdfLiteralString(match[1]))
+      .join("");
+    const text = textParts.replace(/\s+/g, " ").trim();
+    if (!text) continue;
+
+    atoms.push({
+      page,
+      x: Number(matrix[1]),
+      y: Number(matrix[2]),
+      text,
+    });
+  }
+
+  return atoms;
+}
+
+function groupPdfRows(atoms: PdfTextAtom[]): PdfTextAtom[][] {
+  const rows: PdfTextAtom[][] = [];
+  for (const atom of atoms) {
+    let row = rows.find((candidate) =>
+      candidate[0] && candidate[0].page === atom.page && Math.abs(candidate[0].y - atom.y) <= 1.5
+    );
+    if (!row) {
+      row = [];
+      rows.push(row);
+    }
+    row.push(atom);
+  }
+
+  return rows
+    .map((row) => row.sort((a, b) => a.x - b.x))
+    .sort((a, b) => {
+      const pageDelta = (a[0]?.page ?? 0) - (b[0]?.page ?? 0);
+      if (pageDelta !== 0) return pageDelta;
+      return (b[0]?.y ?? 0) - (a[0]?.y ?? 0);
+    });
+}
+
+function textInBand(row: PdfTextAtom[], minX: number, maxX: number): string | null {
+  const text = row
+    .filter((atom) => atom.x >= minX && atom.x < maxX)
+    .map((atom) => atom.text)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text || null;
+}
+
+function parseSacemPdfRowsFromAtoms(atoms: PdfTextAtom[]): SplitClaimInputRow[] {
   const rows: SplitClaimInputRow[] = [];
   let currentWork: SacemWorkContext | null = null;
+  let currentWorkHasRightsholder = false;
+
+  for (const row of groupPdfRows(atoms)) {
+    const rowText = row.map((atom) => atom.text).join(" ");
+    if (/^Total\b/i.test(rowText)) continue;
+
+    const iswc = row.find((atom) => /^T-\d{3}\.\d{3}\.\d{3}\.\d$/.test(atom.text))?.text ?? null;
+    if (iswc) {
+      currentWork = {
+        work_title: textInBand(row, 20, 260) ?? "",
+        source_work_code: textInBand(row, 260, 365) ?? "",
+        work_genre: textInBand(row, 365, 510),
+        iswc,
+        deposit_date: normalizeSacemDate(textInBand(row, 620, 770)),
+      };
+      currentWorkHasRightsholder = false;
+      continue;
+    }
+
+    if (!currentWork) continue;
+
+    const role = row.find((atom) => atom.x >= 25 && atom.x < 60 && /^[A-Z]{1,3}$/.test(atom.text))?.text ?? null;
+    const sourceRightsholderCode = row.find((atom) => atom.x >= 190 && atom.x < 250 && /^\d+$/.test(atom.text))?.text ?? null;
+    const deShare = textInBand(row, 590, 645);
+    const drShare = textInBand(row, 645, 710);
+    const phShare = textInBand(row, 710, 770);
+
+    if (!role || !sourceRightsholderCode || !deShare || !drShare || !phShare) {
+      if (!currentWorkHasRightsholder && row.length === 1 && row[0].x >= 20 && row[0].x < 260) {
+        currentWork.work_title = `${currentWork.work_title} ${row[0].text}`.replace(/\s+/g, " ").trim();
+      }
+      continue;
+    }
+
+    currentWorkHasRightsholder = true;
+    rows.push({
+      work_title: currentWork.work_title,
+      iswc: currentWork.iswc,
+      source_work_code: currentWork.source_work_code,
+      work_genre: currentWork.work_genre,
+      deposit_date: currentWork.deposit_date,
+      party_name: textInBand(row, 65, 190) ?? textInBand(row, 250, 390),
+      ipi_number: textInBand(row, 390, 465),
+      source_role: role,
+      source_rightsholder_code: sourceRightsholderCode,
+      source_party_text: textInBand(row, 250, 390),
+      society_de: textInBand(row, 465, 525),
+      society_dr: textInBand(row, 525, 590),
+      de_share: deShare,
+      dr_share: drShare,
+      ph_share: phShare,
+      source_language: "fr",
+      source_page: row[0]?.page ?? null,
+      source_row: rows.length,
+      raw_text_line: rowText,
+    });
+  }
+
+  return rows;
+}
+
+export async function extractSacemCatalogueRowsFromPdfBytes(
+  fileBytes: Uint8Array,
+  inflate?: PdfInflateFn,
+): Promise<SplitClaimInputRow[]> {
+  const binary = bytesToBinaryString(fileBytes);
+  const streams = Array.from(binary.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g));
+  const atoms: PdfTextAtom[] = [];
+  let page = 1;
+
+  for (const match of streams) {
+    const streamBytes = binaryStringToBytes(match[1]);
+    const streamIndex = match.index ?? 0;
+    const objectIndex = binary.lastIndexOf(" obj", streamIndex);
+    const dictionaryPrefix = binary.slice(objectIndex > 0 ? objectIndex : Math.max(0, streamIndex - 5000), streamIndex);
+    if (/\/Subtype\s*\/Image/.test(dictionaryPrefix)) continue;
+    const inflated = dictionaryPrefix.includes("FlateDecode")
+      ? inflatePdfStreamBytes(streamBytes, inflate)
+      : null;
+    if (dictionaryPrefix.includes("FlateDecode") && !inflated) continue;
+    const decodedBytes = inflated ?? streamBytes;
+    const content = bytesToBinaryString(decodedBytes);
+    if (!content.includes("BT")) continue;
+    const contentAtoms = extractPdfTextAtomsFromContent(content, page);
+    if (contentAtoms.length > 0) {
+      page += 1;
+      atoms.push(...contentAtoms);
+    }
+  }
+
+  return parseSacemPdfRowsFromAtoms(atoms);
+}
+
+export function extractSacemCatalogueRowsFromText(text: string): SplitClaimInputRow[] {
+  const rows: SplitClaimInputRow[] = [];
+  let currentWork: SacemWorkContext | null = null;
+  let currentWorkHasRightsholder = false;
   let currentPage = 1;
   let sourceRow = 0;
 
@@ -200,13 +409,20 @@ export function extractSacemCatalogueRowsFromText(text: string): SplitClaimInput
     const workHeader = parseSacemWorkHeader(line);
     if (workHeader) {
       currentWork = workHeader;
+      currentWorkHasRightsholder = false;
       continue;
     }
 
     if (!currentWork || line.startsWith("Total ")) continue;
 
     const rightsholder = parseSacemRightsholderLine(line);
-    if (!rightsholder) continue;
+    if (!rightsholder) {
+      if (!currentWorkHasRightsholder) {
+        currentWork.work_title = `${currentWork.work_title} ${line}`.replace(/\s+/g, " ").trim();
+      }
+      continue;
+    }
+    currentWorkHasRightsholder = true;
 
     rows.push({
       work_title: currentWork.work_title,
@@ -262,15 +478,44 @@ function shareEntries(row: SplitClaimInputRow): Array<{ code: string; value: unk
   return entries;
 }
 
+function hasReviewableRightsEvidence(row: SplitClaimInputRow): boolean {
+  const workTitle = coalesceString(row, ["work_title", "track_title", "title", "titre_oeuvre"]);
+  const partyName = coalesceString(row, [
+    "party_name",
+    "rightsholder_name",
+    "publisher_name",
+    "writer_name",
+    "track_artist",
+    "release_artist",
+    "nom_ayant_droit",
+  ]);
+  return Boolean(workTitle && partyName);
+}
+
+function fallbackRightsCode(row: SplitClaimInputRow): string {
+  return coalesceString(row, [
+    "source_rights_code",
+    "rights_stream",
+    "rights_type",
+    "usage_type",
+    "source_role",
+    "config_type",
+  ]) ?? "unknown";
+}
+
 export function buildSplitClaimsFromRows(rows: SplitClaimInputRow[], options: BuildSplitClaimOptions = {}): TypedSplitClaim[] {
   const sourceLanguage = options.source_language ?? "en";
   const reviewStatus = options.default_review_status ?? "pending";
   const claims: TypedSplitClaim[] = [];
 
   rows.forEach((row, index) => {
-    for (const entry of shareEntries(row)) {
+    const entries = shareEntries(row);
+    if (entries.length === 0 && hasReviewableRightsEvidence(row)) {
+      entries.push({ code: fallbackRightsCode(row), value: null });
+    }
+
+    for (const entry of entries) {
       const sharePct = asNumber(entry.value);
-      if (sharePct == null) continue;
       const vocabulary = mapSourceRightsVocabulary(entry.code, sourceLanguage);
       claims.push({
         source_report_id: options.source_report_id ?? asString(row.source_report_id),
@@ -280,7 +525,15 @@ export function buildSplitClaimsFromRows(rows: SplitClaimInputRow[], options: Bu
         work_title: coalesceString(row, ["work_title", "track_title", "title", "titre_oeuvre"]),
         iswc: asString(row.iswc),
         source_work_code: coalesceString(row, ["source_work_code", "work_code", "code_oeuvre"]),
-        party_name: coalesceString(row, ["party_name", "rightsholder_name", "publisher_name", "writer_name", "nom_ayant_droit"]),
+        party_name: coalesceString(row, [
+          "party_name",
+          "rightsholder_name",
+          "publisher_name",
+          "writer_name",
+          "track_artist",
+          "release_artist",
+          "nom_ayant_droit",
+        ]),
         ipi_number: coalesceString(row, ["ipi_number", "ipi", "code_ipi"]),
         source_role: coalesceString(row, ["source_role", "role"]),
         source_rights_code: vocabulary.source_rights_code,

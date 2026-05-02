@@ -31,4 +31,14 @@ describe("process-report split ingestion", () => {
     expect(source).toContain('.from("catalog_split_claims").delete().eq("source_report_id", report_id)');
     expect(source).toContain('.from("catalog_claims").delete().eq("source_report_id", report_id)');
   });
+
+  it("maps custom extractor rights rows into work party evidence and constrained transaction vocabularies", () => {
+    const source = readFileSync(processReportPath, "utf8");
+
+    expect(source).toContain("source_work_code: item.release_upc");
+    expect(source).toContain("party_name: item.track_artist ?? item.release_artist");
+    expect(source).toContain("rights_family: inferRightsFamily(r)");
+    expect(source).toContain("rights_stream: normalizeRightsStream(r.usage_type ?? r.rights_type)");
+    expect(source).toContain('documentFamily.parser_lane !== "income"');
+  });
 });
